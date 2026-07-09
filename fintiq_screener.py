@@ -979,24 +979,27 @@ st.markdown("""
     font-size: 0.82rem !important;
     line-height: 1.2 !important;
   }
-  /* Multiselect selected tags — readable amber on dark */
+  /* Multiselect selected tags — readable amber on dark, not clipped */
   span[data-baseweb="tag"] {
     background-color: rgba(245,158,11,0.25) !important;
     border: 1px solid rgba(245,158,11,0.55) !important;
     border-radius: 6px !important;
     max-width: none !important;
     overflow: visible !important;
-    margin-left: 4px !important;
+    margin: 2px 4px 2px 4px !important;
+    flex-shrink: 0 !important;
   }
   span[data-baseweb="tag"] span,
   span[data-baseweb="tag"] svg {
     color: #FDE68A !important;
     fill: #FDE68A !important;
   }
-  /* Give the multiselect input area breathing room so tags aren't clipped */
-  div[data-baseweb="select"] > div:first-child {
-    padding-left: 6px !important;
+  /* Inner flex row that holds the tags — add left padding so first tag isn't clipped */
+  div[data-testid="stMultiSelect"] div[role="combobox"] > div,
+  div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div > div:first-child {
+    padding-left: 8px !important;
     overflow: visible !important;
+    flex-wrap: wrap !important;
   }
   /* Reduce tab bar top margin */
   div[data-testid="stTabs"] {
