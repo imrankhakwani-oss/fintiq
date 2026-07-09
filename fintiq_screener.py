@@ -1744,37 +1744,102 @@ def backtest_pair(df, entry_threshold=2.0):
 # NAVIGATION HEADER (replaces sidebar)
 # ─────────────────────────────────────────────────────────────
 
-st.markdown("""
+_nav_right = (
+    f'<span class="nav-badge" style="background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#94A3B8;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👤 {_user_email}</span>'
+    if _user_email else ""
+)
+st.markdown(f"""
 <div class="fintiq-nav">
   <div style="display:flex;align-items:center;gap:14px">
     <div class="fintiq-logo">📊 Fintiq</div>
     <div class="fintiq-tagline">From speculation to strategy · Intelligent Trading Screener</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
-    <span class="nav-badge">🌍 10 Markets</span>
-    <span class="nav-badge">⚡ Live Data</span>
-    <span class="nav-badge">v3.0</span>
-    <span class="nav-badge" style="background:rgba(74,222,128,0.1);border-color:#4ADE80;color:#4ADE80">● LIVE</span>
-    {_nav_user_badge}
+    {_nav_right}
   </div>
 </div>
-""".replace("{_nav_user_badge}", (
-    f'<span class="nav-badge" style="background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#94A3B8;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👤 {_user_email}</span>'
-    if _user_email else
-    f'<span class="nav-badge" style="background:rgba(245,158,11,0.12);border-color:#F59E0B;color:#F59E0B">'
-    f'🆓 {max(0, _FREE_LIMIT - st.session_state["free_searches"])} free searches left</span>'
-)), unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ── Logout button (only when logged in) ──────────────────────
+# ── Login / Logout buttons in nav row ────────────────────────
+_nc1, _nc2, _nc3 = st.columns([8, 1, 1])
 if _user_email:
-    _lcol1, _lcol2 = st.columns([10, 1])
-    with _lcol2:
+    with _nc3:
         if st.button("Logout", key="nav_logout"):
             if _sb:
                 try: _sb.auth.sign_out()
                 except Exception: pass
             del st.session_state["fintiq_user"]
             st.rerun()
+else:
+    with _nc2:
+        if st.button("Sign up", key="nav_signup"):
+            st.session_state["show_auth_modal"] = "signup"
+            st.rerun()
+    with _nc3:
+        if st.button("Login", key="nav_login"):
+            st.session_state["show_auth_modal"] = "login"
+            st.rerun()
+
+# ── Auth modal (shown when Login/Sign up clicked) ─────────────
+if st.session_state.get("show_auth_modal") and not _user_email:
+    _modal_mode = st.session_state["show_auth_modal"]
+    with st.container():
+        st.markdown("<hr style='border-color:rgba(245,158,11,0.2);margin:4px 0 12px 0'>",
+                    unsafe_allow_html=True)
+        _, _mc, _ = st.columns([1, 2, 1])
+        with _mc:
+            st.markdown(f"### {'Create your free account' if _modal_mode == 'signup' else 'Welcome back'}")
+            _m_email = st.text_input("Email", placeholder="you@example.com", key="modal_email")
+            _m_pw    = st.text_input("Password", type="password",
+                                     placeholder="Min 6 characters", key="modal_pw")
+            if _modal_mode == "signup":
+                _m_pw2 = st.text_input("Confirm password", type="password",
+                                       placeholder="Repeat password", key="modal_pw2")
+            _mc1, _mc2 = st.columns(2)
+            with _mc1:
+                _btn_lbl = "Create account" if _modal_mode == "signup" else "Log in"
+                if st.button(_btn_lbl, use_container_width=True, type="primary", key="modal_submit"):
+                    if not _m_email or not _m_pw:
+                        st.error("Please fill in all fields.")
+                    elif _sb is None:
+                        st.error("Auth service unavailable.")
+                    else:
+                        try:
+                            if _modal_mode == "signup":
+                                if _m_pw != st.session_state.get("modal_pw2",""):
+                                    st.error("Passwords do not match.")
+                                elif len(_m_pw) < 6:
+                                    st.error("Password must be at least 6 characters.")
+                                else:
+                                    res = _sb.auth.sign_up({"email": _m_email, "password": _m_pw})
+                                    if res.user:
+                                        st.success("✅ Account created! Check your email to confirm, then log in.")
+                                        st.session_state["show_auth_modal"] = None
+                                    else:
+                                        st.error("Sign-up failed. Please try again.")
+                            else:
+                                res = _sb.auth.sign_in_with_password({"email": _m_email, "password": _m_pw})
+                                if res.user:
+                                    st.session_state["fintiq_user"] = {"email": res.user.email, "id": res.user.id}
+                                    st.session_state["free_searches"] = 0
+                                    st.session_state["show_auth_modal"] = None
+                                    st.rerun()
+                                else:
+                                    st.error("Invalid email or password.")
+                        except Exception as _e:
+                            _em = str(_e)
+                            if "Email not confirmed" in _em:
+                                st.warning("Please confirm your email first — check your inbox.")
+                            elif "Invalid login" in _em or "invalid_grant" in _em:
+                                st.error("Invalid email or password.")
+                            else:
+                                st.error(f"Error: {_em}")
+            with _mc2:
+                if st.button("Cancel", use_container_width=True, key="modal_cancel"):
+                    st.session_state["show_auth_modal"] = None
+                    st.rerun()
+        st.markdown("<hr style='border-color:rgba(245,158,11,0.2);margin:12px 0 4px 0'>",
+                    unsafe_allow_html=True)
 
 # ── Background: CSS pseudo-element on stApp — most reliable Streamlit approach ──
 st.markdown("""
