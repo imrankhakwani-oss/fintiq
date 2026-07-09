@@ -888,16 +888,63 @@ st.markdown("""
     border-radius: 8px !important;
     font-size: 1rem !important;
   }
-  .stSelectbox > div > div {
+
+  /* ── SELECTBOX — full coverage for all nested elements ── */
+  .stSelectbox > div > div,
+  .stSelectbox [data-baseweb="select"] > div,
+  .stSelectbox [data-baseweb="select"] div,
+  div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
     background: #162032 !important;
     color: #E2E8F0 !important;
     border: 1px solid rgba(255,255,255,0.12) !important;
-    font-size: 1rem !important;
+    font-size: 0.95rem !important;
   }
-  .stMultiSelect > div > div {
+  /* Selected value text */
+  .stSelectbox [data-baseweb="select"] span,
+  .stSelectbox [data-baseweb="select"] div[class*="ValueContainer"] span,
+  .stSelectbox [data-baseweb="select"] div[class*="singleValue"],
+  .stSelectbox [data-baseweb="select"] div[class*="placeholder"] {
+    color: #E2E8F0 !important;
+  }
+
+  /* ── MULTISELECT — full coverage ── */
+  .stMultiSelect > div > div,
+  .stMultiSelect [data-baseweb="select"] > div,
+  div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
     background: #162032 !important;
+    color: #E2E8F0 !important;
     border: 1px solid rgba(255,255,255,0.12) !important;
-    font-size: 1rem !important;
+    font-size: 0.95rem !important;
+  }
+  .stMultiSelect [data-baseweb="select"] span,
+  .stMultiSelect [data-baseweb="select"] div[class*="placeholder"],
+  .stMultiSelect [data-baseweb="tag"] span {
+    color: #E2E8F0 !important;
+  }
+
+  /* ── DROPDOWN POPUP LIST (all selectboxes/multiselects) ── */
+  [data-baseweb="popover"] > div,
+  [data-baseweb="menu"],
+  [data-baseweb="menu"] ul,
+  ul[role="listbox"] {
+    background: #1A2840 !important;
+    border: 1px solid rgba(245,158,11,0.2) !important;
+    border-radius: 8px !important;
+  }
+  [data-baseweb="option"],
+  [data-baseweb="menu"] li,
+  ul[role="listbox"] li,
+  div[role="option"] {
+    background: #1A2840 !important;
+    color: #E2E8F0 !important;
+    font-size: 0.92rem !important;
+  }
+  [data-baseweb="option"]:hover,
+  [data-baseweb="option"][aria-selected="true"],
+  ul[role="listbox"] li:hover,
+  div[role="option"]:hover {
+    background: #2A3F5F !important;
+    color: #F59E0B !important;
   }
 
   /* ── EXPANDER — all Streamlit versions ── */
@@ -1019,25 +1066,7 @@ st.markdown("""
   /* ── CAPTION text ── */
   .stCaption { color: #94A3B8 !important; font-size: 0.88rem !important; }
 
-  /* ── DROPDOWN POPUP OPTIONS (in-frame selectors as fallback) ── */
-  [data-baseweb="popover"],
-  [data-baseweb="menu"] {
-    background: #1A2840 !important;
-  }
-  [data-baseweb="option"] {
-    background: #1A2840 !important;
-    color: #E8EDF4 !important;
-  }
-  [data-baseweb="option"]:hover,
-  [data-baseweb="option"][aria-selected="true"] {
-    background: #2A3F5F !important;
-    color: #F59E0B !important;
-  }
-  ul[role="listbox"] li,
-  div[role="option"] {
-    background: #1A2840 !important;
-    color: #E8EDF4 !important;
-  }
+  /* dropdown styles consolidated above in INPUT WIDGETS section */
 
   /* ── SVG BACKGROUND — subtle candlestick pattern ── */
   .fintiq-bg {
