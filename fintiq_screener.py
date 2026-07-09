@@ -979,26 +979,25 @@ st.markdown("""
     font-size: 0.82rem !important;
     line-height: 1.2 !important;
   }
-  /* Multiselect selected tags — readable amber on dark, not clipped */
+  /* Multiselect selected tags — readable amber on dark */
   span[data-baseweb="tag"] {
     background-color: rgba(245,158,11,0.25) !important;
     border: 1px solid rgba(245,158,11,0.55) !important;
     border-radius: 6px !important;
-    max-width: none !important;
+    max-width: none !important;        /* overrides Streamlit's 128px cap */
     margin: 2px 4px 2px 6px !important;
     flex-shrink: 0 !important;
+  }
+  /* The inner text span also gets the 128px cap — remove it */
+  span[data-baseweb="tag"] > span:first-child {
+    max-width: none !important;
+    overflow: visible !important;
+    white-space: nowrap !important;
   }
   span[data-baseweb="tag"] span,
   span[data-baseweb="tag"] svg {
     color: #FDE68A !important;
     fill: #FDE68A !important;
-  }
-  /* Multiselect container — ensure no overflow clipping and enough left padding */
-  div[data-testid="stMultiSelect"] div[data-baseweb="select"] div {
-    overflow: visible !important;
-  }
-  div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div:first-child {
-    padding: 2px 6px 2px 2px !important;
   }
   /* Reduce tab bar top margin */
   div[data-testid="stTabs"] {
