@@ -190,16 +190,16 @@ STOCK_UNIVERSE = {
 }
 
 ALL_EXCHANGES = {
-    "🇬🇧 London (LSE)":          "LSE",
-    "🇬🇧 London AIM":             "AIM",
-    "🇺🇸 New York (NYSE)":        "NYSE",
-    "🇺🇸 NASDAQ":                 "NASDAQ",
-    "🇩🇪 Germany (XETRA)":        "XETRA",
-    "🇫🇷 Euronext (Paris/AMS)":   "EURONEXT",
-    "🇨🇦 Toronto (TSX)":          "TSX",
-    "🇦🇺 Australia (ASX)":        "ASX",
-    "🇮🇳 India (NSE)":            "NSE",
-    "🇭🇰 Hong Kong (HKEX)":       "HKEX",
+    "🏛 London (LSE)":          "LSE",
+    "📊 London AIM":            "AIM",
+    "🗽 New York (NYSE)":       "NYSE",
+    "📈 NASDAQ":                "NASDAQ",
+    "🏦 Germany (XETRA)":       "XETRA",
+    "🌐 Euronext (Paris/AMS)":  "EURONEXT",
+    "🍁 Toronto (TSX)":         "TSX",
+    "🌏 Australia (ASX)":       "ASX",
+    "💹 India (NSE)":           "NSE",
+    "🏮 Hong Kong (HKEX)":      "HKEX",
 }
 
 SECTORS = [
@@ -2180,7 +2180,7 @@ with tab1:
         selected_labels = st.multiselect(
             "🌍 Select Exchanges:",
             options=list(ALL_EXCHANGES.keys()),
-            default=["🇬🇧 London (LSE)"],
+            default=["🏛 London (LSE)"],
         )
         selected_exchanges = [ALL_EXCHANGES[l] for l in selected_labels]
         if selected_exchanges:
