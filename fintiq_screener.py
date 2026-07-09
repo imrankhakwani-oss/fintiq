@@ -515,13 +515,93 @@ def _show_auth():
                 return False
     return False
 
-# ── Auth check — show gate if not logged in ──────────────────
-if "fintiq_user" not in st.session_state:
-    _show_auth()
-    st.stop()
+# ── Free usage counter ───────────────────────────────────────
+if "free_searches" not in st.session_state:
+    st.session_state["free_searches"] = 0
+_FREE_LIMIT = 3
 
-# ── Logged-in: show logout button in top-right ───────────────
-_user_email = st.session_state["fintiq_user"].get("email", "")
+def _check_auth_gate():
+    """Call before running a search. Returns True if allowed, False if blocked."""
+    if "fintiq_user" in st.session_state:
+        return True  # logged in — always allowed
+    if st.session_state["free_searches"] < _FREE_LIMIT:
+        st.session_state["free_searches"] += 1
+        return True  # within free tier
+    # Hit the limit — show signup wall
+    _show_auth_wall()
+    return False
+
+def _show_auth_wall():
+    """Modal-style signup prompt shown after free limit is reached."""
+    st.markdown("""
+    <div style="
+        background:linear-gradient(135deg,#0D2137,#0A1628);
+        border:1px solid rgba(245,158,11,0.4);
+        border-radius:16px; padding:36px; text-align:center;
+        max-width:500px; margin:20px auto;
+        box-shadow:0 8px 40px rgba(0,0,0,0.6);">
+      <div style="font-size:2rem;font-weight:900;color:#F59E0B;letter-spacing:-1px;margin-bottom:8px">
+        📊 Fintiq
+      </div>
+      <div style="color:#F1F5F9;font-size:1.1rem;font-weight:700;margin-bottom:8px">
+        You've used your 3 free searches
+      </div>
+      <div style="color:#94A3B8;font-size:0.88rem;margin-bottom:24px">
+        Create a free account to continue screening — no credit card required.<br>
+        Upgrade anytime for unlimited access and premium features.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    _, col, _ = st.columns([1,2,1])
+    with col:
+        mode = st.radio("", ["Sign up free", "I have an account"], horizontal=True,
+                        label_visibility="collapsed", key="wall_mode")
+        email    = st.text_input("Email", placeholder="you@example.com", key="wall_email")
+        password = st.text_input("Password", type="password",
+                                 placeholder="Min 6 characters", key="wall_pw")
+        if mode == "Sign up free":
+            confirm = st.text_input("Confirm password", type="password",
+                                    placeholder="Repeat password", key="wall_pw2")
+        if st.button("Continue →", use_container_width=True, type="primary", key="wall_btn"):
+            if not email or not password:
+                st.error("Please enter your email and password.")
+                return
+            if _sb is None:
+                st.error("Auth service unavailable.")
+                return
+            try:
+                if mode == "Sign up free":
+                    if password != st.session_state.get("wall_pw2",""):
+                        st.error("Passwords do not match."); return
+                    if len(password) < 6:
+                        st.error("Password must be at least 6 characters."); return
+                    res = _sb.auth.sign_up({"email": email, "password": password})
+                    if res.user:
+                        st.success("✅ Account created! Check your email to confirm, then log in.")
+                    else:
+                        st.error("Sign-up failed. Please try again.")
+                else:
+                    res = _sb.auth.sign_in_with_password({"email": email, "password": password})
+                    if res.user:
+                        st.session_state["fintiq_user"] = {
+                            "email": res.user.email,
+                            "id": res.user.id,
+                        }
+                        st.session_state["free_searches"] = 0
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password.")
+            except Exception as e:
+                err = str(e)
+                if "Email not confirmed" in err:
+                    st.warning("Please confirm your email first — check your inbox.")
+                elif "Invalid login" in err or "invalid_grant" in err:
+                    st.error("Invalid email or password.")
+                else:
+                    st.error(f"Error: {err}")
+
+# ── Logged-in user email (empty string if guest) ─────────────
+_user_email = st.session_state.get("fintiq_user", {}).get("email", "")
 
 # ─────────────────────────────────────────────────────────────
 # GLOBAL CSS — Professional Navy/Gold Theme
@@ -1675,20 +1755,26 @@ st.markdown("""
     <span class="nav-badge">⚡ Live Data</span>
     <span class="nav-badge">v3.0</span>
     <span class="nav-badge" style="background:rgba(74,222,128,0.1);border-color:#4ADE80;color:#4ADE80">● LIVE</span>
-    <span class="nav-badge" style="background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#94A3B8;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{_user_email}">👤 {_user_email}</span>
+    {_nav_user_badge}
   </div>
 </div>
-""".replace("{_user_email}", _user_email), unsafe_allow_html=True)
+""".replace("{_nav_user_badge}", (
+    f'<span class="nav-badge" style="background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#94A3B8;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👤 {_user_email}</span>'
+    if _user_email else
+    f'<span class="nav-badge" style="background:rgba(245,158,11,0.12);border-color:#F59E0B;color:#F59E0B">'
+    f'🆓 {max(0, _FREE_LIMIT - st.session_state["free_searches"])} free searches left</span>'
+)), unsafe_allow_html=True)
 
-# ── Logout button (top right) ────────────────────────────────
-_lcol1, _lcol2 = st.columns([10, 1])
-with _lcol2:
-    if st.button("Logout", key="nav_logout"):
-        if _sb:
-            try: _sb.auth.sign_out()
-            except Exception: pass
-        del st.session_state["fintiq_user"]
-        st.rerun()
+# ── Logout button (only when logged in) ──────────────────────
+if _user_email:
+    _lcol1, _lcol2 = st.columns([10, 1])
+    with _lcol2:
+        if st.button("Logout", key="nav_logout"):
+            if _sb:
+                try: _sb.auth.sign_out()
+                except Exception: pass
+            del st.session_state["fintiq_user"]
+            st.rerun()
 
 # ── Background: CSS pseudo-element on stApp — most reliable Streamlit approach ──
 st.markdown("""
@@ -2103,7 +2189,7 @@ with tab1:
         run_screen = st.button("▶  Run Screen", type="primary",
                                use_container_width=True, key="run_screen_bot")
 
-    if run_screen and selected_exchanges:
+    if run_screen and selected_exchanges and _check_auth_gate():
         tickers = []
         for exch in selected_exchanges:
             tickers.extend(STOCK_UNIVERSE.get(exch,[]))
