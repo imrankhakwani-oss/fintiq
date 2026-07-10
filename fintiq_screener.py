@@ -2192,8 +2192,7 @@ if _qp_action == "login" and not _user_email:
             if st.button("Cancel", use_container_width=True, key="lf_cancel"):
                 st.query_params.clear()
                 st.rerun()
-    st.markdown("<hr style='border-color:rgba(245,158,11,0.15);margin:8px 0'>",
-                unsafe_allow_html=True)
+    st.stop()  # don't render the rest of the app behind the login form
 
 # ── Background: CSS pseudo-element on stApp — most reliable Streamlit approach ──
 st.markdown("""
