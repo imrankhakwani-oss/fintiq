@@ -6217,12 +6217,46 @@ f"""<tr><td style="padding:7px 12px;color:#94A3B8">Win Rate</td>
 # ═══════════════════════════════════════════════════════════════
 
 st.markdown("""
-<div class="disclaimer-footer" style="padding:12px 24px;font-size:0.78rem;line-height:1.6">
-  <span style="color:#F59E0B;font-weight:700">⚠️ Disclaimer:</span>
-  For educational purposes only. Not financial advice. Not FCA authorised or regulated.
-  Valuations are illustrative models — not professional assessments. Data via Yahoo Finance
-  may be delayed or inaccurate. Investments carry risk; past performance ≠ future results.
-  <a href="https://register.fca.org.uk" style="color:#3B82F6">Find an FCA adviser →</a>
-  <span style="color:#334155;margin-left:16px">© 2026 Fintiq</span>
+<style>
+  /* Hide Streamlit's default "Made with Streamlit" footer */
+  footer { visibility: hidden !important; }
+  footer:after { visibility: hidden !important; }
+  #MainMenu { visibility: hidden !important; }
+</style>
+
+<div style="
+  margin-top: 32px;
+  border-top: 1px solid rgba(245,158,11,0.2);
+  background: #0B1420;
+  padding: 20px 28px 16px 28px;
+">
+  <!-- Disclaimer row -->
+  <div style="font-size:0.76rem;color:#64748B;line-height:1.7;margin-bottom:14px">
+    <span style="color:#F59E0B;font-weight:700">⚠️ Disclaimer: </span>
+    For educational and informational purposes only. Not financial advice. Fintiq is not FCA
+    authorised or regulated. Valuations shown are illustrative models and not professional
+    financial assessments. Market data provided via Yahoo Finance may be delayed or inaccurate.
+    All investments carry risk; past performance does not guarantee future results.
+    <a href="https://register.fca.org.uk" style="color:#3B82F6;text-decoration:none">
+      Find an FCA-regulated adviser →
+    </a>
+  </div>
+
+  <!-- Company info row -->
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.2rem">📊</span>
+      <div>
+        <div style="color:#E2E8F0;font-weight:700;font-size:0.85rem;letter-spacing:0.3px">Fintiq Ltd</div>
+        <div style="color:#475569;font-size:0.72rem">
+          Registered in England &amp; Wales · Company No. 07989936
+        </div>
+      </div>
+    </div>
+    <div style="color:#334155;font-size:0.72rem;text-align:right">
+      © 2026 Fintiq Ltd. All rights reserved.<br>
+      <span style="color:#1E293B">Intelligent Trading Screener · From speculation to strategy</span>
+    </div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
