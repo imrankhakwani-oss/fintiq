@@ -984,26 +984,41 @@ st.markdown("""
     font-size: 0.82rem !important;
     line-height: 1.2 !important;
   }
-  /* Multiselect selected tags — readable amber on dark */
+  /* Multiselect selected tags — target via role="button" since data-baseweb="tag"
+     is not present in newer Streamlit/BaseWeb versions */
+  div[data-testid="stMultiSelect"] span[role="button"] {
+    background-color: rgba(245,158,11,0.25) !important;
+    border: 1px solid rgba(245,158,11,0.55) !important;
+    border-radius: 6px !important;
+    max-width: none !important;
+    overflow: visible !important;
+    margin: 2px 4px 2px 6px !important;
+    flex-shrink: 0 !important;
+  }
+  /* Inner text label — remove the 128px max-width Streamlit applies */
+  div[data-testid="stMultiSelect"] span[role="button"] > span:first-child {
+    max-width: none !important;
+    overflow: visible !important;
+    white-space: nowrap !important;
+    color: #FDE68A !important;
+  }
+  /* × close icon */
+  div[data-testid="stMultiSelect"] span[role="button"] span[aria-hidden="true"],
+  div[data-testid="stMultiSelect"] span[role="button"] svg {
+    color: #FDE68A !important;
+    fill: #FDE68A !important;
+  }
+  /* Also keep original selector as fallback */
   span[data-baseweb="tag"] {
     background-color: rgba(245,158,11,0.25) !important;
     border: 1px solid rgba(245,158,11,0.55) !important;
     border-radius: 6px !important;
-    max-width: none !important;        /* overrides Streamlit's 128px cap */
-    margin: 2px 4px 2px 6px !important;
-    flex-shrink: 0 !important;
-  }
-  /* The inner text span also gets the 128px cap — remove it */
-  span[data-baseweb="tag"] > span:first-child {
     max-width: none !important;
     overflow: visible !important;
-    white-space: nowrap !important;
+    margin: 2px 4px 2px 6px !important;
   }
-  span[data-baseweb="tag"] span,
-  span[data-baseweb="tag"] svg {
-    color: #FDE68A !important;
-    fill: #FDE68A !important;
-  }
+  span[data-baseweb="tag"] span { color: #FDE68A !important; }
+  span[data-baseweb="tag"] svg  { fill: #FDE68A !important; }
   /* Reduce tab bar top margin */
   div[data-testid="stTabs"] {
     margin-top: 4px !important;
