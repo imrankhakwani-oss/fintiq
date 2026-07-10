@@ -1983,11 +1983,29 @@ else:
         'text-decoration:none;letter-spacing:0.3px">Login</a>'
     )
 
+_candle_svg = (
+    '<svg width="32" height="28" viewBox="0 0 32 28" xmlns="http://www.w3.org/2000/svg" '
+    'style="display:inline-block;vertical-align:middle;margin-right:6px">'
+    # Candle 1 — left, lowest
+    '<line x1="5" y1="22" x2="5" y2="20" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round"/>'
+    '<rect x="2" y="20" width="6" height="5" fill="#22C55E" rx="0.8"/>'
+    '<line x1="5" y1="25" x2="5" y2="26" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round"/>'
+    # Candle 2 — middle
+    '<line x1="16" y1="13" x2="16" y2="11" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round"/>'
+    '<rect x="13" y="11" width="6" height="8" fill="#22C55E" rx="0.8"/>'
+    '<line x1="16" y1="19" x2="16" y2="21" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round"/>'
+    # Candle 3 — right, highest
+    '<line x1="27" y1="3" x2="27" y2="1" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round"/>'
+    '<rect x="24" y="3" width="6" height="11" fill="#22C55E" rx="0.8"/>'
+    '<line x1="27" y1="14" x2="27" y2="16" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round"/>'
+    '</svg>'
+)
+
 _nav_html = (
     '<div class="fintiq-nav">'
     '<div style="display:flex;align-items:center;gap:14px">'
-    '<div class="fintiq-logo">📊 Fintiq</div>'
-    '<div class="fintiq-tagline">From speculation to strategy · Intelligent Trading Screener</div>'
+    '<div class="fintiq-logo">' + _candle_svg + 'Fintiq</div>'
+    '<div class="fintiq-tagline">From speculation to strategy · Alpha Securities Intelligence</div>'
     '</div>'
     '<div style="display:flex;align-items:center;gap:10px">'
     + _nav_right_html +
