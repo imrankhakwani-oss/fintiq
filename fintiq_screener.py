@@ -1957,12 +1957,20 @@ if _qp_stripe and "fintiq_user" in st.session_state:
 # ── Nav bar — Login button lives inside the HTML ─────────────
 _qp_action = st.query_params.get("action", "")
 
+_pricing_link = (
+    '<a href="?page=pricing" style="color:#94A3B8;font-size:0.8rem;font-weight:500;'
+    'text-decoration:none;padding:5px 12px;border-radius:20px;'
+    'transition:color 0.2s" onmouseover="this.style.color=\'#F59E0B\'" '
+    'onmouseout="this.style.color=\'#94A3B8\'">Pricing</a>'
+)
+
 if _user_email:
     _is_pro = st.session_state.get("fintiq_user", {}).get("is_pro", False)
     _pro_badge = (' <span style="background:#F59E0B;color:#0F1923;font-size:0.65rem;font-weight:800;'
                   'padding:1px 7px;border-radius:8px;vertical-align:middle">PRO</span>'
                   if _is_pro else "")
     _nav_right_html = (
+        _pricing_link +
         f'<span style="color:#94A3B8;font-size:0.8rem;margin-right:8px">👤 {_user_email}{_pro_badge}</span>'
         '<a href="?action=logout" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);'
         'color:#F59E0B;padding:5px 16px;border-radius:20px;font-size:0.78rem;font-weight:600;'
@@ -1970,6 +1978,7 @@ if _user_email:
     )
 else:
     _nav_right_html = (
+        _pricing_link +
         '<a href="?action=login" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);'
         'color:#F59E0B;padding:5px 18px;border-radius:20px;font-size:0.8rem;font-weight:600;'
         'text-decoration:none;letter-spacing:0.3px">Login</a>'
@@ -1995,6 +2004,135 @@ if _qp_action == "logout" and _user_email:
     del st.session_state["fintiq_user"]
     st.query_params.clear()
     st.rerun()
+
+# ── Pricing page (?page=pricing) ─────────────────────────────
+_qp_page = st.query_params.get("page", "")
+if _qp_page == "pricing":
+    _pu = st.session_state.get("fintiq_user", {})
+    _pu_email = _pu.get("email", "")
+    _pu_id    = _pu.get("id", "")
+    _pu_pro   = _pu.get("is_pro", False)
+
+    st.markdown("""
+    <div style="max-width:760px;margin:32px auto 0 auto;text-align:center">
+      <div style="font-size:2.2rem;font-weight:900;color:#F59E0B;margin-bottom:6px">
+        Simple, transparent pricing</div>
+      <div style="color:#64748B;font-size:0.95rem;margin-bottom:36px">
+        Start free · No card required · Cancel anytime</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _, _pc, _ = st.columns([1, 6, 1])
+    with _pc:
+        _col_free, _col_pro = st.columns(2, gap="large")
+
+        with _col_free:
+            st.markdown("""
+            <div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.3);
+                border-radius:16px;padding:28px;height:100%">
+              <div style="color:#94A3B8;font-size:0.8rem;font-weight:700;
+                  letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Free</div>
+              <div style="font-size:2.4rem;font-weight:900;color:#F1F5F9;margin-bottom:4px">
+                £0</div>
+              <div style="color:#64748B;font-size:0.85rem;margin-bottom:24px">forever</div>
+              <hr style="border-color:rgba(100,116,139,0.2);margin-bottom:20px">
+              <div style="color:#CBD5E1;font-size:0.88rem;line-height:2">
+                ✓ &nbsp;2 searches as guest<br>
+                ✓ &nbsp;10 searches / month after sign-up<br>
+                ✓ &nbsp;All global markets<br>
+                ✓ &nbsp;Quality Value screening<br>
+                ✓ &nbsp;Catalyst alerts<br>
+                ✗ &nbsp;<span style="color:#475569">Unlimited searches</span><br>
+                ✗ &nbsp;<span style="color:#475569">Pairs trading</span><br>
+                ✗ &nbsp;<span style="color:#475569">Trading journal</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            if not _pu_email:
+                if st.button("Sign up free →", use_container_width=True, key="price_signup"):
+                    st.query_params.clear()
+                    st.query_params["action"] = "login"
+                    st.rerun()
+            else:
+                st.button("Current plan ✓", use_container_width=True,
+                          disabled=True, key="price_free_cur")
+
+        with _col_pro:
+            st.markdown("""
+            <div style="background:linear-gradient(135deg,#1a2d1a,#0D1F33);
+                border:1.5px solid rgba(245,158,11,0.6);
+                border-radius:16px;padding:28px;position:relative;height:100%">
+              <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+                  background:#F59E0B;color:#0F1923;font-size:0.72rem;font-weight:800;
+                  padding:3px 16px;border-radius:12px;white-space:nowrap">MOST POPULAR</div>
+              <div style="color:#F59E0B;font-size:0.8rem;font-weight:700;
+                  letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Pro</div>
+              <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+                <span style="font-size:2.4rem;font-weight:900;color:#F1F5F9">£10</span>
+                <span style="color:#64748B;font-size:0.85rem">/month</span>
+              </div>
+              <div style="color:#4ADE80;font-size:0.82rem;margin-bottom:24px">
+                or £100/year — save 2 months free</div>
+              <hr style="border-color:rgba(245,158,11,0.2);margin-bottom:20px">
+              <div style="color:#CBD5E1;font-size:0.88rem;line-height:2">
+                ✓ &nbsp;<b style="color:#F59E0B">Unlimited</b> searches<br>
+                ✓ &nbsp;All global markets<br>
+                ✓ &nbsp;Quality Value screening<br>
+                ✓ &nbsp;Catalyst alerts<br>
+                ✓ &nbsp;<b style="color:#F59E0B">Pairs trading</b><br>
+                ✓ &nbsp;<b style="color:#F59E0B">Trading journal &amp; P&amp;L</b><br>
+                ✓ &nbsp;Priority data refresh<br>
+                ✓ &nbsp;Cancel anytime
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            if _pu_pro:
+                st.button("You're on Pro ⭐", use_container_width=True,
+                          disabled=True, key="price_pro_cur")
+            else:
+                _pa, _pb = st.columns(2)
+                with _pa:
+                    if st.button("Monthly £10", use_container_width=True,
+                                 type="primary", key="price_monthly"):
+                        if not _pu_email:
+                            st.query_params.clear()
+                            st.query_params["action"] = "login"
+                            st.rerun()
+                        else:
+                            url = _create_checkout("monthly", _pu_email, _pu_id)
+                            if url:
+                                st.markdown(f'<meta http-equiv="refresh" content="0; url={url}">',
+                                            unsafe_allow_html=True)
+                                st.info("Redirecting to checkout…")
+                                st.stop()
+                            else:
+                                st.error("Could not start checkout.")
+                with _pb:
+                    if st.button("Annual £100", use_container_width=True,
+                                 key="price_annual"):
+                        if not _pu_email:
+                            st.query_params.clear()
+                            st.query_params["action"] = "login"
+                            st.rerun()
+                        else:
+                            url = _create_checkout("annual", _pu_email, _pu_id)
+                            if url:
+                                st.markdown(f'<meta http-equiv="refresh" content="0; url={url}">',
+                                            unsafe_allow_html=True)
+                                st.info("Redirecting to checkout…")
+                                st.stop()
+                            else:
+                                st.error("Could not start checkout.")
+
+    st.markdown("""
+    <div style="text-align:center;color:#334155;font-size:0.8rem;margin-top:32px">
+      🔒 Payments secured by Stripe · Cancel anytime from your account ·
+      <a href="/" style="color:#3B82F6;text-decoration:none">← Back to screener</a>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
 
 # ── Login / Sign-up form (shown when ?action=login) ──────────
 if _qp_action == "login" and not _user_email:
