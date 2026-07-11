@@ -2708,7 +2708,7 @@ with tab_brief:
                 _vfig.add_trace(go.Scatter(
                     x=_vix_hist.iloc[:,0], y=_vix_hist.iloc[:,1],
                     fill="tozeroy", line=dict(color=_vix_color, width=2),
-                    fillcolor=f"{_vix_color}22", name="VIX"
+                    fillcolor=f"rgba({int(_vix_color[1:3],16)},{int(_vix_color[3:5],16)},{int(_vix_color[5:7],16)},0.13)", name="VIX"
                 ))
                 _vfig.add_hline(y=20, line_dash="dot", line_color="#F59E0B",
                                 annotation_text="20 (caution)", annotation_font_size=9)
