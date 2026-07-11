@@ -2289,8 +2289,9 @@ if _ticker_html_items:
 # TABS
 # ─────────────────────────────────────────────────────────────
 
-tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab0, tab_brief, tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🏠  Home",
+    "🌍  Morning Brief",
     "🔍  Fundamental Screen",
     "⚡  Catalyst Alerts",
     "📈  Technical Setup",
@@ -2439,6 +2440,289 @@ with tab0:
 
     </div>
     """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════
+# TAB — MORNING BRIEF
+# ═══════════════════════════════════════════════════════════════
+
+# ── Index universe ────────────────────────────────────────────
+_BRIEF_INDICES = [
+    # US
+    ("^GSPC",    "S&P 500",        "🇺🇸", "US"),
+    ("^DJI",     "Dow Jones",      "🇺🇸", "US"),
+    ("^IXIC",    "Nasdaq",         "🇺🇸", "US"),
+    ("^RUT",     "Russell 2000",   "🇺🇸", "US"),
+    # US Futures
+    ("ES=F",     "S&P Futures",    "🇺🇸", "Futures"),
+    ("NQ=F",     "Nasdaq Futures", "🇺🇸", "Futures"),
+    ("YM=F",     "Dow Futures",    "🇺🇸", "Futures"),
+    # UK
+    ("^FTSE",    "FTSE 100",       "🇬🇧", "UK"),
+    ("^FTMC",    "FTSE 250",       "🇬🇧", "UK"),
+    # Europe
+    ("^GDAXI",   "DAX",            "🇩🇪", "Europe"),
+    ("^FCHI",    "CAC 40",         "🇫🇷", "Europe"),
+    ("^STOXX50E","Euro Stoxx 50",  "🇪🇺", "Europe"),
+    # Asia
+    ("^N225",    "Nikkei 225",     "🇯🇵", "Asia"),
+    ("000001.SS","Shanghai",       "🇨🇳", "Asia"),
+    ("^HSI",     "Hang Seng",      "🇭🇰", "Asia"),
+    ("^AXJO",    "ASX 200",        "🇦🇺", "Asia"),
+    ("^BSESN",   "Sensex",         "🇮🇳", "Asia"),
+]
+
+_BRIEF_INSTRUMENTS = [
+    ("^VIX",     "VIX",            "Fear Index"),
+    ("GC=F",     "Gold",           "$/oz"),
+    ("BZ=F",     "Brent Oil",      "$/bbl"),
+    ("CL=F",     "WTI Oil",        "$/bbl"),
+    ("DX-Y.NYB", "Dollar Index",   "DXY"),
+    ("GBPUSD=X", "GBP/USD",        "FX"),
+    ("EURUSD=X", "EUR/USD",        "FX"),
+    ("USDJPY=X", "USD/JPY",        "FX"),
+    ("^TNX",     "10Y Treasury",   "Yield %"),
+]
+
+@st.cache_data(ttl=300)
+def _fetch_brief_data(tickers: list[str]) -> dict:
+    """Fetch latest price + % change for a list of tickers."""
+    out = {}
+    for sym in tickers:
+        try:
+            ti = yf.Ticker(sym).fast_info
+            price = getattr(ti, "last_price", None)
+            prev  = getattr(ti, "previous_close", None)
+            if price and prev and prev != 0:
+                chg    = price - prev
+                chg_pct = chg / prev * 100
+            else:
+                chg = chg_pct = None
+            out[sym] = {"price": price, "chg": chg, "chg_pct": chg_pct}
+        except Exception:
+            out[sym] = {"price": None, "chg": None, "chg_pct": None}
+    return out
+
+@st.cache_data(ttl=3600)
+def _fetch_econ_calendar() -> list:
+    """Fetch economic calendar from FMP for next 5 days."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    end   = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
+    try:
+        url = f"{FMP_BASE}/v3/economic_calendar?from={today}&to={end}&apikey={FMP_KEY}"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            return [e for e in data if e.get("impact") in ("High", "Medium")] if data else []
+    except Exception:
+        pass
+    return []
+
+@st.cache_data(ttl=600)
+def _fetch_market_news() -> list:
+    """Fetch top market news headlines via yfinance."""
+    try:
+        news = yf.Ticker("^GSPC").news or []
+        return news[:8]
+    except Exception:
+        return []
+
+def _brief_card(sym, label, flag, price, chg_pct):
+    """Render one index card."""
+    if price is None:
+        color, arrow, pct_str, price_str = "#64748B", "", "—", "—"
+    else:
+        up = chg_pct >= 0 if chg_pct is not None else True
+        color   = "#22C55E" if up else "#EF4444"
+        arrow   = "▲" if up else "▼"
+        pct_str = f"{arrow} {abs(chg_pct):.2f}%" if chg_pct is not None else "—"
+        price_str = f"{price:,.2f}" if price > 100 else f"{price:.4f}"
+    return (
+        f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);'
+        f'border-radius:10px;padding:12px 14px;min-width:130px">'
+        f'<div style="font-size:0.72rem;color:#64748B;margin-bottom:2px">{flag} {label}</div>'
+        f'<div style="font-size:1rem;font-weight:700;color:#F1F5F9">{price_str}</div>'
+        f'<div style="font-size:0.82rem;font-weight:600;color:{color}">{pct_str}</div>'
+        f'</div>'
+    )
+
+def _risk_sentiment(vix, gold_pct, dxy_pct):
+    """Derive simple risk-on / risk-off signal."""
+    score = 0
+    if vix is not None:
+        if vix < 15:   score += 2
+        elif vix < 20: score += 1
+        elif vix > 25: score -= 1
+        elif vix > 30: score -= 2
+    if gold_pct is not None:
+        if gold_pct > 0.5:  score -= 1   # gold up = risk-off
+        elif gold_pct < -0.5: score += 1
+    if dxy_pct is not None:
+        if dxy_pct > 0.3:  score -= 1   # dollar up = risk-off
+        elif dxy_pct < -0.3: score += 1
+    if score >= 2:
+        return "🟢 Risk-On", "#22C55E", "Markets in risk-on mode — appetite for equities is strong."
+    elif score >= 0:
+        return "🟡 Neutral", "#F59E0B", "Mixed signals — proceed with selective conviction."
+    else:
+        return "🔴 Risk-Off", "#EF4444", "Risk-off environment — caution warranted, check your stops."
+
+with tab_brief:
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:10px;padding:2px 0 6px 0">'
+        '<span style="font-size:0.95rem;font-weight:700;color:#F1F5F9">🌍 Morning Market Intelligence Briefing</span>'
+        '</div>', unsafe_allow_html=True)
+
+    # ── Fetch all data ────────────────────────────────────────
+    _all_syms  = [s for s,_,_,_ in _BRIEF_INDICES] + [s for s,_,_ in _BRIEF_INSTRUMENTS]
+    _brief_col, _econ_col = st.columns([3, 1])
+
+    with _brief_col:
+        with st.spinner("Loading global market data…"):
+            _bd = _fetch_brief_data(_all_syms)
+
+        # ── Sentiment banner ─────────────────────────────────
+        _vix_d  = _bd.get("^VIX",     {})
+        _gold_d = _bd.get("GC=F",     {})
+        _dxy_d  = _bd.get("DX-Y.NYB", {})
+        _sentiment, _sent_color, _sent_msg = _risk_sentiment(
+            _vix_d.get("price"), _gold_d.get("chg_pct"), _dxy_d.get("chg_pct"))
+
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,rgba(13,31,51,0.95),rgba(8,18,32,0.99));
+            border:1.5px solid {_sent_color}40;border-radius:14px;
+            padding:16px 22px;margin-bottom:18px;
+            display:flex;align-items:center;gap:16px">
+          <div style="font-size:2rem">{_sentiment.split()[0]}</div>
+          <div>
+            <div style="font-size:1.1rem;font-weight:800;color:{_sent_color}">
+              {' '.join(_sentiment.split()[1:])}</div>
+            <div style="font-size:0.85rem;color:#94A3B8;margin-top:2px">{_sent_msg}</div>
+          </div>
+          <div style="margin-left:auto;text-align:right">
+            <div style="font-size:0.72rem;color:#475569">VIX (Fear Index)</div>
+            <div style="font-size:1.3rem;font-weight:800;color:{'#EF4444' if (_vix_d.get('price') or 0)>20 else '#22C55E'}">
+              {f"{_vix_d.get('price'):.1f}" if _vix_d.get('price') else '—'}</div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+        # ── Indices by region ─────────────────────────────────
+        for _region in ["US", "Futures", "UK", "Europe", "Asia"]:
+            _region_items = [(s,l,f) for s,l,f,r in _BRIEF_INDICES if r == _region]
+            _label_map = {"US":"🇺🇸 United States", "Futures":"📊 Index Futures",
+                          "UK":"🇬🇧 United Kingdom", "Europe":"🌍 Europe", "Asia":"🌏 Asia Pacific"}
+            st.markdown(f'<div style="font-size:0.78rem;font-weight:700;color:#F59E0B;'
+                        f'letter-spacing:1px;text-transform:uppercase;margin:14px 0 8px 0">'
+                        f'{_label_map[_region]}</div>', unsafe_allow_html=True)
+            _cards_html = '<div style="display:flex;flex-wrap:wrap;gap:10px">'
+            for _sym, _lbl, _flg in _region_items:
+                _d = _bd.get(_sym, {})
+                _cards_html += _brief_card(_sym, _lbl, _flg, _d.get("price"), _d.get("chg_pct"))
+            _cards_html += '</div>'
+            st.markdown(_cards_html, unsafe_allow_html=True)
+
+        # ── Key instruments ───────────────────────────────────
+        st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#F59E0B;'
+                    'letter-spacing:1px;text-transform:uppercase;margin:18px 0 8px 0">'
+                    '⚙️ Key Instruments</div>', unsafe_allow_html=True)
+        _inst_html = '<div style="display:flex;flex-wrap:wrap;gap:10px">'
+        for _sym, _lbl, _unit in _BRIEF_INSTRUMENTS:
+            if _sym == "^VIX": continue  # already shown in banner
+            _d = _bd.get(_sym, {})
+            _inst_html += _brief_card(_sym, f"{_lbl} ({_unit})", "", _d.get("price"), _d.get("chg_pct"))
+        _inst_html += '</div>'
+        st.markdown(_inst_html, unsafe_allow_html=True)
+
+        # ── Market News ───────────────────────────────────────
+        st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#F59E0B;'
+                    'letter-spacing:1px;text-transform:uppercase;margin:22px 0 10px 0">'
+                    '📰 Latest Market News</div>', unsafe_allow_html=True)
+        with st.spinner("Loading news…"):
+            _news = _fetch_market_news()
+        if _news:
+            for _n in _news:
+                _title     = _n.get("title", "")
+                _link      = _n.get("link", "#")
+                _publisher = _n.get("publisher", "")
+                _ts        = _n.get("providerPublishTime", 0)
+                _dt        = datetime.fromtimestamp(_ts).strftime("%d %b %H:%M") if _ts else ""
+                st.markdown(
+                    f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.2);'
+                    f'border-radius:8px;padding:10px 14px;margin-bottom:8px">'
+                    f'<a href="{_link}" target="_blank" style="color:#E2E8F0;font-size:0.88rem;'
+                    f'font-weight:600;text-decoration:none">{_title}</a>'
+                    f'<div style="color:#475569;font-size:0.72rem;margin-top:4px">'
+                    f'{_publisher} · {_dt}</div></div>',
+                    unsafe_allow_html=True)
+        else:
+            st.info("News temporarily unavailable.")
+
+    # ── Economic Calendar (right column) ─────────────────────
+    with _econ_col:
+        st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#F59E0B;'
+                    'letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">'
+                    '📅 Economic Calendar</div>', unsafe_allow_html=True)
+        with st.spinner("Loading calendar…"):
+            _econ = _fetch_econ_calendar()
+        if _econ:
+            _prev_date = None
+            for _ev in _econ[:20]:
+                _ev_date  = _ev.get("date","")[:10]
+                _ev_time  = _ev.get("date","")[11:16]
+                _ev_name  = _ev.get("event","")
+                _ev_ctry  = _ev.get("country","")
+                _ev_imp   = _ev.get("impact","")
+                _ev_act   = _ev.get("actual","")
+                _ev_est   = _ev.get("estimate","")
+                _ev_prev  = _ev.get("previous","")
+                _imp_col  = "#EF4444" if _ev_imp=="High" else "#F59E0B"
+                _imp_dot  = f'<span style="color:{_imp_col};font-size:0.8rem">●</span>'
+                if _ev_date != _prev_date:
+                    try:
+                        _dobj = datetime.strptime(_ev_date, "%Y-%m-%d")
+                        _dlbl = "Today" if _dobj.date()==datetime.now().date() else \
+                                "Tomorrow" if (_dobj.date()-datetime.now().date()).days==1 else \
+                                _dobj.strftime("%a %d %b")
+                    except Exception:
+                        _dlbl = _ev_date
+                    st.markdown(f'<div style="font-size:0.75rem;font-weight:700;color:#64748B;'
+                                f'margin:12px 0 6px 0;text-transform:uppercase">{_dlbl}</div>',
+                                unsafe_allow_html=True)
+                    _prev_date = _ev_date
+                st.markdown(
+                    f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.2);'
+                    f'border-radius:8px;padding:8px 10px;margin-bottom:6px">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                    f'{_imp_dot} <span style="font-size:0.7rem;color:#64748B">{_ev_time} · {_ev_ctry}</span></div>'
+                    f'<div style="font-size:0.78rem;font-weight:600;color:#E2E8F0;margin:3px 0">{_ev_name}</div>'
+                    f'<div style="font-size:0.7rem;color:#475569">'
+                    f'Act: <span style="color:#F1F5F9">{_ev_act or "—"}</span> &nbsp;'
+                    f'Est: {_ev_est or "—"} &nbsp;Prev: {_ev_prev or "—"}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True)
+        else:
+            st.markdown('<div style="color:#64748B;font-size:0.85rem">'
+                        'No high/medium impact events in the next 5 days.</div>',
+                        unsafe_allow_html=True)
+
+        # ── Useful links ──────────────────────────────────────
+        st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#F59E0B;'
+                    'letter-spacing:1px;text-transform:uppercase;margin:20px 0 10px 0">'
+                    '🔗 Professional Resources</div>', unsafe_allow_html=True)
+        _links = [
+            ("Financial Juice", "https://www.financialjuice.com", "Real-time news squawk"),
+            ("Investing.com", "https://www.investing.com/economic-calendar/", "Economic calendar"),
+            ("TradingView", "https://www.tradingview.com", "Charts & technicals"),
+            ("Reuters", "https://www.reuters.com/finance/markets/", "Market news"),
+            ("Bloomberg", "https://www.bloomberg.com/markets", "Global markets"),
+        ]
+        for _name, _url, _desc in _links:
+            st.markdown(
+                f'<a href="{_url}" target="_blank" style="display:block;'
+                f'background:#0D1F33;border:1px solid rgba(100,116,139,0.2);'
+                f'border-radius:8px;padding:8px 12px;margin-bottom:6px;text-decoration:none">'
+                f'<div style="font-size:0.82rem;font-weight:600;color:#3B82F6">{_name}</div>'
+                f'<div style="font-size:0.7rem;color:#475569">{_desc}</div></a>',
+                unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1 — FUNDAMENTAL SCREEN
