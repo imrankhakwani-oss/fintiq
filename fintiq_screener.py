@@ -6299,12 +6299,12 @@ with tab4:
             _exists = any(p["ticker_a"] == ticker_a and p["ticker_b"] == ticker_b for p in _pwl_cur)
             if _exists:
                 st.info("This pair is already in your watchlist.")
-        else:
-            _pwl_cur.append({
-                "ticker_a": ticker_a, "ticker_b": ticker_b, "name": _save_name or pair_label
-            })
-            st.session_state["fintiq_pairs_watchlist"] = _pwl_cur
-            st.success(f"✅ Saved: {_save_name or pair_label}")
+            else:
+                _pwl_cur.append({
+                    "ticker_a": ticker_a, "ticker_b": ticker_b, "name": _save_name or pair_label
+                })
+                st.session_state["fintiq_pairs_watchlist"] = _pwl_cur
+                st.success(f"✅ Saved: {_save_name or pair_label}")
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 5 — TRADING JOURNAL  (preserved — full code on Desktop copy)
@@ -6848,6 +6848,7 @@ with tab_opt:
     st.markdown("---")
     st.markdown(
         '<div style="font-size:0.75rem;color:#475569;padding:8px 0">'
-        '⚠️ <b>Disclaimer:</b> Portfolio optimization is based on historical price data. Past correlations and '
-        'not financial advice. Always conduct your own due diligence before making investment decisions.'
+        'Disclaimer: Portfolio optimization uses historical price data. Past performance'
+        ' does not guarantee future results. For educational purposes only,'
+        ' not financial advice. Always do your own research.'
         '</div>', unsafe_allow_html=True)
