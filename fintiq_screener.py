@@ -2819,14 +2819,9 @@ with tab_brief:
                                 annotation_position="right",
                                 annotation_font_size=9,
                                 annotation_font_color="#94A3B8")
-            # Zone boundary lines
+            # Zone boundary lines — no annotation text (avoids overlap with y-axis ticks)
             for _yval, _col in [(20, "#F59E0B"), (30, "#EF4444"), (40, "#991B1B")]:
-                _vfig.add_hline(y=_yval, line_dash="dot", line_color=_col,
-                                line_width=1,
-                                annotation_text=str(_yval),
-                                annotation_position="left",
-                                annotation_font_size=9,
-                                annotation_font_color=_col)
+                _vfig.add_hline(y=_yval, line_dash="dot", line_color=_col, line_width=1)
             # VIX line
             _fill_rgba = f"rgba({int(_vix_color[1:3],16)},{int(_vix_color[3:5],16)},{int(_vix_color[5:7],16)},0.15)"
             _vfig.add_trace(go.Scatter(
