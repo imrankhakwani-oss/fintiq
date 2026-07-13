@@ -713,7 +713,19 @@ def _show_auth_wall():
                     st.error(f"Error: {err}")
 
 def _show_upgrade_wall(user_email: str, user_id: str):
-    """Upgrade wall shown to free users after 10 searches/month."""
+    """Upgrade wall shown to free users after 10 searches/month.
+    Stripe URLs pre-generated on first render and cached — no button-click API calls."""
+
+    # Generate checkout URLs once, cache in session state
+    # This happens on the SAME render pass as showing the wall — no rerun needed
+    if "_wall_monthly_url" not in st.session_state:
+        st.session_state["_wall_monthly_url"] = _create_checkout("monthly", user_email, user_id) or ""
+    if "_wall_annual_url" not in st.session_state:
+        st.session_state["_wall_annual_url"]  = _create_checkout("annual",  user_email, user_id) or ""
+
+    _m_url = st.session_state["_wall_monthly_url"]
+    _a_url = st.session_state["_wall_annual_url"]
+
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0D2137,#0A1628);
         border:1px solid rgba(245,158,11,0.4);border-radius:16px;
@@ -744,33 +756,20 @@ def _show_upgrade_wall(user_email: str, user_id: str):
       </div>
     </div>""", unsafe_allow_html=True)
 
-    _, col, _ = st.columns([1,2,1])
+    _, col, _ = st.columns([1, 2, 1])
     with col:
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("▶ Monthly — £10/mo", use_container_width=True,
-                         type="primary", key="upgrade_monthly"):
-                url = _create_checkout("monthly", user_email, user_id)
-                if url:
-                    st.session_state["_checkout_ready"] = url
-                else:
-                    st.error("Could not create checkout — check Stripe keys in Railway.")
-        with c2:
-            if st.button("⭐ Annual — £100/yr", use_container_width=True,
-                         key="upgrade_annual"):
-                url = _create_checkout("annual", user_email, user_id)
-                if url:
-                    st.session_state["_checkout_ready"] = url
-                else:
-                    st.error("Could not create checkout — check Stripe keys in Railway.")
-
-        # Show link button on same render pass — no rerun needed
-        if "_checkout_ready" in st.session_state:
-            _co_url = st.session_state["_checkout_ready"]
-            st.success("✅ Checkout ready!")
-            st.link_button("🔒 Proceed to Secure Stripe Payment →", _co_url,
-                           use_container_width=True, type="primary")
-            st.caption("Opens Stripe's secure payment page. Your card details are never stored by Fintiq.")
+        if _m_url and _a_url:
+            # st.link_button = plain <a href> — no Streamlit rerun, no logout
+            c1, c2 = st.columns(2)
+            with c1:
+                st.link_button("▶ Monthly — £10/mo", _m_url,
+                               use_container_width=True, type="primary")
+            with c2:
+                st.link_button("⭐ Annual — £100/yr", _a_url,
+                               use_container_width=True)
+            st.caption("🔒 Secure payment via Stripe · Cancel anytime · Card never stored by Fintiq")
+        else:
+            st.error("Payment system unavailable — STRIPE_SECRET_KEY may not be set in Railway variables.")
 
 # ── Logged-in user email (empty string if guest) ─────────────
 _user_email = st.session_state.get("fintiq_user", {}).get("email", "")
