@@ -766,10 +766,13 @@ st.markdown("""
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
   /* ── HIDE STREAMLIT DEFAULT HEADER / TOOLBAR ── */
-  header[data-testid="stHeader"] { display: none !important; }
-  #MainMenu { visibility: hidden !important; }
+  header[data-testid="stHeader"] { display: none !important; height: 0 !important; min-height: 0 !important; }
+  #MainMenu { visibility: hidden !important; display: none !important; }
   .stDeployButton { display: none !important; }
   footer { display: none !important; }
+  section[data-testid="stAppViewContainer"] > div:first-child { padding-top: 0 !important; }
+  div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
+  .appview-container .main .block-container { padding-top: 0 !important; margin-top: 0 !important; }
 
   /* ── DARK PROFESSIONAL BASE ── */
   html, body, .stApp {
