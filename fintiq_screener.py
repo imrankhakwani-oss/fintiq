@@ -752,24 +752,25 @@ def _show_upgrade_wall(user_email: str, user_id: str):
                          type="primary", key="upgrade_monthly"):
                 url = _create_checkout("monthly", user_email, user_id)
                 if url:
-                    st.session_state["_pending_checkout_url"] = url
-                    st.rerun()
+                    st.session_state["_checkout_ready"] = url
                 else:
-                    st.error("Stripe checkout unavailable — check STRIPE_SECRET_KEY in Railway variables.")
+                    st.error("Could not create checkout — check Stripe keys in Railway.")
         with c2:
             if st.button("⭐ Annual — £100/yr", use_container_width=True,
                          key="upgrade_annual"):
                 url = _create_checkout("annual", user_email, user_id)
                 if url:
-                    st.session_state["_pending_checkout_url"] = url
-                    st.rerun()
+                    st.session_state["_checkout_ready"] = url
                 else:
-                    st.error("Stripe checkout unavailable — check STRIPE_SECRET_KEY in Railway variables.")
+                    st.error("Could not create checkout — check Stripe keys in Railway.")
 
-    # JS redirect fired on next render (avoids meta-refresh stripping)
-    if "_pending_checkout_url" in st.session_state:
-        _co_url = st.session_state.pop("_pending_checkout_url")
-        _stc.html(f'<script>window.top.location.href = "{_co_url}";</script>', height=0)
+        # Show link button on same render pass — no rerun needed
+        if "_checkout_ready" in st.session_state:
+            _co_url = st.session_state["_checkout_ready"]
+            st.success("✅ Checkout ready!")
+            st.link_button("🔒 Proceed to Secure Stripe Payment →", _co_url,
+                           use_container_width=True, type="primary")
+            st.caption("Opens Stripe's secure payment page. Your card details are never stored by Fintiq.")
 
 # ── Logged-in user email (empty string if guest) ─────────────
 _user_email = st.session_state.get("fintiq_user", {}).get("email", "")
@@ -2148,12 +2149,9 @@ if _qp_page == "pricing":
                     else:
                         url = _create_checkout("monthly", _pu_email, _pu_id)
                         if url:
-                            st.session_state["_pending_checkout_url"] = url
-                            st.rerun()
-                            st.info("Redirecting to checkout…")
-                            st.stop()
+                            st.session_state["_checkout_ready"] = url
                         else:
-                            st.error("Could not start checkout.")
+                            st.error("Could not start checkout — check Stripe keys.")
             with _btn_yr:
                 if st.button("Annual — £100/yr ⭐", use_container_width=True,
                              key="price_annual"):
@@ -2164,12 +2162,14 @@ if _qp_page == "pricing":
                     else:
                         url = _create_checkout("annual", _pu_email, _pu_id)
                         if url:
-                            st.session_state["_pending_checkout_url"] = url
-                            st.rerun()
-                            st.info("Redirecting to checkout…")
-                            st.stop()
+                            st.session_state["_checkout_ready"] = url
                         else:
-                            st.error("Could not start checkout.")
+                            st.error("Could not start checkout — check Stripe keys.")
+            if "_checkout_ready" in st.session_state:
+                st.success("✅ Checkout ready!")
+                st.link_button("🔒 Proceed to Secure Stripe Payment →",
+                               st.session_state["_checkout_ready"],
+                               use_container_width=True, type="primary")
 
     st.markdown("""
     <div style="text-align:center;color:#334155;font-size:0.8rem;margin-top:32px">
@@ -6707,8 +6707,11 @@ with tab_opt:
                 if st.button("🚀 Upgrade to Pro — Unlock Optimizer", use_container_width=True, type="primary"):
                     _co_url = _create_checkout("monthly", _u_email, _opt_user.get("id", ""))
                     if _co_url:
-                        st.session_state["_pending_checkout_url"] = _co_url
-                        st.rerun()
+                        st.session_state["_checkout_ready"] = _co_url
+                if "_checkout_ready" in st.session_state:
+                    st.link_button("🔒 Proceed to Stripe Payment →",
+                                   st.session_state["_checkout_ready"],
+                                   use_container_width=True, type="primary")
             else:
                 if st.button("🔑 Log in to upgrade", use_container_width=True, type="primary"):
                     st.session_state["show_login"] = True
