@@ -2423,7 +2423,9 @@ with tab0:
         <div style="font-size:1rem;color:#94A3B8;max-width:680px;margin:12px auto 0;line-height:1.7">
           Screen 10+ global markets for quality value stocks · Value companies with
           <strong style="color:#F1F5F9">DCF, Graham &amp; industry models</strong> ·
-          Detect catalysts before the crowd · Trade pairs like a hedge fund · Journal every position —
+          Detect catalysts before the crowd · Trade pairs like a hedge fund ·
+          Optimise your portfolio allocation with <strong style="color:#F1F5F9">Nobel Prize-winning MPT</strong> ·
+          Journal every position —
           <strong style="color:#F59E0B">all in one platform.</strong>
         </div>
       </div>
@@ -2512,6 +2514,62 @@ with tab0:
         </div>
       </div>
 
+      <!-- Portfolio Optimizer Feature Highlight -->
+      <div style="background:linear-gradient(135deg,rgba(13,31,53,0.95),rgba(8,18,32,0.99));
+                  border-radius:16px;padding:28px 32px;margin-bottom:28px;
+                  border:1px solid rgba(245,158,11,0.3)">
+        <div style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap">
+          <div style="flex:1;min-width:260px">
+            <div style="font-size:0.7rem;font-weight:700;color:#F59E0B;text-transform:uppercase;
+                        letter-spacing:1.5px;margin-bottom:8px">⭐ Pro Feature</div>
+            <div style="font-size:1.25rem;font-weight:900;color:#F1F5F9;margin-bottom:10px">
+              📐 Portfolio Optimiser
+            </div>
+            <div style="color:#94A3B8;font-size:0.9rem;line-height:1.75;margin-bottom:16px">
+              Once you've found great stocks, the hardest question is: <em style="color:#F1F5F9">how much to put in each?</em>
+              Equal-weighting leaves return on the table. Guessing takes on hidden risk.
+              The Fintiq Portfolio Optimiser uses <strong style="color:#F1F5F9">Nobel Prize-winning
+              Modern Portfolio Theory</strong> to calculate the mathematically optimal allocation —
+              maximising return per unit of risk for your exact set of stocks.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.82rem;color:#94A3B8">
+              <div>✅ 6 optimisation objectives</div>
+              <div>✅ Efficient Frontier chart</div>
+              <div>✅ Sharpe · Sortino · VaR</div>
+              <div>✅ Max Drawdown analysis</div>
+              <div>✅ Correlation matrix</div>
+              <div>✅ Live weight drift monitor</div>
+              <div>✅ Risk Parity (All Weather)</div>
+              <div>✅ AI portfolio commentary</div>
+            </div>
+          </div>
+          <div style="flex:0 0 220px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);
+                      border-radius:12px;padding:16px">
+            <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;margin-bottom:10px">
+              Example — Equal vs Optimised</div>
+            <div style="margin-bottom:10px">
+              <div style="font-size:0.75rem;color:#94A3B8;margin-bottom:3px">Equal Weight (5 stocks)</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;background:#1E3A5F;border-radius:3px;height:6px">
+                  <div style="background:#475569;width:60%;height:6px;border-radius:3px"></div></div>
+                <span style="font-size:0.8rem;color:#64748B;font-weight:700">0.6 Sharpe</span>
+              </div>
+            </div>
+            <div style="margin-bottom:14px">
+              <div style="font-size:0.75rem;color:#F59E0B;margin-bottom:3px">Optimised Weights ⭐</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;background:#1E3A5F;border-radius:3px;height:6px">
+                  <div style="background:#F59E0B;width:92%;height:6px;border-radius:3px"></div></div>
+                <span style="font-size:0.8rem;color:#F59E0B;font-weight:700">1.1 Sharpe</span>
+              </div>
+            </div>
+            <div style="font-size:0.72rem;color:#64748B;text-align:center;border-top:1px solid rgba(100,116,139,0.2);padding-top:10px">
+              Same 5 stocks · Lower volatility<br>+83% better risk-adjusted return
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- How to use -->
       <div style="background:rgba(13,31,53,0.7);border-radius:14px;padding:28px 32px;
                   border-left:4px solid #4ADE80;margin-bottom:28px">
@@ -2519,17 +2577,21 @@ with tab0:
           🚀 How to Use Fintiq
         </div>
         <div style="color:#CBD5E1;font-size:0.9rem;line-height:1.85">
-          <strong style="color:#F1F5F9">Step 1 — Run the Fundamental Screen</strong> (Tab 2)<br>
+          <strong style="color:#F1F5F9">Step 1 — Run the Fundamental Screen</strong> (Fundamental Screen tab)<br>
           Select your market (e.g. GB London LSE), set quality thresholds, and click Run Screen.
           Fintiq will score every stock in the universe and surface the highest-quality names.<br><br>
           <strong style="color:#F1F5F9">Step 2 — Deep-Dive the candidates</strong><br>
           Click any row in the results table to open the Stock Deep-Dive. Review the 5-year
           financial history, adjust your DCF assumptions, and read the intrinsic value estimates.
           Use the AI Commentary button for a quick analyst perspective.<br><br>
-          <strong style="color:#F1F5F9">Step 3 — Check Catalysts & Technicals</strong> (Tabs 3 & 4)<br>
+          <strong style="color:#F1F5F9">Step 3 — Check Catalysts &amp; Technicals</strong><br>
           Your screened stocks auto-populate into Catalyst Alerts and Technical Setup. Look for
           earnings dates, analyst revisions, RSI levels and volume signals to time your entry.<br><br>
-          <strong style="color:#F1F5F9">Step 4 — Log your trades</strong> (Tab 6)<br>
+          <strong style="color:#F1F5F9">Step 4 — Optimise your allocation</strong> ⭐ Pro<br>
+          Enter your chosen tickers into the Portfolio Optimiser. Select an objective
+          (Maximise Sharpe, Risk Parity, Target Return and more), review the Efficient Frontier,
+          and get the mathematically optimal weight for each position.<br><br>
+          <strong style="color:#F1F5F9">Step 5 — Log your trades</strong> (Journal tab)<br>
           Use the Trading Journal to record entries, exits and notes. Track your equity curve
           and win rate over time to identify what's actually working.
         </div>
