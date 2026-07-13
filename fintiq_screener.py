@@ -563,8 +563,16 @@ def _increment_search(user_id: str, profile: dict) -> dict:
     return updated
 
 # ── Stripe helpers ────────────────────────────────────────────
+_stripe_last_error: str = ""   # populated on failure for diagnostics
+
 def _create_checkout(plan: str, user_email: str, user_id: str) -> str | None:
-    if not _stripe or not _STRIPE_SECRET:
+    global _stripe_last_error
+    _stripe_last_error = ""
+    if not _stripe:
+        _stripe_last_error = "stripe library not imported"
+        return None
+    if not _STRIPE_SECRET:
+        _stripe_last_error = "STRIPE_SECRET_KEY env var is empty"
         return None
     price_id = _PRICE_ANNUAL if plan == "annual" else _PRICE_MONTHLY
     try:
@@ -577,7 +585,8 @@ def _create_checkout(plan: str, user_email: str, user_id: str) -> str | None:
             metadata={"user_id": user_id},
         )
         return session.url
-    except Exception:
+    except Exception as _e:
+        _stripe_last_error = str(_e)
         return None
 
 def _verify_stripe_session(session_id: str, user_id: str) -> bool:
@@ -716,15 +725,19 @@ def _show_upgrade_wall(user_email: str, user_id: str):
     """Upgrade wall shown to free users after 10 searches/month.
     Stripe URLs pre-generated on first render and cached — no button-click API calls."""
 
-    # Generate checkout URLs once, cache in session state
-    # This happens on the SAME render pass as showing the wall — no rerun needed
-    if "_wall_monthly_url" not in st.session_state:
-        st.session_state["_wall_monthly_url"] = _create_checkout("monthly", user_email, user_id) or ""
-    if "_wall_annual_url" not in st.session_state:
-        st.session_state["_wall_annual_url"]  = _create_checkout("annual",  user_email, user_id) or ""
+    # Only cache successful URLs — retry every render if empty (avoids stale "" from earlier failure)
+    if not st.session_state.get("_wall_monthly_url"):
+        _mu = _create_checkout("monthly", user_email, user_id)
+        if _mu:
+            st.session_state["_wall_monthly_url"] = _mu
+    if not st.session_state.get("_wall_annual_url"):
+        _au = _create_checkout("annual", user_email, user_id)
+        if _au:
+            st.session_state["_wall_annual_url"] = _au
 
-    _m_url = st.session_state["_wall_monthly_url"]
-    _a_url = st.session_state["_wall_annual_url"]
+    _m_url = st.session_state.get("_wall_monthly_url", "")
+    _a_url = st.session_state.get("_wall_annual_url", "")
+    _last_err = _stripe_last_error  # capture after create_checkout calls above
 
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0D2137,#0A1628);
@@ -769,7 +782,7 @@ def _show_upgrade_wall(user_email: str, user_id: str):
                                use_container_width=True)
             st.caption("🔒 Secure payment via Stripe · Cancel anytime · Card never stored by Fintiq")
         else:
-            st.error("Payment system unavailable — STRIPE_SECRET_KEY may not be set in Railway variables.")
+            st.error(f"Payment system error: {_last_err or _stripe_last_error or 'unknown — check Railway logs'}")
 
 # ── Logged-in user email (empty string if guest) ─────────────
 _user_email = st.session_state.get("fintiq_user", {}).get("email", "")
