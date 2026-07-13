@@ -21,8 +21,8 @@ warnings.filterwarnings("ignore")
 # ── Supabase auth ──────────────────────────────────────────────
 try:
     from supabase import create_client, Client as SupabaseClient
-    _SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
-    _SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+    _SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+    _SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
     _sb: SupabaseClient = create_client(_SUPABASE_URL, _SUPABASE_KEY) if _SUPABASE_URL else None
 except Exception:
     _sb = None
@@ -30,8 +30,8 @@ except Exception:
 # ── Stripe ─────────────────────────────────────────────────────
 try:
     import stripe as _stripe
-    _STRIPE_SECRET  = st.secrets.get("STRIPE_SECRET_KEY", "")
-    _STRIPE_PUB     = st.secrets.get("STRIPE_PUBLISHABLE_KEY", "")
+    _STRIPE_SECRET  = os.environ.get("STRIPE_SECRET_KEY", "")
+    _STRIPE_PUB     = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
     _PRICE_MONTHLY  = "price_1TrhHVFTN1XDVLFMznTk6ZXR"
     _PRICE_ANNUAL   = "price_1TrhItFTN1XDVLFMTVceBUT0"
     _APP_URL        = "https://fintiq.uk"
@@ -764,6 +764,12 @@ _user_email = st.session_state.get("fintiq_user", {}).get("email", "")
 st.markdown("""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  /* ── HIDE STREAMLIT DEFAULT HEADER / TOOLBAR ── */
+  header[data-testid="stHeader"] { display: none !important; }
+  #MainMenu { visibility: hidden !important; }
+  .stDeployButton { display: none !important; }
+  footer { display: none !important; }
 
   /* ── DARK PROFESSIONAL BASE ── */
   html, body, .stApp {
