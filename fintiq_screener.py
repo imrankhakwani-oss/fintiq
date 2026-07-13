@@ -844,9 +844,17 @@ st.markdown("""
   #MainMenu { visibility: hidden !important; display: none !important; }
   .stDeployButton { display: none !important; }
   footer { display: none !important; }
+  /* Remove ALL top padding from every Streamlit wrapper — covers v1.30+ and v1.40+ element names */
   section[data-testid="stAppViewContainer"] > div:first-child { padding-top: 0 !important; }
   div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
+  div[data-testid="stMainBlockContainer"] { padding-top: 0 !important; }
+  div[data-testid="stMain"] { padding-top: 0 !important; }
+  div[data-testid="stVerticalBlock"] > div:first-child { padding-top: 0 !important; }
   .appview-container .main .block-container { padding-top: 0 !important; margin-top: 0 !important; }
+  .main .block-container { padding-top: 0 !important; margin-top: 0 !important; }
+  [data-testid="stAppViewContainer"] { padding-top: 0 !important; }
+  .stApp > header { display: none !important; }
+  .stApp { padding-top: 0 !important; margin-top: 0 !important; }
 
   /* ── DARK PROFESSIONAL BASE ── */
   html, body, .stApp {
@@ -6699,143 +6707,227 @@ with tab_opt:
             st.session_state["fintiq_profile"] = _opt_prof
             _opt_pro = True
 
-    # ── Pro gate with rich preview ───────────────────────────────
+    # ── Pro gate with LIVE demo portfolio ────────────────────────
     if not _opt_pro:
         import numpy as _np_demo
+        from scipy.optimize import minimize as _min_demo
 
-        # Generate demo data (same seed = reproducible)
-        _np_demo.random.seed(42)
-        _n_demo   = 400
-        _ret_d    = _np_demo.random.uniform(0.04, 0.30, _n_demo)
-        _vol_d    = _np_demo.random.uniform(0.07, 0.40, _n_demo)
-        _sharpe_d = _ret_d / _vol_d
-        _best_i   = int(_np_demo.argmax(_sharpe_d))
+        # ── Hero pitch ───────────────────────────────────────────
+        st.markdown("""
+<div style="background:linear-gradient(135deg,#0D2137,#0A1628);border:1px solid rgba(245,158,11,0.35);
+border-radius:14px;padding:24px 28px;margin-bottom:20px">
+  <div style="font-size:1.6rem;font-weight:900;color:#F59E0B;margin-bottom:6px">
+    📐 Portfolio Optimiser — powered by Nobel Prize-winning finance</div>
+  <div style="color:#CBD5E1;font-size:0.95rem;line-height:1.7">
+    Stop guessing how much to put in each stock. The Fintiq Optimiser uses
+    <b style="color:#F1F5F9">Modern Portfolio Theory</b> to find the exact allocation that
+    maximises your return per unit of risk — the same mathematics used by hedge funds and
+    institutional asset managers every day.
+  </div>
+  <div style="display:flex;gap:24px;margin-top:16px;flex-wrap:wrap">
+    <div style="color:#94A3B8;font-size:0.85rem">✅ Efficient Frontier chart</div>
+    <div style="color:#94A3B8;font-size:0.85rem">✅ 6 optimisation objectives</div>
+    <div style="color:#94A3B8;font-size:0.85rem">✅ Sharpe · Sortino · VaR · Max Drawdown</div>
+    <div style="color:#94A3B8;font-size:0.85rem">✅ Correlation matrix</div>
+    <div style="color:#94A3B8;font-size:0.85rem">✅ Live weight drift monitor</div>
+    <div style="color:#94A3B8;font-size:0.85rem">✅ AI portfolio commentary</div>
+  </div>
+</div>""", unsafe_allow_html=True)
 
-        # Demo optimal weights (blurred snapshot)
-        _demo_tickers  = ["AAPL", "MSFT", "HSBA.L", "SHEL.L", "VOD.L"]
-        _demo_weights  = [0.31, 0.24, 0.18, 0.15, 0.12]
+        st.markdown(
+            '<div style="font-size:0.85rem;color:#F59E0B;font-weight:700;'
+            'text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">'
+            '🔴 Live Demo — Real Data · 10 Blue-Chip Stocks · Results blurred for Pro subscribers</div>',
+            unsafe_allow_html=True)
 
-        # ── Row 1: Frontier chart (left) + blurred allocation snapshot (right) ──
-        _prev_left, _prev_right = st.columns([3, 1])
+        # ── Run REAL optimisation on demo portfolio ───────────────
+        _DEMO_TICKERS = ("AAPL", "MSFT", "NVDA", "GOOGL", "HSBA.L",
+                         "SHEL.L", "BP.L", "ULVR.L", "GSK.L", "RIO.L")
+        _DEMO_NAMES   = {"AAPL":"Apple","MSFT":"Microsoft","NVDA":"Nvidia",
+                         "GOOGL":"Alphabet","HSBA.L":"HSBC","SHEL.L":"Shell",
+                         "BP.L":"BP","ULVR.L":"Unilever","GSK.L":"GSK","RIO.L":"Rio Tinto"}
 
-        with _prev_left:
-            st.markdown(
-                '<div style="font-size:0.78rem;font-weight:700;color:#F59E0B;'
-                'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">'
-                'Live Preview — Efficient Frontier</div>', unsafe_allow_html=True)
-            _demo_fig = go.Figure()
-            _demo_fig.add_trace(go.Scatter(
-                x=_vol_d, y=_ret_d, mode="markers",
-                marker=dict(color=_sharpe_d, colorscale="Viridis", size=5, opacity=0.55,
-                            colorbar=dict(title=dict(text="Sharpe", font=dict(color="#64748B")), thickness=10, len=0.65,
-                                          tickfont=dict(color="#64748B"))),
-                name="Portfolios",
+        @st.cache_data(ttl=86400, show_spinner=False)
+        def _demo_opt_data():
+            try:
+                import yfinance as _yfd
+                _px = _yfd.download(list(_DEMO_TICKERS), period="2y",
+                                    auto_adjust=True, progress=False)["Close"]
+                if isinstance(_px, pd.Series):
+                    _px = _px.to_frame()
+                _px = _px.ffill().dropna()
+                _ret = _px.pct_change().dropna()
+                _mr  = _ret.mean()
+                _cv  = _ret.cov()
+                _n   = len(_mr)
+                def _ps(w):
+                    r = float(_np_demo.dot(w, _mr)*252)
+                    v = float(_np_demo.sqrt(w @ _cv.values @ w * 252))
+                    s = (r - 0.0425) / v if v > 0 else 0
+                    return r, v, s
+                cons = ({"type":"eq","fun":lambda w: _np_demo.sum(w)-1},)
+                bnds = tuple((0.02,0.40) for _ in range(_n))
+                w0   = _np_demo.array([1/_n]*_n)
+                res  = _min_demo(lambda w: -_ps(w)[2], w0, method="SLSQP",
+                                 bounds=bnds, constraints=cons)
+                _ow  = res.x if res.success else w0
+                _or, _ov, _os = _ps(_ow)
+                # Simulate portfolios for frontier
+                _np_demo.random.seed(42)
+                _svols,_srets,_sshrp = [],[],[]
+                for _ in range(1500):
+                    _w = _np_demo.random.dirichlet(_np_demo.ones(_n))
+                    _r,_v,_s = _ps(_w); _svols.append(_v); _srets.append(_r); _sshrp.append(_s)
+                # Efficient frontier line
+                _min_r = float(_mr.min()*252); _max_r = float(_mr.max()*252)
+                _ef_v,_ef_r = [],[]
+                for _t in _np_demo.linspace(_min_r,_max_r,200):
+                    _c = ({"type":"eq","fun":lambda w: _np_demo.sum(w)-1},
+                          {"type":"eq","fun":lambda w,t=_t: _ps(w)[0]-t})
+                    _b = tuple((0.0,1.0) for _ in range(_n))
+                    _r2 = _min_demo(lambda w: _ps(w)[1], w0, method="SLSQP",
+                                    bounds=_b, constraints=_c)
+                    if _r2.success:
+                        _ef_v.append(_ps(_r2.x)[1]); _ef_r.append(_t)
+                return dict(weights=_ow, ret=_or, vol=_ov, sharpe=_os,
+                            tickers=list(_mr.index), svols=_svols, srets=_srets,
+                            sshrp=_sshrp, ef_v=_ef_v, ef_r=_ef_r,
+                            corr=_ret[list(_mr.index)].corr().values.tolist(),
+                            var95=float(-_np_demo.percentile(_ret.dot(_ow), 5)))
+            except Exception as _e:
+                return None
+
+        with st.spinner("Loading live demo data (real market prices)…"):
+            _dd = _demo_opt_data()
+
+        if _dd is None:
+            st.info("Demo data temporarily unavailable. Subscribe to run optimisations on your own portfolio.")
+        else:
+            _d_tickers = _dd["tickers"]
+            _d_weights = _dd["weights"]
+            _d_ret, _d_vol, _d_sharpe = _dd["ret"], _dd["vol"], _dd["sharpe"]
+
+            # ── Efficient Frontier — FULL, unblurred ─────────────
+            st.markdown("**Efficient Frontier** — 1,500 random portfolios + optimal allocation (real data, 2 years)")
+            _df2 = go.Figure()
+            _df2.add_trace(go.Scatter(
+                x=_dd["svols"], y=_dd["srets"], mode="markers",
+                marker=dict(color=_dd["sshrp"], colorscale="Viridis", size=4, opacity=0.45,
+                            colorbar=dict(title="Sharpe", thickness=10,
+                                          tickfont=dict(color="#64748B"), len=0.7)),
+                name="Random portfolios",
                 hovertemplate="Vol: %{x:.1%}<br>Return: %{y:.1%}<extra></extra>"
             ))
-            _demo_fig.add_trace(go.Scatter(
-                x=[_vol_d[_best_i]], y=[_ret_d[_best_i]], mode="markers+text",
-                marker=dict(color="#F59E0B", size=16, symbol="star",
-                            line=dict(color="#FFFFFF", width=1.5)),
-                text=["Max Sharpe"], textposition="top right",
-                textfont=dict(color="#F59E0B", size=11), name="Optimal"
+            if _dd["ef_v"]:
+                _df2.add_trace(go.Scatter(
+                    x=_dd["ef_v"], y=_dd["ef_r"], mode="lines",
+                    line=dict(color="#F59E0B", width=2.5), name="Efficient Frontier"))
+            _df2.add_trace(go.Scatter(
+                x=[_d_vol], y=[_d_ret], mode="markers",
+                marker=dict(color="#F59E0B", size=18, symbol="star",
+                            line=dict(color="#fff", width=1.5)),
+                name="Optimal Portfolio",
+                hovertemplate=f"<b>Optimal</b><br>Vol:{_d_vol:.1%} Return:{_d_ret:.1%} Sharpe:{_d_sharpe:.2f}<extra></extra>"
             ))
-            _demo_fig.update_layout(
-                height=220,
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                margin=dict(l=36, r=16, t=6, b=32),
-                showlegend=False,
+            _df2.add_annotation(x=_d_vol, y=_d_ret, text="⭐ Optimal",
+                                xanchor="left", yanchor="bottom", xshift=8, yshift=4,
+                                font=dict(color="#F59E0B", size=11), showarrow=False,
+                                bgcolor="rgba(13,31,51,0.8)", borderpad=3)
+            _df2.update_layout(
+                height=380, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=40, r=30, t=10, b=50),
+                legend=dict(font=dict(color="#94A3B8", size=10), bgcolor="rgba(13,31,51,0.85)",
+                            bordercolor="rgba(100,116,139,0.3)", borderwidth=1,
+                            orientation="h", x=0, y=1.08),
                 xaxis=dict(title="Annual Volatility (Risk)", tickformat=".0%",
-                           gridcolor="rgba(100,116,139,0.18)",
-                           tickfont=dict(color="#64748B", size=9)),
+                           gridcolor="rgba(100,116,139,0.15)", tickfont=dict(color="#64748B")),
                 yaxis=dict(title="Expected Annual Return", tickformat=".0%",
-                           gridcolor="rgba(100,116,139,0.18)",
-                           tickfont=dict(color="#64748B", size=9)),
+                           gridcolor="rgba(100,116,139,0.15)", tickfont=dict(color="#64748B")),
             )
-            st.plotly_chart(_demo_fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(_df2, use_container_width=True, config={"displayModeBar": False})
 
-        with _prev_right:
-            # Blurred allocation + KPI — compact single card
-            _alloc_html = (
-                '<div style="font-size:0.72rem;font-weight:700;color:#F59E0B;'
-                'text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">'
-                'Optimal Allocation</div>'
-                '<div style="background:#0D1F33;border:1px solid rgba(245,158,11,0.3);'
-                'border-radius:8px;padding:8px 10px;filter:blur(3px);user-select:none;'
-                'pointer-events:none">'
-            )
-            for _dt, _dw in zip(_demo_tickers, _demo_weights):
-                _bar_pct = int(_dw * 100)
-                _alloc_html += (
-                    f'<div style="margin-bottom:5px">'
-                    f'<div style="display:flex;justify-content:space-between;'
-                    f'font-size:0.72rem;color:#F1F5F9;margin-bottom:2px">'
-                    f'<span>{_dt}</span><span>{_dw:.0%}</span></div>'
-                    f'<div style="background:#1E3A5F;border-radius:3px;height:4px">'
-                    f'<div style="background:#F59E0B;width:{_bar_pct}%;'
-                    f'height:4px;border-radius:3px"></div></div></div>'
-                )
-            # Inline KPIs below bars
-            _alloc_html += (
-                '</div>'
-                '<div style="margin-top:5px;display:flex;gap:4px">'
-            )
-            for _kl, _kv, _kc in [("Return", "+18.4%", "#22C55E"),
-                                    ("Sharpe", "1.42", "#F59E0B"),
-                                    ("VaR95", "-1.8%", "#EF4444")]:
-                _alloc_html += (
-                    f'<div style="flex:1;background:#0D1F33;border:1px solid rgba(245,158,11,0.2);'
-                    f'border-radius:6px;padding:4px 6px;filter:blur(3px);user-select:none;'
-                    f'pointer-events:none;text-align:center">'
-                    f'<div style="font-size:0.58rem;color:#64748B;text-transform:uppercase">{_kl}</div>'
-                    f'<div style="font-size:0.85rem;font-weight:800;color:{_kc}">{_kv}</div>'
-                    f'</div>'
-                )
-            _alloc_html += (
-                '</div>'
-                '<div style="text-align:center;margin-top:4px;font-size:0.65rem;color:#F59E0B">'
-                'Pro unlock required</div>'
-            )
-            st.markdown(_alloc_html, unsafe_allow_html=True)
+            # ── KPIs — blurred ───────────────────────────────────
+            st.markdown("**Optimisation Results** — upgrade to see your portfolio's numbers")
+            _kc1, _kc2, _kc3, _kc4 = st.columns(4)
+            for _col, _lbl, _val, _clr in [
+                (_kc1, "Expected Return", f"{_d_ret:.1%}", "#22C55E"),
+                (_kc2, "Portfolio Volatility", f"{_d_vol:.1%}", "#F59E0B"),
+                (_kc3, "Sharpe Ratio", f"{_d_sharpe:.2f}", "#22C55E"),
+                (_kc4, "Daily VaR 95%", f"{_dd['var95']:.2%}", "#EF4444"),
+            ]:
+                _col.markdown(
+                    f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);'
+                    f'border-radius:10px;padding:12px;text-align:center;filter:blur(4px);'
+                    f'user-select:none;pointer-events:none">'
+                    f'<div style="font-size:0.6rem;color:#64748B;text-transform:uppercase;'
+                    f'margin-bottom:4px">{_lbl}</div>'
+                    f'<div style="font-size:1.2rem;font-weight:800;color:{_clr}">{_val}</div>'
+                    f'</div>', unsafe_allow_html=True)
 
-        # ── Button + expander side by side — one compact row ─────
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+            # ── Optimal Allocation — blurred ──────────────────────
+            st.markdown("**Optimal Allocation** — exact weights hidden until you subscribe")
+            _al1, _al2 = st.columns([1, 1])
+            with _al1:
+                _alloc_html = '<div style="filter:blur(5px);user-select:none;pointer-events:none">'
+                for _tk, _wt in sorted(zip(_d_tickers, _d_weights), key=lambda x: -x[1]):
+                    _nm = _DEMO_NAMES.get(_tk, _tk)
+                    _alloc_html += (
+                        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+                        f'<div style="width:72px;font-size:0.78rem;color:#F1F5F9;font-weight:700">{_tk}</div>'
+                        f'<div style="flex:1;background:#1E3A5F;border-radius:4px;height:8px">'
+                        f'<div style="background:#F59E0B;width:{_wt*100:.0f}%;height:8px;border-radius:4px"></div></div>'
+                        f'<div style="width:38px;text-align:right;font-size:0.78rem;color:#F59E0B;font-weight:700">{_wt:.1%}</div>'
+                        f'</div>'
+                    )
+                _alloc_html += '</div>'
+                st.markdown(_alloc_html, unsafe_allow_html=True)
+            with _al2:
+                # Correlation heatmap — partially blurred (go already imported at top of file)
+                _demo_corr = pd.DataFrame(_dd["corr"], index=_d_tickers, columns=_d_tickers)
+                _ch = go.Figure(go.Heatmap(
+                    z=_demo_corr.values, x=_d_tickers, y=_d_tickers,
+                    colorscale="RdBu", zmid=0, zmin=-1, zmax=1,
+                    text=[[f"{v:.2f}" for v in row] for row in _demo_corr.values],
+                    texttemplate="%{text}", textfont=dict(size=8),
+                    showscale=False,
+                ))
+                _ch.update_layout(
+                    height=260, margin=dict(l=0,r=0,t=10,b=0),
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    xaxis=dict(tickfont=dict(color="#94A3B8", size=8)),
+                    yaxis=dict(tickfont=dict(color="#94A3B8", size=8)),
+                )
+                st.markdown('<div style="filter:blur(3px);pointer-events:none">', unsafe_allow_html=True)
+                st.plotly_chart(_ch, use_container_width=True, config={"displayModeBar": False})
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Unlock CTA ────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown(
+            '<div style="text-align:center;padding:8px 0 4px 0;font-size:0.9rem;color:#94A3B8">'
+            'The chart above is <b style="color:#F1F5F9">real data</b> from your demo portfolio. '
+            'Subscribe to run this on <b style="color:#F1F5F9">your own stocks</b> — any ticker, any market.'
+            '</div>', unsafe_allow_html=True)
+
         _u_email = _opt_user.get("email", "")
-        _btn_col, _exp_col = st.columns([1, 1])
-        with _btn_col:
+        _, _cta_col, _ = st.columns([1, 2, 1])
+        with _cta_col:
             if _opt_user:
-                if st.button("🚀 Upgrade to Pro — Unlock Optimizer", use_container_width=True, type="primary"):
+                if st.button("🚀 Upgrade to Pro — Unlock Portfolio Optimiser",
+                             use_container_width=True, type="primary", key="opt_upgrade_btn"):
                     _co_url = _create_checkout("monthly", _u_email, _opt_user.get("id", ""))
                     if _co_url:
                         st.session_state["_checkout_ready"] = _co_url
                 if "_checkout_ready" in st.session_state:
-                    st.link_button("🔒 Proceed to Stripe Payment →",
+                    st.link_button("🔒 Proceed to Payment →",
                                    st.session_state["_checkout_ready"],
                                    use_container_width=True, type="primary")
+                st.caption("£10/month · Cancel anytime · Unlock all 8 screens")
             else:
-                if st.button("🔑 Log in to upgrade", use_container_width=True, type="primary"):
-                    st.session_state["show_login"] = True
-                    st.rerun()
-
-        with _exp_col:
-            with st.expander("What is Portfolio Optimization?", expanded=False):
-                st.markdown("""
-**The problem:** You've found 5 great stocks — but how much to put in each?
-
-Most retail investors split equally or guess. Both leave return on the table and take on unnecessary risk.
-
-**What MPT does:** Harry Markowitz won the Nobel Prize proving the *combination* of assets matters more than the individual picks. Assets that move in different directions reduce your total risk — even if each is volatile alone.
-
-**The Efficient Frontier** is every optimal portfolio plotted by risk vs return. The gold star is the mathematically best point — maximum return for the risk you're taking.
-
-**What you unlock with Pro:**
-- Exact % allocation per stock to maximise Sharpe Ratio
-- Value at Risk — worst-case daily loss at 95%/99% confidence
-- Sharpe & Sortino Ratios, Max Drawdown
-- Correlation matrix — see your real diversification
-
-**Real example:** HSBC + Shell + Vodafone equal-weighted = Sharpe 0.6. Optimised to 35/45/20 = Sharpe 1.1 with *lower* volatility.
-
-This is what fund managers do every morning.
-                """)
+                st.link_button("🔑 Create free account / Log in →", "?action=login",
+                               use_container_width=True, type="primary")
 
         st.stop()
 
