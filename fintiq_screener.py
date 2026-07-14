@@ -978,8 +978,16 @@ _user_email = st.session_state.get("fintiq_user", {}).get("email", "")
 # ─────────────────────────────────────────────────────────────
 
 st.markdown("""
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+  /* ── Touch / mobile base ── */
+  * { -webkit-tap-highlight-color: rgba(245,158,11,0.15); box-sizing: border-box; }
+  img, svg, iframe { max-width: 100% !important; }
+  /* Prevent horizontal overflow on mobile */
+  body, .stApp, .main { overflow-x: hidden !important; }
+  /* Smoother scrolling */
+  html { scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
 
   /* ── HIDE STREAMLIT DEFAULT HEADER / TOOLBAR ── */
   header[data-testid="stHeader"] { display: none !important; height: 0 !important; min-height: 0 !important; }
@@ -1512,88 +1520,283 @@ st.markdown("""
   /* Hide sidebar toggle */
   section[data-testid="stSidebar"] { display:none; }
 
-  /* ── MOBILE RESPONSIVE (≤768px) ── */
+  /* ══════════════════════════════════════════════
+     MOBILE RESPONSIVE — full overhaul ≤768px
+     ══════════════════════════════════════════════ */
   @media (max-width: 768px) {
 
-    /* Base font + padding */
+    /* ── Base layout ── */
     html, body, .stApp { font-size: 14px !important; }
     .main .block-container {
-      padding-left: 12px !important;
-      padding-right: 12px !important;
-      max-width: 100% !important;
+      padding-left: 10px !important;
+      padding-right: 10px !important;
+      padding-bottom: 60px !important;
+      max-width: 100vw !important;
+    }
+    /* Streamlit columns: stack to full width on mobile */
+    div[data-testid="stHorizontalBlock"] {
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"],
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+      width: 100% !important;
+      min-width: 100% !important;
+      flex: 1 1 100% !important;
     }
 
-    /* Nav bar — stack logo and badges vertically */
+    /* ── Nav bar ── */
     .fintiq-nav {
       flex-direction: column !important;
       align-items: flex-start !important;
-      padding: 8px 14px !important;
-      gap: 6px !important;
+      padding: 8px 12px !important;
+      gap: 4px !important;
     }
-    .fintiq-logo { font-size: 1.8rem !important; }
-    .fintiq-tagline { font-size: 0.68rem !important; }
-    /* Hide badges on mobile to save space */
+    .fintiq-logo { font-size: 1.6rem !important; }
+    .fintiq-tagline { font-size: 0.65rem !important; display: none !important; }
     .nav-badge { display: none !important; }
 
-    /* Ticker tape — smaller font */
-    .ticker-tape { font-size: 0.65rem !important; }
-    .ticker-item { margin: 0 16px !important; }
+    /* ── Ticker tape ── */
+    .ticker-tape { font-size: 0.62rem !important; padding: 4px 0 !important; }
+    .ticker-item { margin: 0 12px !important; }
 
-    /* Tabs — smaller text, scrollable */
-    .stTabs [data-baseweb="tab"] {
-      font-size: 0.72rem !important;
-      padding: 6px 8px !important;
-    }
+    /* ── Tabs — horizontally scrollable ── */
     .stTabs [data-baseweb="tab-list"] {
       overflow-x: auto !important;
       flex-wrap: nowrap !important;
       -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none !important;
+      padding-bottom: 2px !important;
+    }
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none !important; }
+    .stTabs [data-baseweb="tab"] {
+      font-size: 0.68rem !important;
+      padding: 5px 7px !important;
+      white-space: nowrap !important;
     }
 
-    /* Hero title smaller */
-    .fintiq-hero-title { font-size: 1.8rem !important; letter-spacing: 1px !important; }
+    /* ── Hero ── */
+    .fintiq-hero-title {
+      font-size: 1.5rem !important;
+      letter-spacing: 0.5px !important;
+    }
 
-    /* Metric cards — smaller values, auto height */
+    /* ── Inline HTML grids — collapse to 1 or 2 cols ── */
+    /* 4-col stat grid → 2×2 */
+    div[style*="grid-template-columns:repeat(4"] {
+      grid-template-columns: 1fr 1fr !important;
+    }
+    /* 6-col KPI row → 2×3 */
+    div[style*="grid-template-columns:repeat(6"] {
+      grid-template-columns: 1fr 1fr !important;
+    }
+    /* 3-col grids → 1 col */
+    div[style*="grid-template-columns:1fr 1fr 1fr"],
+    div[style*="grid-template-columns: 1fr 1fr 1fr"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* 2-col grids with min-width children → stack */
+    div[style*="grid-template-columns:repeat(2"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* Decision framework 5-col → 1-col */
+    div[style*="grid-template-columns:repeat(5"] {
+      grid-template-columns: 1fr !important;
+    }
+    /* Flex rows with gap — wrap */
+    div[style*="display:flex"][style*="gap"],
+    div[style*="display: flex"][style*="gap"] {
+      flex-wrap: wrap !important;
+    }
+
+    /* ── Metric / KPI cards ── */
     .metric-card {
       height: auto !important;
-      min-height: 80px !important;
-      padding: 10px 12px !important;
+      min-height: 70px !important;
+      padding: 10px !important;
     }
-    .metric-value { font-size: 1.1rem !important; }
-    .metric-label { font-size: 0.62rem !important; }
-    .metric-sub   { font-size: 0.68rem !important; }
+    .metric-value { font-size: 1rem !important; }
+    .metric-label { font-size: 0.6rem !important; }
+    .metric-sub   { font-size: 0.65rem !important; }
 
-    /* Valuation cards — auto height on mobile */
+    /* ── Valuation cards ── */
     .val-card {
       height: auto !important;
-      padding: 14px !important;
+      padding: 12px !important;
       margin: 4px 0 !important;
+      font-size: 0.8rem !important;
     }
-    .val-price { font-size: 1.4rem !important; }
+    .val-price { font-size: 1.2rem !important; }
+    .val-method { font-size: 0.7rem !important; }
 
-    /* Section headers */
-    .section-header { font-size: 0.85rem !important; padding: 8px 12px !important; }
+    /* ── Section headers ── */
+    .section-header {
+      font-size: 0.8rem !important;
+      padding: 7px 10px !important;
+    }
 
-    /* Buttons — full width, bigger tap target */
+    /* ── Buttons — full width, big tap targets ── */
     .stButton > button,
-    div[data-testid="stButton"] > button {
+    div[data-testid="stButton"] > button,
+    button[data-testid="baseButton-primary"],
+    button[data-testid="baseButton-secondary"] {
       width: 100% !important;
       padding: 12px 16px !important;
-      font-size: 0.85rem !important;
+      font-size: 0.83rem !important;
+      min-height: 44px !important;
+    }
+    /* Link buttons */
+    a[data-testid="stLinkButton"],
+    div[data-testid="stLinkButton"] a {
+      display: block !important;
+      width: 100% !important;
+      text-align: center !important;
+      min-height: 44px !important;
+      line-height: 44px !important;
     }
 
-    /* Charts — allow horizontal scroll */
-    .js-plotly-plot { max-width: 100% !important; overflow-x: auto !important; }
+    /* ── Inputs — full width ── */
+    div[data-testid="stTextInput"],
+    div[data-testid="stNumberInput"],
+    div[data-testid="stSelectbox"],
+    div[data-testid="stMultiSelect"],
+    div[data-testid="stSlider"] {
+      width: 100% !important;
+    }
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input {
+      font-size: 16px !important; /* prevents iOS zoom on focus */
+    }
 
-    /* Dataframe — scrollable */
-    .stDataFrame { overflow-x: auto !important; font-size: 0.75rem !important; }
+    /* ── Charts — responsive, no overflow ── */
+    .js-plotly-plot, .plotly, .plot-container {
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+    }
+    .js-plotly-plot .plotly .main-svg {
+      max-width: 100% !important;
+    }
 
-    /* Disclaimer footer */
-    .disclaimer-footer { font-size: 0.7rem !important; padding: 10px 12px !important; }
+    /* ── Dataframes — horizontal scroll ── */
+    .stDataFrame, div[data-testid="stDataFrame"] {
+      overflow-x: auto !important;
+      font-size: 0.72rem !important;
+      -webkit-overflow-scrolling: touch !important;
+    }
 
-    /* Home page feature cards — make readable on 1 column */
-    p, span, label, .stMarkdown { font-size: 0.85rem !important; }
-    h1, h2, h3 { font-size: 1.1rem !important; }
+    /* ── Expanders ── */
+    div[data-testid="stExpander"] summary {
+      font-size: 0.82rem !important;
+      padding: 8px 10px !important;
+    }
+
+    /* ── Home page inline HTML ── */
+    /* Hero description */
+    div[style*="max-width:920px"] { padding: 0 4px !important; }
+    /* Portfolio optimizer card: flex → column */
+    div[style*="display:flex"][style*="flex-wrap:wrap"] > div {
+      flex: 1 1 100% !important;
+      min-width: 100% !important;
+    }
+
+    /* ── MC KPI rows — force 2 cols ── */
+    /* The MC results grid is inline style — override via child count heuristic */
+    div[style*="grid-template-columns:repeat(6,1fr)"] {
+      grid-template-columns: repeat(2,1fr) !important;
+      gap: 6px !important;
+    }
+    div[style*="grid-template-columns:repeat(4,1fr)"] {
+      grid-template-columns: repeat(2,1fr) !important;
+      gap: 6px !important;
+    }
+
+    /* ── Decision dashboard cards ── */
+    div[style*="grid-template-columns:repeat(4,1fr)"] {
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+    }
+
+    /* ── Section padding ── */
+    div[style*="padding:28px 32px"] { padding: 14px 12px !important; }
+    div[style*="padding:24px 28px"] { padding: 12px 10px !important; }
+    div[style*="padding:22px"]      { padding: 12px !important; }
+    div[style*="padding:18px 14px"] { padding: 10px 8px !important; }
+
+    /* ── Typography ── */
+    .section-header,
+    div[style*="font-size:1.1rem"],
+    div[style*="font-size:1.25rem"] { font-size: 0.9rem !important; }
+    div[style*="font-size:1.8rem"],
+    div[style*="font-size:2rem"]    { font-size: 1.4rem !important; }
+    div[style*="font-size:0.95rem"] { font-size: 0.82rem !important; }
+    div[style*="font-size:0.9rem"]  { font-size: 0.8rem !important; }
+    div[style*="font-size:0.88rem"] { font-size: 0.78rem !important; }
+    div[style*="font-size:0.85rem"] { font-size: 0.76rem !important; }
+    div[style*="font-size:0.82rem"] { font-size: 0.74rem !important; }
+
+    /* ── Disclaimer ── */
+    .disclaimer-footer {
+      font-size: 0.68rem !important;
+      padding: 10px 12px !important;
+    }
+
+    /* ── Global footer — stack on mobile ── */
+    .fintiq-global-footer {
+      flex-direction: column !important;
+      gap: 4px !important;
+      padding: 6px 12px !important;
+      font-size: 0.65rem !important;
+      text-align: center !important;
+    }
+    .fintiq-global-footer > div:last-child {
+      gap: 8px !important;
+      flex-wrap: wrap !important;
+      justify-content: center !important;
+    }
+
+    /* ── Streamlit radio buttons / checkboxes — bigger tap targets ── */
+    div[data-testid="stRadio"] label,
+    div[data-testid="stCheckbox"] label {
+      min-height: 36px !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+
+    /* ── Remove excessive margins on mobile ── */
+    div[style*="margin-bottom:28px"] { margin-bottom: 16px !important; }
+    div[style*="margin-bottom:20px"] { margin-bottom: 12px !important; }
+    div[style*="margin-top:12px"]    { margin-top: 8px !important; }
+
+    /* ── Streamlit column gaps ── */
+    div[data-testid="stVerticalBlock"] {
+      gap: 0.5rem !important;
+    }
+  }
+
+  /* ── Named grid classes ── */
+  @media (max-width: 768px) {
+    .fiq-stat-grid  { grid-template-columns: 1fr 1fr !important; }
+    .fiq-3col-grid  { grid-template-columns: 1fr !important; }
+  }
+
+  /* ── Small phones (≤400px) ── */
+  @media (max-width: 400px) {
+    .fintiq-logo { font-size: 1.3rem !important; }
+    .stTabs [data-baseweb="tab"] {
+      font-size: 0.6rem !important;
+      padding: 4px 5px !important;
+    }
+    div[style*="grid-template-columns:repeat(2"] {
+      grid-template-columns: 1fr !important;
+    }
+    div[style*="grid-template-columns:repeat(6,1fr)"],
+    div[style*="grid-template-columns:repeat(4,1fr)"] {
+      grid-template-columns: 1fr 1fr !important;
+    }
+    .main .block-container {
+      padding-left: 6px !important;
+      padding-right: 6px !important;
+    }
   }
 </style>
 """, unsafe_allow_html=True)
@@ -2618,7 +2821,7 @@ with tab0:
       </div>
 
       <!-- Feature stat grid — below the fold, scroll to discover -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px" class="fiq-stat-grid">
         <div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.25);
                     border-radius:12px;padding:18px;text-align:center">
           <div style="font-size:2rem;font-weight:900;color:#F59E0B">10+</div>
@@ -2694,7 +2897,7 @@ with tab0:
       <div style="color:#F59E0B;font-weight:700;font-size:1.1rem;margin-bottom:16px">
         📋 Three Strategies, One Platform
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:28px" class="fiq-3col-grid">
         <div style="background:rgba(13,31,53,0.7);border-radius:12px;padding:22px;
                     border:1px solid rgba(245,158,11,0.15);border-top:3px solid #F59E0B">
           <div style="font-size:1.5rem;margin-bottom:8px">🔍</div>
