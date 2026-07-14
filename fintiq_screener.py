@@ -1798,22 +1798,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Global footer — fixed at bottom of every page ──
-st.markdown("""
-<div class="fintiq-global-footer">
-  <div><span class="fg-brand">Fintiq</span> &nbsp;·&nbsp; © 2025 Fintiq Ltd &nbsp;·&nbsp; Registered in England &amp; Wales</div>
-  <div style="display:flex;gap:18px;align-items:center">
-    <a href="mailto:contactfintiq@gmail.com">✉ contactfintiq@gmail.com</a>
-    <span style="color:#2D3F55">|</span>
-    <a href="mailto:contactfintiq@gmail.com?subject=Feature%20Suggestion">💡 Suggest a feature</a>
-    <span style="color:#2D3F55">|</span>
-    <a href="https://fintiq.uk" target="_blank">fintiq.uk</a>
-    <span style="color:#2D3F55">|</span>
-    <span style="color:#334155">Not financial advice. For educational use only.</span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
 # ── Seed watchlist from file ──
 if "fintiq_watchlist" not in st.session_state:
     st.session_state["fintiq_watchlist"] = _wl_load()
@@ -8940,3 +8924,19 @@ A ±3% tolerance is standard; beyond that, rebalancing is worth considering.
         ' does not guarantee future results. For educational purposes only,'
         ' not financial advice. Always do your own research.'
         '</div>', unsafe_allow_html=True)
+
+# ── Global footer — bottom of page, visible on scroll ──
+st.markdown("""
+<div class="fintiq-global-footer">
+  <div><span class="fg-brand">Fintiq</span> &nbsp;·&nbsp; © 2025 Fintiq Ltd &nbsp;·&nbsp; Registered in England &amp; Wales</div>
+  <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+    <a href="mailto:contactfintiq@gmail.com">✉ contactfintiq@gmail.com</a>
+    <span style="color:#2D3F55">|</span>
+    <a href="mailto:contactfintiq@gmail.com?subject=Feature%20Suggestion">💡 Suggest a feature</a>
+    <span style="color:#2D3F55">|</span>
+    <a href="https://fintiq.uk" target="_blank">fintiq.uk</a>
+    <span style="color:#2D3F55">|</span>
+    <span style="color:#334155">Not financial advice. For educational use only.</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
