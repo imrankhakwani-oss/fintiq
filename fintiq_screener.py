@@ -1622,22 +1622,17 @@ if "fintiq_watchlist" not in st.session_state:
 if "fintiq_pairs_watchlist" not in st.session_state:
     st.session_state["fintiq_pairs_watchlist"] = _pwl_load()
 
-# ── Google Analytics GA4 — track page views and tab engagement ──
-_GA_ID = os.environ.get("GA_MEASUREMENT_ID", "")  # Set GA_MEASUREMENT_ID in Railway env vars
-if _GA_ID:
-    import streamlit.components.v1 as _stc_ga
-    _stc_ga.html(f"""
-    <script async src="https://www.googletagmanager.com/gtag/js?id={_GA_ID}"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){{dataLayer.push(arguments);}}
-      gtag('js', new Date());
-      gtag('config', '{_GA_ID}', {{
-        page_title: document.title,
-        page_location: window.location.href
-      }});
-    </script>
-    """, height=0)
+# ── Google Analytics GA4 ──
+import streamlit.components.v1 as _stc_ga
+_stc_ga.html("""
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-ZPP2L744HP"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-ZPP2L744HP');
+</script>
+""", height=0)
 
 # ── Inject dropdown styles into PARENT document (escapes iframe) ──
 import streamlit.components.v1 as _stc
