@@ -113,6 +113,7 @@ EXCHANGE_CURRENCY = {
 # ── Stock Universe ────────────────────────────────────────────
 STOCK_UNIVERSE = {
     "LSE": [
+        # FTSE 100 — Large Cap
         "AZN.L","SHEL.L","HSBA.L","ULVR.L","BP.L","RIO.L","GSK.L","DGE.L",
         "LSEG.L","BATS.L","NG.L","REL.L","PRU.L","LLOY.L","BARC.L","NWG.L",
         "ABF.L","IMB.L","BHP.L","ANTO.L","STAN.L","WPP.L","JD.L","SMT.L",
@@ -127,9 +128,39 @@ STOCK_UNIVERSE = {
         "NXT.L","PSON.L","RS1.L","SGRO.L","SN.L","STJ.L",
         "ATG.L","BBY.L","BKG.L","BRBY.L","BVIC.L","DNLM.L","DOM.L",
         "EMG.L","FOUR.L","GRND.L","HILS.L","HLN.L","HMSO.L","HOME.L",
-        "ICG.L","IMI.L","IWG.L","LRE.L","MONY.L","MTRO.L","NXT.L",
+        "ICG.L","IMI.L","IWG.L","LRE.L","MONY.L","MTRO.L",
         "PAGE.L","PETS.L","PHP.L","RBN.L","RDW.L","SMDS.L","TRN.L",
         "TUI.L","VLX.L","VTY.L","WMH.L","ZIP.L",
+        # FTSE 250 — Mid Cap additions
+        "ABDN.L","AGR.L","AIR.L","ALW.L","APF.L","APAX.L","APS.L",
+        "AWE.L","BBOX.L","BCPT.L","BEMO.L","BGEO.L","BHMG.L","BIG.L",
+        "BKW.L","BLND.L","BOY.L","BYIT.L","CAL.L","CBG.L","CLDN.L",
+        "CLLN.L","CNN.L","COB.L","CPG.L","CWK.L","DARK.L","DCO.L",
+        "DEST.L","DFS.L","DGOC.L","DIG.L","DISCV.L","DLG.L","DMGT.L",
+        "DPLM.L","DSM.L","DTY.L","ELCO.L","ETL.L","EVET.L","EWI.L",
+        "FCIT.L","FDM.L","FGP.L","FLTV.L","FNX.L","FORT.L","GAH.L",
+        "GCP.L","GENL.L","GHE.L","GPE.L","GRI.L","HARK.L","HBOS.L",
+        "HFG.L","HIML.L","HMSO.L","HNE.L","HSL.L","HTG.L","HUW.L",
+        "HYVE.L","IGG.L","IHG.L","INPP.L","INVP.L","IP.L","ITH.L",
+        "JFJ.L","JMAT.L","JMG.L","JUP.L","KIE.L","LBOW.L","LIO.L",
+        "LLPD.L","LON.L","LOOK.L","LPA.L","MAB.L","MACF.L","MCB.L",
+        "MCLS.L","MCS.L","MGGT.L","MGP.L","MHLD.L","MIL.L","MNGS.L",
+        "MON.L","MPAC.L","MTC.L","MTVW.L","MWB.L","NAH.L","NBH.L",
+        "NCT.L","NEX.L","NEWA.L","NFG.L","NHD.L","NMC.L","OAK.L",
+        "OCA.L","OCN.L","OML.L","ONT.L","OSB.L","OTB.L","OXIG.L",
+        "PAG.L","PAHB.L","PCA.L","PDG.L","PEG.L","PGH.L","PIC.L",
+        "PLUS.L","PMO.L","POW.L","PRS.L","PSH.L","PTEC.L","PUR.L",
+        "QQ.L","RBD.L","RBGP.L","RCDO.L","RDL.L","REDD.L","RELX.L",
+        "RGD.L","RGS.L","RHIM.L","RHM.L","RICA.L","RIDE.L","RIO.L",
+        "RLT.L","ROO.L","RPC.L","RPT.L","RRR.L","RNWH.L","SBT.L",
+        "SCF.L","SCST.L","SEM.L","SHED.L","SHFD.L","SHI.L","SIA.L",
+        "SIG.L","SLND.L","SMWH.L","SNX.L","SOHO.L","SOPH.L","SPDI.L",
+        "SREI.L","SRP.L","SRS.L","STB.L","STO.L","SVS.L","SXS.L",
+        "TAN.L","TCG.L","TIFS.L","TMG.L","TNI.L","TPKD.L","TRI.L",
+        "TRST.L","TSG.L","TUPU.L","TWI.L","UANC.L","UBM.L","UCI.L",
+        "UIL.L","ULVR.L","UTL.L","VANL.L","VCP.L","VEIL.L","VIP.L",
+        "VLE.L","VOF.L","VRS.L","VSVS.L","WAG.L","WAND.L","WEYS.L",
+        "WIN.L","WJG.L","WKC.L","WTAN.L","WWH.L","YCA.L","YMK.L",
     ],
     "AIM": [
         "BOO.L","ASOS.L","CEY.L","CHG.L","CNE.L","THG.L","GAW.L","SDI.L",
@@ -146,36 +177,147 @@ STOCK_UNIVERSE = {
         "SEPL.L","SHI.L","SIM.L","SKP.L","SNR.L","STB.L","SYS1.L",
         "TGR.L","TPFG.L","TXP.L","ULS.L","VCP.L","WGB.L","WIL.L",
         "WSG.L","XPD.L","ZINC.L",
+        # Additional AIM stocks
+        "ACSO.L","AFC.L","AFM.L","AGA.L","AGH.L","AHT.L","ALBA.L",
+        "ALPH.L","ALT.L","AMAP.L","AMC.L","AMFW.L","AMGO.L","AMP.L",
+        "AMRK.L","ANCR.L","AND.L","ANPX.L","AOF.L","APC.L","APGT.L",
+        "APMO.L","APTD.L","AQX.L","ARB.L","ARCH.L","ARG.L","ARW.L",
+        "ASA.L","ASC.L","ASCL.L","ASPL.L","AST.L","ASTR.L","ATK.L",
+        "ATIS.L","ATL.L","ATMT.L","ATO.L","ATQT.L","ATST.L","ATT.L",
+        "AUE.L","AUTG.L","AVN.L","AVO.L","AWE.L","AWIN.L","AXON.L",
+        "AYM.L","AZL.L","BADM.L","BAGL.L","BAIR.L","BAND.L","BAPE.L",
+        "BARK.L","BASG.L","BBH.L","BBRG.L","BBX.L","BCN.L","BCPT.L",
+        "BCSV.L","BEG.L","BELL.L","BELR.L","BEN.L","BFIG.L","BGO.L",
+        "BGUK.L","BHR.L","BHSL.L","BID.L","BIDS.L","BIG.L","BIO.L",
+        "BIOM.L","BIOG.L","BION.L","BISH.L","BKG.L","BKMA.L","BKS.L",
+        "BLC.L","BLCR.L","BLND.L","BLV.L","BMK.L","BMS.L","BMTS.L",
+        "BNC.L","BNK.L","BNR.L","BOK.L","BOLT.L","BONA.L","BPC.L",
+        "BPM.L","BPR.L","BPTY.L","BRG.L","BRIO.L","BRK.L","BRL.L",
     ],
     "NYSE": [
+        # Financials
         "JPM","BAC","WFC","GS","MS","C","BRK-B","V","MA","AXP","BLK","SCHW",
+        "CB","MET","AFL","PGR","TRV","HIG","ALL","AIG","PRU","LNC","UNM",
+        "COF","DFS","SYF","ALLY","RF","KEY","CFG","FITB","HBAN","ZION","MTB",
+        "USB","PNC","TFC","SIVB","NTRS","STT","BK","ICE","CME","CBOE",
+        # Healthcare
         "JNJ","PFE","MRK","ABT","BMY","UNH","LLY","TMO","DHR","MDT",
-        "XOM","CVX","COP","SLB","EOG","PSX","VLO","MPC",
-        "BA","GE","MMM","HON","CAT","DE","LMT","RTX","NOC","GD",
+        "BSX","SYK","ZBH","EW","BDX","BAX","CAH","MCK","ABC","CNC",
+        "HUM","CVS","MOH","ANTM","ELV","CI","HCA","THC","UHS","CRL",
+        "IQV","IQVIA","PPD","MEDP","NEOG","XRAY","HSIC","PKI","A",
+        # Energy
+        "XOM","CVX","COP","SLB","EOG","PSX","VLO","MPC","OXY","HES",
+        "DVN","FANG","PXD","APA","MRO","HAL","BKR","NOV","FTI","TDW",
+        "KMI","WMB","OKE","ET","EPD","MMP","MPLX","PAA","LNG","RRC",
+        # Industrials
+        "BA","GE","MMM","HON","CAT","DE","LMT","RTX","NOC","GD","L",
+        "UPS","FDX","CSX","NSC","UNP","CP","CNI","XPO","JBHT","SAIA",
+        "PH","ITW","EMR","ROK","AME","GWW","MSC","FAST","WSO","HUBB",
+        "FTV","ROP","IEX","CFX","FLS","GNRC","IR","OTIS","CARR","JCI",
+        # Consumer
         "WMT","TGT","HD","LOW","COST","DG","CVS","MCD","SBUX","NKE",
         "KO","PEP","PG","CL","GIS","MO","PM","DIS","CMCSA","T","VZ",
+        "YUM","QSR","WING","CMG","DPZ","SHAK","CAKE","DRI","MKC","K",
+        "CPB","HRL","SJM","CAG","KHC","TSN","MOS","ADM","BG","INGR",
+        "RL","PVH","HBI","VFC","TJX","ROST","M","KSS","JWN","AN","KMX",
+        # Utilities & REITs
         "NEE","DUK","SO","D","AEP","EXC","AMT","PLD","SPG","O","WELL",
+        "ES","ETR","FE","PPL","CMS","NI","ATO","OGE","PNM","CLECO",
+        "PSA","EQR","AVB","MAA","UDR","CPT","NNN","STORE","VICI","MGM",
+        "ARE","BXP","HIW","KIM","REG","FRT","WRI","SKT","CBL","SRG",
+        # Materials
+        "NEM","FCX","NUE","STLD","RS","CMC","ATI","CLF","AA","X","MT",
+        "PPG","SHW","RPM","ECL","DOW","LYB","HUN","CC","WLK","OLN",
+        "APD","LIN","PX","ALB","SQM","MP","FSLR","ENPH","RUN","NOVA",
     ],
     "NASDAQ": [
+        # Mega-cap tech
         "AAPL","MSFT","GOOGL","AMZN","META","TSLA","NVDA","AMD","INTC","QCOM",
+        # Semiconductors
         "TXN","MU","AVGO","AMAT","LRCX","KLAC","MRVL","ON","NXPI","SWKS",
-        "NFLX","ADBE","CRM","ORCL","INTU","NOW","SNOW","WDAY","TEAM",
-        "LULU","ABNB","BKNG","EBAY","PYPL","SQ","COIN",
-        "GILD","AMGN","BIIB","REGN","VRTX","MRNA","DXCM","IDXX",
+        "WOLF","MPWR","SLAB","CREE","DIOD","IXYS","RMBS","POWI","SITM","AEIS",
+        "ACLS","AXTI","BRKS","CCMP","COHU","FORM","ICHR","IPGP","MKSI","UCTT",
+        # Software — Enterprise
+        "NFLX","ADBE","CRM","ORCL","INTU","NOW","SNOW","WDAY","TEAM","HUBS",
+        "ZM","DOCU","SPLK","VEEV","PAYC","PCTY","APPF","JAMF","WEX","COUP",
+        "BILL","SMAR","BOX","ESTC","FROG","GTLB","MNDY","MTTR","NCNO","PEGA",
+        "PTC","QLIK","RNG","SCWX","TOST","TTD","TYL","VNET","WIX","XPEL",
+        # Software — Consumer / Saas
+        "LULU","ABNB","BKNG","EBAY","PYPL","SQ","COIN","EXPE","LYFT","UBER",
+        "DASH","RBLX","SNAP","PINS","SPOT","MTCH","IAC","ZG","OPEN","ANGI",
+        "CARS","CARG","DKNG","GENI","PENN","SKLZ","SPCE","ACMR","AFRM","UPST",
+        # Biotech / Pharma
+        "GILD","AMGN","BIIB","REGN","VRTX","MRNA","DXCM","IDXX","ISRG","ALGN",
+        "BMRN","EXEL","HALO","INCY","IONS","JAZZ","LGND","MDGL","NBIX","NKTR",
+        "PCVX","RARE","RCKT","RETA","RVMD","SAGE","SMMT","SRPT","TECH","UTHR",
+        "ACAD","ACHC","ADPT","ADUS","ADVM","AFMD","AGIO","AGTC","AGEN","AGLE",
+        # Cybersecurity / Cloud
         "CSCO","ANET","FTNT","PANW","CRWD","ZS","OKTA","DDOG","NET","MDB",
+        "CYBR","QLYS","VRNS","TENB","RDWR","SAIL","RGEN","SCWX","SAIC","SCCF",
+        "JNPR","NTAP","NTNX","PSTG","SMCI","STX","WDC","XLNX","KEYS","LITE",
+        # Fintech / Payments
+        "FISV","FIS","GPN","TRMK","PCVT","NDAQ","SPGI","MCO","MSCI","VRSK",
+        "SEIC","LPLA","SSNC","PFG","VOYA","NAVI","SLM","CACC","DT","WEX",
+        # E-commerce / Consumer
+        "ETSY","CHWY","W","OSTK","PDD","JD","BABA","BILI","IQ","MELI",
+        "SE","GRAB","GLOB","STNE","PAGS","VTEX","VTOL","XMTR","YEXT","ZETA",
+        # Healthcare Tech
+        "ILMN","HOLX","MASI","MMSI","NVCR","NVST","ONEM","OSUR","PCRX","PDCO",
+        "PRAX","PRGO","PRVA","PSMT","QDEL","QGEN","RARE","RCKT","RDUS","RCUS",
     ],
     "XETRA": [
+        # DAX 40 — Full list
         "SAP.DE","SIE.DE","ALV.DE","MUV2.DE","BMW.DE","MBG.DE","BAYN.DE",
         "BAS.DE","VOW3.DE","ADS.DE","HEN3.DE","LIN.DE","DTE.DE","RWE.DE",
         "EOAN.DE","MRK.DE","DB1.DE","DBK.DE","HEI.DE","FRE.DE","DHL.DE",
         "AIR.DE","ZAL.DE","PUM.DE","CON.DE","BOSS.DE","IFX.DE","MTX.DE",
-        "LEG.DE","VNA.DE",
+        "LEG.DE","VNA.DE","SHL.DE","ENR.DE","DHER.DE","SY1.DE","BEI.DE",
+        "SMHN.DE","1COV.DE","QIA.DE","P911.DE","MBB.DE",
+        # MDAX additions
+        "AFX.DE","ARL.DE","ARND.DE","BC8.DE","BFSA.DE","BING.DE","BOIF.DE",
+        "BR3.DE","CEV.DE","CLIQ.DE","COP.DE","CWC.DE","DBAN.DE","DE.DE",
+        "DEQ.DE","DIC.DE","DMG.DE","DMGK.DE","ECK.DE","EVD.DE","EVK.DE",
+        "EVO.DE","EWG.DE","FPE3.DE","FRA.DE","GBF.DE","GFK.DE","GLJ.DE",
+        "HAW.DE","HBH.DE","HDD.DE","HDI.DE","HLAG.DE","HOT.DE","HYQ.DE",
+        "IFX.DE","ILM1.DE","IVU.DE","JEN.DE","JKHY.DE","JUN3.DE","K+S.DE",
+        "KGX.DE","KLR.DE","KNEBV.DE","KSB.DE","KU2.DE","KWHP.DE",
+        "LNSX.DE","LPKF.DE","LXS.DE","MAN.DE","MBB.DE","MLP.DE","MOR.DE",
+        "MSF.DE","MTE.DE","MVMB.DE","NET1.DE","NXU.DE","O2D.DE","OHB.DE",
+        "OLINK.DE","OMV.DE","OPTI.DE","PAH3.DE","PBB.DE","PC8.DE","PFV.DE",
+        "PMOX.DE","POC.DE","PSM.DE","PUT.DE","RAA.DE","REP.DE","RHM.DE",
+        "RKET.DE","RNL.DE","RSL2.DE","RTL.DE","RWE.DE","S92.DE","SDAX.DE",
+        "SFQ.DE","SGL.DE","SIE.DE","SOBA.DE","SOW.DE","SPI.DE","SRTX.DE",
+        "SSL.DE","STO3.DE","STR.DE","STRN.DE","SY1.DE","SZG.DE","TE.DE",
+        "TLX.DE","TMV.DE","TOM.DE","TPE.DE","TRR.DE","TUI1.DE","UNI3.DE",
+        "VBK.DE","VIB3.DE","VNA.DE","VOE.DE","WAF.DE","WCH.DE","WDI.DE",
+        "WIN.DE","WKL.DE","WMT.DE","XONA.DE","ZIL2.DE",
     ],
     "EURONEXT": [
+        # CAC 40 — Full list
         "AI.PA","OR.PA","MC.PA","BNP.PA","SAN.PA","TTE.PA","ENGI.PA",
         "DG.PA","VIE.PA","ORA.PA","SGO.PA","RI.PA","CAP.PA","HO.PA",
-        "SU.PA","BN.PA","KER.PA","ATO.PA","STMPA.PA",
+        "SU.PA","BN.PA","KER.PA","ATO.PA","STMPA.PA","CS.PA","DSY.PA",
+        "EL.PA","GLE.PA","ML.PA","PUB.PA","RMS.PA","SAF.PA","SW.PA",
+        "URW.PA","VIE.PA","WLN.PA","DSFIR.PA","TEP.PA","TFI.PA",
+        "SEB.PA","SGEF.PA","SOLB.PA","SPG.PA","STM.PA","TCL.PA",
+        # Amsterdam (AEX) — Full
         "ASML.AS","HEIA.AS","NN.AS","RAND.AS","PHG.AS","WKL.AS",
+        "ABN.AS","AD.AS","ADYEN.AS","AGN.AS","AKZA.AS","BESI.AS",
+        "DSMF.AS","EXOR.AS","GLPG.AS","IMCD.AS","INGA.AS","MT.AS",
+        "NSG.AS","PHIA.AS","PROSUS.AS","REN.AS","TKWY.AS","UNA.AS",
+        "VPK.AS","WEB.AS","WHA.AS","AALB.AS","ABN.AS","ACOMO.AS",
+        # Brussels (BEL20)
+        "ABI.BR","AGS.BR","ANG.BR","ARGX.BR","BPOST.BR","COLR.BR",
+        "CFE.BR","COIL.BR","ECONB.BR","EVS.BR","GBL.BR","GBLB.BR",
+        "KBC.BR","LOTB.BR","MELX.BR","ONTEX.BR","PROX.BR","SOF.BR",
+        "TNET.BR","UCB.BR","UMI.BR","WDP.BR","XIOR.BR",
+        # Madrid (IBEX 35)
+        "ACS.MC","AENA.MC","AMS.MC","ANA.MC","BBVA.MC","BKT.MC",
+        "CABK.MC","CIE.MC","COL.MC","ELE.MC","ENG.MC","FER.MC",
+        "GRF.MC","IAG.MC","IBE.MC","IDR.MC","ITX.MC","LOG.MC",
+        "MAP.MC","MEL.MC","MRL.MC","MTS.MC","NTGY.MC","PHM.MC",
+        "RED.MC","REE.MC","REP.MC","ROVI.MC","SAB.MC","SAN.MC",
+        "SGRE.MC","SLR.MC","SOL.MC","TEF.MC","VIS.MC",
     ],
     "TSX": [
         "RY.TO","TD.TO","BNS.TO","BMO.TO","CM.TO","MFC.TO","SLF.TO",
@@ -844,6 +986,22 @@ st.markdown("""
   #MainMenu { visibility: hidden !important; display: none !important; }
   .stDeployButton { display: none !important; }
   footer { display: none !important; }
+
+  /* ── FINTIQ GLOBAL FOOTER ── */
+  .fintiq-global-footer {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+    background: rgba(8,18,32,0.97);
+    border-top: 1px solid rgba(245,158,11,0.2);
+    padding: 6px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.72rem; color: #475569;
+    backdrop-filter: blur(8px);
+  }
+  .fintiq-global-footer a { color: #64748B; text-decoration: none; }
+  .fintiq-global-footer a:hover { color: #F59E0B; }
+  .fintiq-global-footer .fg-brand { color: #F59E0B; font-weight: 700; }
+  /* Push page content up so footer doesn't overlap last element */
+  section[data-testid="stAppViewContainer"] { padding-bottom: 40px !important; }
   /* Remove ALL top padding from every Streamlit wrapper — covers v1.30+ and v1.40+ element names */
   section[data-testid="stAppViewContainer"] > div:first-child { padding-top: 0 !important; }
   div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
@@ -1440,6 +1598,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ── Global footer — fixed at bottom of every page ──
+st.markdown("""
+<div class="fintiq-global-footer">
+  <div><span class="fg-brand">Fintiq</span> &nbsp;·&nbsp; © 2025 Fintiq Ltd &nbsp;·&nbsp; Registered in England &amp; Wales</div>
+  <div style="display:flex;gap:18px;align-items:center">
+    <a href="mailto:contactfintiq@gmail.com">✉ contactfintiq@gmail.com</a>
+    <span style="color:#2D3F55">|</span>
+    <a href="mailto:contactfintiq@gmail.com?subject=Feature%20Suggestion">💡 Suggest a feature</a>
+    <span style="color:#2D3F55">|</span>
+    <a href="https://fintiq.uk" target="_blank">fintiq.uk</a>
+    <span style="color:#2D3F55">|</span>
+    <span style="color:#334155">Not financial advice. For educational use only.</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 # ── Seed watchlist from file ──
 if "fintiq_watchlist" not in st.session_state:
     st.session_state["fintiq_watchlist"] = _wl_load()
@@ -1447,6 +1621,23 @@ if "fintiq_watchlist" not in st.session_state:
 # ── Seed pairs watchlist from file ──
 if "fintiq_pairs_watchlist" not in st.session_state:
     st.session_state["fintiq_pairs_watchlist"] = _pwl_load()
+
+# ── Google Analytics GA4 — track page views and tab engagement ──
+_GA_ID = os.environ.get("GA_MEASUREMENT_ID", "")  # Set GA_MEASUREMENT_ID in Railway env vars
+if _GA_ID:
+    import streamlit.components.v1 as _stc_ga
+    _stc_ga.html(f"""
+    <script async src="https://www.googletagmanager.com/gtag/js?id={_GA_ID}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){{dataLayer.push(arguments);}}
+      gtag('js', new Date());
+      gtag('config', '{_GA_ID}', {{
+        page_title: document.title,
+        page_location: window.location.href
+      }});
+    </script>
+    """, height=0)
 
 # ── Inject dropdown styles into PARENT document (escapes iframe) ──
 import streamlit.components.v1 as _stc
@@ -6749,6 +6940,10 @@ with tab_mc:
             import numpy as _np_mc
 
             _mc_close = _mc_hist["Close"].dropna()
+            # yfinance returns LSE (.L) prices in pence — convert to pounds
+            _mc_is_gbx = _mc_ticker.upper().endswith(".L")
+            if _mc_is_gbx:
+                _mc_close = _mc_close / 100
             _mc_S0    = float(_mc_close.iloc[-1])
             _mc_log_r = _np_mc.log(_mc_close / _mc_close.shift(1)).dropna().values
             _mc_hist_vol = float(_mc_log_r.std() * _np_mc.sqrt(252))
