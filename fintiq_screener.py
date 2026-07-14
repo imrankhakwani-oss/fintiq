@@ -2395,12 +2395,13 @@ if _ticker_html_items:
 # TABS
 # ─────────────────────────────────────────────────────────────
 
-tab0, tab_brief, tab1, tab2, tab3, tab4, tab5, tab_opt = st.tabs([
+tab0, tab_brief, tab1, tab2, tab3, tab_mc, tab4, tab5, tab_opt = st.tabs([
     "🏠  Home",
     "🌍  Morning Brief",
     "🔍  Fundamental Screen",
     "⚡  Catalyst Alerts",
     "📈  Technical",
+    "🎲  Monte Carlo",
     "⚖️  Pairs Dashboard",
     "📒  Journal",
     "📐  Portfolio Optimizer",
@@ -6547,6 +6548,603 @@ A **Setup Score ≥ 4/5** with a confirmed catalyst and strong fundamentals = hi
 > ⚠️ Technicals improve *timing* but never replace fundamental analysis.
 """)
 
+
+
+# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# TAB MC — GBM MONTE CARLO RISK SIMULATOR
+# ═══════════════════════════════════════════════════════════════
+
+with tab_mc:
+    st.markdown('<div class="section-header">🎲 Monte Carlo Risk Simulator — GBM Price Path Analysis</div>',
+                unsafe_allow_html=True)
+    st.caption(
+        "Geometric Brownian Motion · Jump Diffusion · EWMA Volatility · "
+        "Used by investment banks & hedge funds to map the full probability distribution of future prices"
+    )
+
+    # ── Ticker input ─────────────────────────────────────────────
+    _mc_universe = list(st.session_state.get("screened_symbols", []))
+    _mc_col1, _mc_col2 = st.columns([2, 3])
+    with _mc_col1:
+        if _mc_universe:
+            _mc_ticker_sel = st.selectbox(
+                "Stock (from your screened universe):",
+                ["— type below —"] + _mc_universe, key="mc_ticker_sel"
+            )
+            _mc_ticker = st.text_input("Or enter any ticker:", key="mc_ticker_manual",
+                                        placeholder="e.g. AAPL, HSBA.L")
+            _mc_ticker = (_mc_ticker.strip().upper()
+                          if _mc_ticker.strip()
+                          else (None if _mc_ticker_sel == "— type below —" else _mc_ticker_sel))
+        else:
+            _mc_ticker = st.text_input("Ticker symbol:", key="mc_ticker_manual",
+                                        placeholder="e.g. AAPL, HSBA.L, VOD.L").strip().upper() or None
+            st.caption("💡 Run the Fundamental Screen first to auto-populate your universe here.")
+
+    with _mc_col2:
+        _mc_target = st.number_input(
+            "Target price (e.g. your DCF intrinsic value):",
+            min_value=0.0, value=0.0, step=0.5, format="%.2f", key="mc_target",
+            help="Set this to your DCF estimate. The simulator will calculate the probability of reaching it."
+        )
+        _mc_stop = st.number_input(
+            "Stop-loss / downside floor:",
+            min_value=0.0, value=0.0, step=0.5, format="%.2f", key="mc_stop",
+            help="Price below which you'd exit. Used to calculate probability of loss."
+        )
+
+    # ── Simulation settings ───────────────────────────────────────
+    st.markdown("#### ⚙️ Simulation Settings")
+    _ms1, _ms2, _ms3, _ms4 = st.columns(4)
+    with _ms1:
+        _mc_horizon = st.selectbox("Time horizon:", ["30 days","60 days","90 days",
+                                                      "6 months","1 year","2 years","5 years"],
+                                    index=4, key="mc_horizon")
+        _mc_T = {"30 days":30/252,"60 days":60/252,"90 days":90/252,
+                  "6 months":0.5,"1 year":1.0,"2 years":2.0,"5 years":5.0}[_mc_horizon]
+    with _ms2:
+        _mc_n_sims = st.selectbox("Simulations:", [5_000, 10_000, 50_000, 100_000],
+                                   index=1, key="mc_nsims",
+                                   format_func=lambda x: f"{x:,}")
+    with _ms3:
+        _mc_model = st.selectbox("Model:", ["Standard GBM","Jump Diffusion","EWMA Volatility"],
+                                  key="mc_model",
+                                  help="Standard GBM: classic model  |  "
+                                       "Jump Diffusion: adds crash/spike events (Merton)  |  "
+                                       "EWMA Volatility: volatility clustering (RiskMetrics)")
+    with _ms4:
+        _mc_ret_src = st.selectbox("Expected return source:",
+                                    ["Historical average","CAPM","Custom"],
+                                    key="mc_ret_src")
+        _mc_custom_mu = None
+        if _mc_ret_src == "Custom":
+            _mc_custom_mu = st.number_input("Annual return (%):", value=10.0,
+                                             step=0.5, key="mc_custom_mu") / 100
+
+    _run_mc = st.button("⚡ Run Simulation", type="primary", key="mc_run_btn",
+                         disabled=not _mc_ticker)
+
+    if _run_mc and _mc_ticker:
+
+        @st.cache_data(ttl=300, show_spinner=False)
+        def _mc_fetch(ticker: str):
+            import yfinance as _yf_mc
+            _t = _yf_mc.Ticker(ticker)
+            _hist = _t.history(period="3y", auto_adjust=True)
+            _info = {}
+            try: _info = _t.info
+            except Exception: pass
+            return _hist, _info
+
+        with st.spinner(f"Fetching {_mc_ticker} price history…"):
+            _mc_hist, _mc_info = _mc_fetch(_mc_ticker)
+
+        if _mc_hist.empty or len(_mc_hist) < 60:
+            st.error(f"Not enough price data for {_mc_ticker}. Check the ticker symbol.")
+        else:
+            import numpy as _np_mc
+
+            _mc_close = _mc_hist["Close"].dropna()
+            _mc_S0    = float(_mc_close.iloc[-1])
+            _mc_log_r = _np_mc.log(_mc_close / _mc_close.shift(1)).dropna().values
+            _mc_hist_vol = float(_mc_log_r.std() * _np_mc.sqrt(252))
+
+            # ── Risk-free rate from ^TNX ──────────────────────────
+            try:
+                import yfinance as _yf_rf
+                _rf_data = _yf_rf.Ticker("^TNX").history(period="5d")
+                _mc_rf = float(_rf_data["Close"].iloc[-1]) / 100
+            except Exception:
+                _mc_rf = 0.0425
+
+            # ── Expected return μ ─────────────────────────────────
+            if _mc_ret_src == "Historical average":
+                _mc_mu = float(_mc_log_r.mean() * 252)
+            elif _mc_ret_src == "CAPM":
+                # β from 3y regression vs S&P500
+                try:
+                    import yfinance as _yf_spy
+                    _spy = _yf_spy.Ticker("^GSPC").history(period="3y", auto_adjust=True)["Close"]
+                    _spy_r = _np_mc.log(_spy / _spy.shift(1)).dropna().values
+                    _min_len = min(len(_spy_r), len(_mc_log_r))
+                    _cov = _np_mc.cov(_mc_log_r[-_min_len:], _spy_r[-_min_len:])
+                    _beta = _cov[0,1] / _cov[1,1]
+                    _mkt_ret = float(_spy_r.mean() * 252)
+                    _mc_mu = _mc_rf + _beta * (_mkt_ret - _mc_rf)
+                except Exception:
+                    _mc_mu = float(_mc_log_r.mean() * 252)
+            else:
+                _mc_mu = _mc_custom_mu if _mc_custom_mu is not None else float(_mc_log_r.mean() * 252)
+
+            # ── Model-specific volatility ─────────────────────────
+            if _mc_model == "EWMA Volatility":
+                # RiskMetrics EWMA: λ=0.94
+                _lam = 0.94
+                _ewma_var = float(_mc_log_r[-1]**2)
+                for _r in _mc_log_r[-252:]:
+                    _ewma_var = _lam * _ewma_var + (1 - _lam) * _r**2
+                _mc_sigma = float(_np_mc.sqrt(_ewma_var * 252))
+            else:
+                _mc_sigma = _mc_hist_vol
+
+            # ── Jump parameters (Merton) ──────────────────────────
+            _mc_lam_j, _mc_mu_j, _mc_sig_j = 0.0, 0.0, 0.0
+            if _mc_model == "Jump Diffusion":
+                # Estimate jump frequency: days where |return| > 3σ
+                _thresh = 3 * _mc_hist_vol / _np_mc.sqrt(252)
+                _jumps  = _mc_log_r[_np_mc.abs(_mc_log_r) > _thresh]
+                _mc_lam_j  = len(_jumps) / (len(_mc_log_r) / 252)  # jumps/year
+                _mc_mu_j   = float(_jumps.mean()) if len(_jumps) > 0 else 0.0
+                _mc_sig_j  = float(_jumps.std())  if len(_jumps) > 1 else 0.01
+                # Drift adjustment so total expected return = μ
+                _mc_mu_adj = _mc_mu - _mc_lam_j * (_np_mc.exp(_mc_mu_j + 0.5*_mc_sig_j**2) - 1)
+            else:
+                _mc_mu_adj = _mc_mu
+
+            # ── Run simulation ────────────────────────────────────
+            _mc_steps = max(int(_mc_T * 252), 1)
+            _mc_dt    = _mc_T / _mc_steps
+
+            _np_mc.random.seed(42)
+            with st.spinner(f"Running {_mc_n_sims:,} simulations…"):
+                _mc_Z     = _np_mc.random.normal(0, 1, (_mc_n_sims, _mc_steps))
+                _mc_paths = _np_mc.zeros((_mc_n_sims, _mc_steps + 1))
+                _mc_paths[:, 0] = _mc_S0
+
+                if _mc_model == "Jump Diffusion":
+                    _mc_N_j = _np_mc.random.poisson(_mc_lam_j * _mc_dt, (_mc_n_sims, _mc_steps))
+                    _mc_J   = _np_mc.random.normal(_mc_mu_j, _mc_sig_j, (_mc_n_sims, _mc_steps))
+                    for _t in range(_mc_steps):
+                        _mc_paths[:, _t+1] = _mc_paths[:, _t] * _np_mc.exp(
+                            (_mc_mu_adj - 0.5 * _mc_sigma**2) * _mc_dt
+                            + _mc_sigma * _np_mc.sqrt(_mc_dt) * _mc_Z[:, _t]
+                            + _mc_N_j[:, _t] * _mc_J[:, _t]
+                        )
+                else:
+                    _mc_paths[:, 1:] = _np_mc.exp(
+                        (_mc_mu_adj - 0.5 * _mc_sigma**2) * _mc_dt
+                        + _mc_sigma * _np_mc.sqrt(_mc_dt) * _mc_Z
+                    )
+                    _mc_paths = _mc_paths[:, 0:1] * _np_mc.cumprod(
+                        _np_mc.concatenate([_np_mc.ones((_mc_n_sims, 1)), _mc_paths[:, 1:]], axis=1),
+                        axis=1
+                    )
+
+            _mc_final = _mc_paths[:, -1]
+            _mc_mean  = float(_mc_final.mean())
+            _mc_med   = float(_np_mc.median(_mc_final))
+            _mc_std   = float(_mc_final.std())
+            _mc_p5    = float(_np_mc.percentile(_mc_final, 5))
+            _mc_p10   = float(_np_mc.percentile(_mc_final, 10))
+            _mc_p25   = float(_np_mc.percentile(_mc_final, 25))
+            _mc_p75   = float(_np_mc.percentile(_mc_final, 75))
+            _mc_p90   = float(_np_mc.percentile(_mc_final, 90))
+            _mc_p95   = float(_np_mc.percentile(_mc_final, 95))
+            _mc_var95 = float(_mc_S0 - _mc_p5)
+            _mc_var99 = float(_mc_S0 - _np_mc.percentile(_mc_final, 1))
+            # Expected Shortfall (CVaR) at 95%
+            _mc_es95  = float(_mc_S0 - _mc_final[_mc_final <= _mc_p5].mean()) if (_mc_final <= _mc_p5).any() else 0.0
+            _mc_cagr  = float((_mc_mean / _mc_S0) ** (1 / max(_mc_T, 0.08)) - 1)
+            # Max drawdown across paths (sample 5000 for speed)
+            _mc_mdd_sample = _mc_paths[:5000]
+            _mc_running_max = _np_mc.maximum.accumulate(_mc_mdd_sample, axis=1)
+            _mc_dd = (_mc_mdd_sample - _mc_running_max) / _mc_running_max
+            _mc_max_dd = float(_mc_dd.min())
+
+            # Probabilities
+            _mc_p_profit  = float((_mc_final > _mc_S0).mean())
+            _mc_p_loss    = float((_mc_final < _mc_S0).mean())
+            _mc_p_target  = float((_mc_final >= _mc_target).mean()) if _mc_target > 0 else None
+            _mc_p_stop    = float((_mc_final <= _mc_stop).mean())   if _mc_stop > 0 else None
+
+            # ── Current price symbol ──────────────────────────────
+            _mc_sym = "£" if _mc_ticker.endswith(".L") else "$"
+            _mc_name = _mc_info.get("shortName", _mc_ticker)
+
+            st.markdown("---")
+
+            # ── KPI summary row ───────────────────────────────────
+            st.markdown(f"#### 📊 Results — {_mc_name} · {_mc_n_sims:,} simulations · {_mc_horizon}")
+            _mk1, _mk2, _mk3, _mk4, _mk5, _mk6 = st.columns(6)
+            def _mc_kpi(col, label, val, color="#F1F5F9"):
+                col.markdown(
+                    f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);'
+                    f'border-radius:10px;padding:10px;text-align:center">'
+                    f'<div style="font-size:0.58rem;color:#64748B;text-transform:uppercase;'
+                    f'letter-spacing:0.5px;margin-bottom:3px">{label}</div>'
+                    f'<div style="font-size:1.05rem;font-weight:800;color:{color}">{val}</div>'
+                    f'</div>', unsafe_allow_html=True)
+
+            _mc_kpi(_mk1, "Current Price", f"{_mc_sym}{_mc_S0:,.2f}", "#F1F5F9")
+            _mc_kpi(_mk2, "Mean Outcome", f"{_mc_sym}{_mc_mean:,.2f}",
+                    "#22C55E" if _mc_mean > _mc_S0 else "#EF4444")
+            _mc_kpi(_mk3, "Median Outcome", f"{_mc_sym}{_mc_med:,.2f}",
+                    "#22C55E" if _mc_med > _mc_S0 else "#EF4444")
+            _mc_kpi(_mk4, "Expected CAGR", f"{_mc_cagr:+.1%}",
+                    "#22C55E" if _mc_cagr > 0 else "#EF4444")
+            _mc_kpi(_mk5, "VaR 95%", f"-{_mc_sym}{_mc_var95:,.2f}", "#EF4444")
+            _mc_kpi(_mk6, "Max Sim Drawdown", f"{_mc_max_dd:.1%}", "#991B1B")
+
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+            # ── Probability row ───────────────────────────────────
+            _mp1, _mp2, _mp3, _mp4 = st.columns(4)
+            _mc_kpi(_mp1, "Prob. of Profit", f"{_mc_p_profit:.1%}",
+                    "#22C55E" if _mc_p_profit > 0.5 else "#EF4444")
+            _mc_kpi(_mp2, "Prob. of Loss", f"{_mc_p_loss:.1%}",
+                    "#EF4444" if _mc_p_loss > 0.3 else "#F59E0B")
+            if _mc_p_target is not None:
+                _mc_kpi(_mp3, f"P(≥ {_mc_sym}{_mc_target:,.0f})", f"{_mc_p_target:.1%}",
+                        "#22C55E" if _mc_p_target > 0.4 else "#F59E0B" if _mc_p_target > 0.2 else "#EF4444")
+            else:
+                _mc_kpi(_mp3, "P(≥ Target)", "Set target above", "#64748B")
+            if _mc_p_stop is not None:
+                _mc_kpi(_mp4, f"P(≤ {_mc_sym}{_mc_stop:,.0f})", f"{_mc_p_stop:.1%}",
+                        "#EF4444" if _mc_p_stop > 0.15 else "#F59E0B" if _mc_p_stop > 0.05 else "#22C55E")
+            else:
+                _mc_kpi(_mp4, "P(≤ Stop Loss)", "Set stop above", "#64748B")
+
+            st.markdown("---")
+
+            # ── Fan Chart ─────────────────────────────────────────
+            st.markdown("#### 📈 Price Path Fan Chart")
+            _mc_x = _np_mc.linspace(0, _mc_T * 252, _mc_steps + 1)
+
+            _fan_fig = go.Figure()
+
+            # Confidence bands (shaded fans)
+            _bands = [
+                (_mc_paths, 1, 99, "rgba(239,68,68,0.08)"),
+                (_mc_paths, 5, 95, "rgba(245,158,11,0.12)"),
+                (_mc_paths, 10, 90, "rgba(245,158,11,0.16)"),
+                (_mc_paths, 25, 75, "rgba(34,197,94,0.18)"),
+            ]
+            _band_labels = ["1–99%","5–95%","10–90%","25–75%"]
+            for (_paths_b, _plo, _phi, _fc), _lbl in zip(_bands, _band_labels):
+                _lo = _np_mc.percentile(_paths_b, _plo, axis=0)
+                _hi = _np_mc.percentile(_paths_b, _phi, axis=0)
+                _fan_fig.add_trace(go.Scatter(
+                    x=_np_mc.concatenate([_mc_x, _mc_x[::-1]]),
+                    y=_np_mc.concatenate([_hi, _lo[::-1]]),
+                    fill="toself", fillcolor=_fc,
+                    line=dict(width=0), name=_lbl, showlegend=True,
+                    hoverinfo="skip"
+                ))
+
+            # Median path
+            _mc_p50 = _np_mc.percentile(_mc_paths, 50, axis=0)
+            _fan_fig.add_trace(go.Scatter(
+                x=_mc_x, y=_mc_p50, mode="lines",
+                line=dict(color="#F59E0B", width=2.5, dash="solid"),
+                name="Median path",
+                hovertemplate="Day %{x:.0f}: " + _mc_sym + "%{y:,.2f}<extra></extra>"
+            ))
+
+            # Target price line
+            if _mc_target > 0:
+                _fan_fig.add_hline(y=_mc_target, line_color="#22C55E", line_dash="dash",
+                                   line_width=1.5,
+                                   annotation_text=f"Target {_mc_sym}{_mc_target:,.2f}",
+                                   annotation_font=dict(color="#22C55E", size=10),
+                                   annotation_position="right")
+            # Stop loss line
+            if _mc_stop > 0:
+                _fan_fig.add_hline(y=_mc_stop, line_color="#EF4444", line_dash="dash",
+                                   line_width=1.5,
+                                   annotation_text=f"Stop {_mc_sym}{_mc_stop:,.2f}",
+                                   annotation_font=dict(color="#EF4444", size=10),
+                                   annotation_position="right")
+            # Current price
+            _fan_fig.add_hline(y=_mc_S0, line_color="#94A3B8", line_dash="dot",
+                                line_width=1,
+                                annotation_text=f"Now {_mc_sym}{_mc_S0:,.2f}",
+                                annotation_font=dict(color="#94A3B8", size=10),
+                                annotation_position="right")
+
+            _fan_fig.update_layout(
+                height=420,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=40, r=120, t=20, b=50),
+                legend=dict(font=dict(color="#94A3B8", size=10),
+                            bgcolor="rgba(13,31,51,0.8)", bordercolor="rgba(100,116,139,0.3)",
+                            borderwidth=1, orientation="h", x=0, y=1.08),
+                xaxis=dict(title="Trading Days", gridcolor="rgba(100,116,139,0.15)",
+                           tickfont=dict(color="#64748B")),
+                yaxis=dict(title=f"Price ({_mc_sym})", tickprefix=_mc_sym,
+                           gridcolor="rgba(100,116,139,0.15)", tickfont=dict(color="#64748B")),
+                hovermode="x unified"
+            )
+            st.plotly_chart(_fan_fig, use_container_width=True, config={"displayModeBar": False})
+            st.caption(
+                "Shaded bands show the probability range of outcomes. "
+                "Green band = 25–75% (most likely). "
+                "Outer red = 1–99% (nearly all scenarios). "
+                "Gold line = median simulated path."
+            )
+
+            # ── Distribution Histogram ────────────────────────────
+            st.markdown("#### 📊 Final Price Distribution")
+            _hist_fig = go.Figure()
+            _hist_fig.add_trace(go.Histogram(
+                x=_mc_final, nbinsx=120,
+                marker=dict(
+                    color=[
+                        "#EF4444" if v < _mc_S0 else
+                        ("#22C55E" if (_mc_target > 0 and v >= _mc_target) else "#F59E0B")
+                        for v in _mc_final
+                    ],
+                    opacity=0.75,
+                    line=dict(width=0)
+                ),
+                name="Simulated outcomes",
+                hovertemplate="Price: " + _mc_sym + "%{x:,.2f}<br>Count: %{y}<extra></extra>"
+            ))
+            # Mark key percentiles
+            for _pct_val, _pct_lbl, _pct_clr in [
+                (_mc_p5, "VaR 95%", "#EF4444"),
+                (_mc_med, "Median", "#F59E0B"),
+                (_mc_mean, "Mean", "#60A5FA"),
+                (_mc_p95, "P95", "#22C55E"),
+            ]:
+                _hist_fig.add_vline(x=_pct_val, line_color=_pct_clr, line_dash="dash",
+                                     line_width=1.5,
+                                     annotation_text=f"{_pct_lbl} {_mc_sym}{_pct_val:,.0f}",
+                                     annotation_font=dict(color=_pct_clr, size=9),
+                                     annotation_position="top")
+            if _mc_target > 0:
+                _hist_fig.add_vline(x=_mc_target, line_color="#22C55E", line_dash="solid",
+                                     line_width=2,
+                                     annotation_text=f"Target {_mc_sym}{_mc_target:,.0f}",
+                                     annotation_font=dict(color="#22C55E", size=9),
+                                     annotation_position="top right")
+
+            _hist_fig.update_layout(
+                height=320,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=40, r=40, t=40, b=50),
+                showlegend=False,
+                bargap=0.02,
+                xaxis=dict(title=f"Price at end of {_mc_horizon} ({_mc_sym})",
+                           tickprefix=_mc_sym, gridcolor="rgba(100,116,139,0.15)",
+                           tickfont=dict(color="#64748B")),
+                yaxis=dict(title="Simulation count", gridcolor="rgba(100,116,139,0.15)",
+                           tickfont=dict(color="#64748B")),
+            )
+            st.plotly_chart(_hist_fig, use_container_width=True, config={"displayModeBar": False})
+
+            # ── Full statistics table ─────────────────────────────
+            st.markdown("---")
+            st.markdown("#### 📋 Full Statistics")
+            _sc1, _sc2 = st.columns(2)
+            with _sc1:
+                st.markdown("**Price Distribution**")
+                _stats_df = pd.DataFrame([
+                    ("Current Price",        f"{_mc_sym}{_mc_S0:,.2f}",     ""),
+                    ("Mean (expected)",       f"{_mc_sym}{_mc_mean:,.2f}",    ""),
+                    ("Median (50th pct)",     f"{_mc_sym}{_mc_med:,.2f}",     ""),
+                    ("Std Deviation",         f"{_mc_sym}{_mc_std:,.2f}",     ""),
+                    ("5th percentile",        f"{_mc_sym}{_mc_p5:,.2f}",      "worst 5%"),
+                    ("10th percentile",       f"{_mc_sym}{_mc_p10:,.2f}",     ""),
+                    ("25th percentile",       f"{_mc_sym}{_mc_p25:,.2f}",     ""),
+                    ("75th percentile",       f"{_mc_sym}{_mc_p75:,.2f}",     ""),
+                    ("90th percentile",       f"{_mc_sym}{_mc_p90:,.2f}",     ""),
+                    ("95th percentile",       f"{_mc_sym}{_mc_p95:,.2f}",     "best 5%"),
+                    ("Expected CAGR",         f"{_mc_cagr:+.1%}",             "annualised"),
+                ], columns=["Metric", "Value", "Note"])
+                st.dataframe(_stats_df, hide_index=True, use_container_width=True)
+
+            with _sc2:
+                st.markdown("**Risk Metrics**")
+                _risk_rows = [
+                    ("Model",               _mc_model,                                  ""),
+                    ("Annual Volatility (σ)", f"{_mc_sigma:.1%}",                        "historical" if _mc_model != "EWMA Volatility" else "EWMA"),
+                    ("Annual Drift (μ)",     f"{_mc_mu:+.1%}",                           _mc_ret_src),
+                    ("Risk-Free Rate",        f"{_mc_rf:.2%}",                            "10Y Treasury"),
+                    ("VaR 95%",              f"-{_mc_sym}{_mc_var95:,.2f}",              "worst 5% scenario"),
+                    ("VaR 99%",              f"-{_mc_sym}{_mc_var99:,.2f}",              "worst 1% scenario"),
+                    ("Expected Shortfall",   f"-{_mc_sym}{_mc_es95:,.2f}",              "avg loss beyond VaR"),
+                    ("Max Sim Drawdown",     f"{_mc_max_dd:.1%}",                        "peak-to-trough"),
+                    ("Prob. Profit",         f"{_mc_p_profit:.1%}",                      f"> {_mc_sym}{_mc_S0:,.2f}"),
+                    ("Prob. Loss",           f"{_mc_p_loss:.1%}",                        f"< {_mc_sym}{_mc_S0:,.2f}"),
+                ]
+                if _mc_p_target is not None:
+                    _risk_rows.append(("Prob. ≥ Target", f"{_mc_p_target:.1%}", f"≥ {_mc_sym}{_mc_target:,.0f}"))
+                if _mc_p_stop is not None:
+                    _risk_rows.append(("Prob. ≤ Stop", f"{_mc_p_stop:.1%}", f"≤ {_mc_sym}{_mc_stop:,.0f}"))
+                if _mc_model == "Jump Diffusion":
+                    _risk_rows.extend([
+                        ("Jump Frequency (λ)", f"{_mc_lam_j:.1f}/year", "estimated from history"),
+                        ("Avg Jump Size",      f"{_mc_mu_j:+.2%}",     "mean log-return of outliers"),
+                    ])
+                _risk_df = pd.DataFrame(_risk_rows, columns=["Metric", "Value", "Note"])
+                st.dataframe(_risk_df, hide_index=True, use_container_width=True)
+
+            # ══════════════════════════════════════════════════════
+            # DECISION DASHBOARD
+            # ══════════════════════════════════════════════════════
+            st.markdown("---")
+            st.markdown("#### 🎯 Investment Decision Dashboard")
+            st.caption("Synthesises Fundamental, Monte Carlo and Technical signals into one decision framework")
+
+            # Gather signals
+            _screened_df = st.session_state.get("screened_df")
+            _tech_signal = None
+            _dcf_val     = None
+            _fund_score  = None
+            _mc_signal_colour = "#F59E0B"
+            _mc_signal_label  = "Neutral"
+
+            if _screened_df is not None and not _screened_df.empty:
+                _match = _screened_df[_screened_df.get("Ticker", pd.Series()).str.upper() == _mc_ticker.upper()]
+                if not _match.empty:
+                    _row = _match.iloc[0]
+                    _tech_signal = _row.get("Tech Signal", None)
+                    for _dcf_col in ["DCF Value", "DCF", "Intrinsic Value"]:
+                        if _dcf_col in _row and pd.notna(_row[_dcf_col]):
+                            try: _dcf_val = float(str(_row[_dcf_col]).replace("£","").replace("$","").replace(",",""))
+                            except: pass
+                            break
+                    for _fs_col in ["Score", "Quality Score", "Fintiq Score"]:
+                        if _fs_col in _row and pd.notna(_row[_fs_col]):
+                            try: _fund_score = float(_row[_fs_col])
+                            except: pass
+                            break
+
+            # Monte Carlo signal
+            if _mc_p_target is not None:
+                if _mc_p_target >= 0.45 and _mc_p_profit >= 0.55:
+                    _mc_signal_colour, _mc_signal_label = "#22C55E", "Favourable"
+                elif _mc_p_target >= 0.25:
+                    _mc_signal_colour, _mc_signal_label = "#F59E0B", "Moderate"
+                else:
+                    _mc_signal_colour, _mc_signal_label = "#EF4444", "Unfavourable"
+            elif _mc_p_profit >= 0.60:
+                _mc_signal_colour, _mc_signal_label = "#22C55E", "Favourable"
+            elif _mc_p_profit >= 0.45:
+                _mc_signal_colour, _mc_signal_label = "#F59E0B", "Moderate"
+            else:
+                _mc_signal_colour, _mc_signal_label = "#EF4444", "Unfavourable"
+
+            # Build signal cards
+            _dd_html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">'
+
+            # 1. Fundamental
+            if _dcf_val and _dcf_val > 0:
+                _margin = (_dcf_val - _mc_S0) / _mc_S0
+                _fund_col = "#22C55E" if _margin > 0.1 else "#F59E0B" if _margin > -0.1 else "#EF4444"
+                _fund_label = "Undervalued" if _margin > 0.1 else "Fair Value" if _margin > -0.1 else "Overvalued"
+                _dd_html += (
+                    f'<div style="background:#0D1F33;border:1px solid {_fund_col}40;border-top:3px solid {_fund_col};'
+                    f'border-radius:10px;padding:14px;text-align:center">'
+                    f'<div style="font-size:0.65rem;color:#64748B;text-transform:uppercase;margin-bottom:6px">① Fundamental</div>'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:{_fund_col}">{_fund_label}</div>'
+                    f'<div style="font-size:0.75rem;color:#94A3B8;margin-top:4px">'
+                    f'DCF {_mc_sym}{_dcf_val:,.0f} vs {_mc_sym}{_mc_S0:,.0f} now<br>'
+                    f'Margin of safety: <b style="color:{_fund_col}">{_margin:+.1%}</b></div></div>'
+                )
+            else:
+                _dd_html += (
+                    '<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.3);border-top:3px solid #475569;'
+                    'border-radius:10px;padding:14px;text-align:center">'
+                    '<div style="font-size:0.65rem;color:#64748B;text-transform:uppercase;margin-bottom:6px">① Fundamental</div>'
+                    '<div style="font-size:0.85rem;color:#64748B">Run screen<br>for DCF data</div></div>'
+                )
+
+            # 2. Monte Carlo
+            _dd_html += (
+                f'<div style="background:#0D1F33;border:1px solid {_mc_signal_colour}40;border-top:3px solid {_mc_signal_colour};'
+                f'border-radius:10px;padding:14px;text-align:center">'
+                f'<div style="font-size:0.65rem;color:#64748B;text-transform:uppercase;margin-bottom:6px">② Monte Carlo</div>'
+                f'<div style="font-size:1.1rem;font-weight:800;color:{_mc_signal_colour}">{_mc_signal_label}</div>'
+                f'<div style="font-size:0.75rem;color:#94A3B8;margin-top:4px">'
+                f'P(profit): <b style="color:{_mc_signal_colour}">{_mc_p_profit:.0%}</b><br>'
+            )
+            if _mc_p_target is not None:
+                _dd_html += f'P(≥ target): <b style="color:{_mc_signal_colour}">{_mc_p_target:.0%}</b>'
+            _dd_html += '</div></div>'
+
+            # 3. Technical
+            if _tech_signal:
+                _tc = "#22C55E" if "Strong" in str(_tech_signal) else "#F59E0B" if "Neutral" in str(_tech_signal) else "#EF4444"
+                _dd_html += (
+                    f'<div style="background:#0D1F33;border:1px solid {_tc}40;border-top:3px solid {_tc};'
+                    f'border-radius:10px;padding:14px;text-align:center">'
+                    f'<div style="font-size:0.65rem;color:#64748B;text-transform:uppercase;margin-bottom:6px">③ Technical</div>'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:{_tc}">{_tech_signal}</div>'
+                    f'<div style="font-size:0.75rem;color:#94A3B8;margin-top:4px">From screener</div></div>'
+                )
+            else:
+                _dd_html += (
+                    '<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.3);border-top:3px solid #475569;'
+                    'border-radius:10px;padding:14px;text-align:center">'
+                    '<div style="font-size:0.65rem;color:#64748B;text-transform:uppercase;margin-bottom:6px">③ Technical</div>'
+                    '<div style="font-size:0.85rem;color:#64748B">Check Technical<br>screen for signals</div></div>'
+                )
+
+            # 4. Overall Decision
+            _signals_present = sum([
+                1 if _dcf_val and _dcf_val > _mc_S0 * 1.1 else 0,
+                1 if _mc_signal_label == "Favourable" else 0,
+                1 if _tech_signal and "Strong" in str(_tech_signal) else 0,
+            ])
+            if _signals_present == 3:
+                _dec_col, _dec_label, _dec_icon = "#22C55E", "HIGH CONVICTION BUY", "🟢"
+            elif _signals_present == 2:
+                _dec_col, _dec_label, _dec_icon = "#F59E0B", "CAUTIOUS BUY", "🟡"
+            elif _signals_present == 1:
+                _dec_col, _dec_label, _dec_icon = "#F59E0B", "WATCH / WAIT", "⚠️"
+            else:
+                _dec_col, _dec_label, _dec_icon = "#EF4444", "AVOID / REVIEW", "🔴"
+
+            _dd_html += (
+                f'<div style="background:linear-gradient(135deg,#0D2137,#0A1628);'
+                f'border:2px solid {_dec_col};border-radius:10px;padding:14px;text-align:center">'
+                f'<div style="font-size:0.65rem;color:#64748B;text-transform:uppercase;margin-bottom:6px">④ Decision</div>'
+                f'<div style="font-size:1rem;font-weight:900;color:{_dec_col}">{_dec_icon} {_dec_label}</div>'
+                f'<div style="font-size:0.72rem;color:#94A3B8;margin-top:4px">'
+                f'{_signals_present}/3 signals aligned</div></div>'
+            )
+            _dd_html += '</div>'
+            st.markdown(_dd_html, unsafe_allow_html=True)
+
+            # Signal breakdown
+            st.markdown(
+                '<div style="background:rgba(13,31,53,0.7);border-left:3px solid #F59E0B;'
+                'border-radius:8px;padding:14px 18px;font-size:0.85rem;color:#94A3B8;line-height:1.8">'
+                '<b style="color:#F1F5F9">How to read this:</b> '
+                'Signal ① checks whether the business is priced below intrinsic value (margin of safety). '
+                'Signal ② checks whether the statistical distribution of future prices favours upside. '
+                'Signal ③ checks whether the technical trend confirms momentum. '
+                'All three aligning = highest conviction setup. '
+                '<b style="color:#F59E0B">This dashboard does not constitute financial advice.</b>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+            with st.expander("📚 Model Notes & Limitations", expanded=False):
+                st.markdown(f"""
+**Model used:** {_mc_model} · **Simulations:** {_mc_n_sims:,} · **Horizon:** {_mc_horizon}
+
+**Annual volatility (σ):** {_mc_sigma:.1%} — {'EWMA (RiskMetrics λ=0.94), captures volatility clustering' if _mc_model == 'EWMA Volatility' else 'historical standard deviation of log-returns, annualised'}
+
+**Annual drift (μ):** {_mc_mu:+.1%} — {_mc_ret_src}
+
+{'**Jump parameters (Merton):** λ=' + f'{_mc_lam_j:.1f} jumps/year · μⱼ=' + f'{_mc_mu_j:+.2%} · σⱼ=' + f'{_mc_sig_j:.2%}' if _mc_model == 'Jump Diffusion' else ''}
+
+**Known limitations of GBM:**
+- Assumes log-normal returns; real markets have fat tails (kurtosis)
+- Standard GBM assumes constant volatility — EWMA model partially addresses this
+- Does not model structural breaks, regime changes or liquidity crises
+- Jump Diffusion improves on sudden shocks but estimates are backward-looking
+- Garbage In / Garbage Out: if the historical period used is a bull market, drift μ will be optimistic. Always sense-check the μ input.
+- Past price behaviour does not guarantee future outcomes
+
+**Best practice:** Run all three models and compare. If they broadly agree, confidence is higher. Wide divergence signals model sensitivity.
+""")
+
+    elif not _mc_ticker and not _run_mc:
+        st.info("Enter a ticker above and click **Run Simulation** to begin.")
 
 
 # ═══════════════════════════════════════════════════════════════
