@@ -2436,8 +2436,10 @@ if _qp_stripe and "fintiq_user" in st.session_state:
 # ── Nav bar — Login button lives inside the HTML ─────────────
 _qp_action = st.query_params.get("action", "")
 
+_qp_t_current = st.query_params.get("_t", "")
+_pricing_href = f"?page=pricing&_t={_qp_t_current}" if _qp_t_current else "?page=pricing"
 _pricing_link = (
-    '<a href="?page=pricing" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);'
+    f'<a href="{_pricing_href}" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);'
     'color:#F59E0B;padding:5px 18px;border-radius:20px;font-size:0.8rem;font-weight:600;'
     'text-decoration:none;letter-spacing:0.3px">Pricing</a>'
 )
@@ -2512,6 +2514,26 @@ if _qp_page == "pricing":
     _pu_email = _pu.get("email", "")
     _pu_id    = _pu.get("id", "")
     _pu_pro   = _pu.get("is_pro", False)
+
+    # Must be logged in to reach checkout — redirect to login with return URL
+    if not _pu_email:
+        _ret_t = st.query_params.get("_t", "")
+        _ret_url = f"?action=login&next=pricing&_t={_ret_t}" if _ret_t else "?action=login&next=pricing"
+        st.markdown(f"""
+        <div style="max-width:520px;margin:80px auto;text-align:center;
+            background:#0D1F33;border:1px solid rgba(245,158,11,0.3);
+            border-radius:16px;padding:40px">
+          <div style="font-size:2rem;margin-bottom:12px">🔒</div>
+          <div style="font-size:1.3rem;font-weight:700;color:#F59E0B;margin-bottom:8px">
+            Please log in first</div>
+          <div style="color:#94A3B8;font-size:0.9rem;margin-bottom:24px">
+            You need a Fintiq account to subscribe.</div>
+          <a href="{_ret_url}" style="background:linear-gradient(135deg,#D97706,#F59E0B);
+            color:#0F1923;padding:10px 28px;border-radius:20px;font-weight:700;
+            text-decoration:none;font-size:0.95rem">Login / Sign up</a>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
 
     st.markdown("""
     <div style="max-width:760px;margin:32px auto 0 auto;text-align:center">
@@ -2686,9 +2708,12 @@ if (_qp_action == "login" or _banner_stripe_session) and not _user_email:
                                 _qp_ss = st.query_params.get("stripe_session", "") or st.session_state.pop("_pending_stripe_session", "")
                                 if _qp_ss:
                                     _verify_stripe_session(_qp_ss, res.user.id)
+                                _next_page = st.query_params.get("next", "")
                                 st.query_params.clear()
                                 if _tok3:
                                     st.query_params["_t"] = _tok3
+                                if _next_page:
+                                    st.query_params["page"] = _next_page
                                 st.rerun()
                             else:
                                 st.error("Invalid email or password.")
@@ -3840,90 +3865,107 @@ with tab1:
             "high cash conversion, dividend payers. Long-term hold, not a trade.",
     }
 
-    with st.expander("⚙️  Advanced Filters", expanded=False):
-        # ── Preset selector ──────────────────────────────────────
-        _pr_col, _ap_col = st.columns([3, 1])
-        with _pr_col:
-            _preset_sel = st.selectbox(
-                "📋 Load Preset Screener",
-                list(_PRESETS.keys()), key="af_preset_sel",
-                help="Select a preset to auto-fill all filters instantly.")
-        with _ap_col:
-            st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-            _is_custom = (_preset_sel == "— Custom (set filters manually) —")
-            if st.button("Apply →", key="af_apply_preset", use_container_width=True,
-                         disabled=_is_custom, type="primary"):
-                for _pk, _pv in _PRESETS[_preset_sel].items():
-                    st.session_state[_pk] = _pv
-                st.rerun()
-        if not _is_custom and _preset_sel in _PRESET_NOTES:
-            st.info(_PRESET_NOTES[_preset_sel])
-        st.markdown('<p style="color:#64748B;font-size:0.8rem;margin:8px 0 12px 0">'
-            'Adjust sliders below, then click <b>▶ Run Screen</b>.</p>',
-            unsafe_allow_html=True)
-
-        _af1, _af2, _af3, _af4, _af5 = st.columns(5)
-
-        with _af1:
-            st.markdown("**📏 Size & Liquidity**")
-            cap_bucket = st.selectbox(
-                "Market Cap Size", list(_CAP_BUCKETS.keys()), index=0,
-                key="af_cap",
-                help="Filters by market capitalisation in the stock's local currency.")
-            min_cap, max_cap = _CAP_BUCKETS[cap_bucket]
-            min_vol_m = st.slider("Min Avg Daily Vol (M)", 0.0, 5.0, 0.0, 0.25,
-                key="af_vol",
-                help="0 = no minimum. 1.0 = at least 1M shares/day. Higher = more liquid.")
-
-        with _af2:
-            st.markdown("**💹 Valuation**")
-            pe_range = st.slider("P/E Ratio (range)", 0, 100, (0, 35),
-                key="af_pe",
-                help="0 = no lower limit. Stocks with negative P/E are excluded if you set min > 0.")
-            min_pe, max_pe = pe_range
-            pb_max = st.slider("Max Price/Book", 0.0, 20.0, 10.0, 0.5,
-                key="af_pb",
-                help="Set to 20 to disable. Low P/B can indicate undervaluation.")
-
-        with _af3:
-            st.markdown("**📈 Profitability**")
-            min_roe = st.slider("Min ROE (%)", 0, 50, 10,
-                key="af_roe",
-                help="Return on Equity. 0 = no minimum. >15% is good quality.") / 100
-            min_gm  = st.slider("Min Gross Margin (%)", 0, 70, 15,
-                key="af_gm",
-                help="0 = no minimum. Higher margins = pricing power.") / 100
-            min_nm  = st.slider("Min Net Margin (%)", 0, 40, 0,
-                key="af_nm",
-                help="0 = no minimum. Filters loss-making companies when >0.") / 100
-
-        with _af4:
-            st.markdown("**🏦 Financial Health**")
-            max_de = st.slider("Max Debt/Equity", 0.0, 10.0, 3.0, 0.25,
-                key="af_de",
-                help="Set to 10 to disable. Lower = less financial risk.")
-            min_cc = st.slider("Min Cash Conversion", 0.0, 1.5, 0.5, 0.05,
-                key="af_cc",
-                help="Operating cash flow / net income. >0.8 = high quality earnings. 0 = no minimum.")
-            div_filter = st.checkbox("Dividend payers only", key="af_div",
-                help="Only show stocks that paid a dividend in the last 12 months.")
-
-        with _af5:
-            st.markdown("**📐 Technical Signal**")
-            st.markdown(
-                '<p style="color:#64748B;font-size:0.78rem;line-height:1.4">'
-                'Technicals are shown as <b>indicators</b> in results — not hard filters.<br>'
-                '✅ Strong &nbsp;⚠️ Neutral &nbsp;🔴 Weak<br>'
-                'Computed from: MA position, 52-wk proximity, volume spike.</p>',
+    _adv_is_pro = st.session_state.get("fintiq_user", {}).get("is_pro", False)
+    if not _adv_is_pro:
+        _adv_t = st.query_params.get("_t", "")
+        _adv_href = f"?page=pricing&_t={_adv_t}" if _adv_t else "?page=pricing"
+        with st.expander("⚙️  Advanced Filters  🔒 Pro", expanded=False):
+            st.markdown(f"""
+            <div style="text-align:center;padding:28px 0">
+              <div style="font-size:1.1rem;font-weight:700;color:#F59E0B;margin-bottom:8px">
+                🔒 Advanced Filters — Fintiq Pro</div>
+              <div style="color:#64748B;font-size:0.88rem;margin-bottom:18px">
+                Preset screeners, custom sliders, and 20+ filter criteria are available on the Pro plan.</div>
+              <a href="{_adv_href}" style="background:linear-gradient(135deg,#D97706,#F59E0B);
+                color:#0F1923;padding:8px 24px;border-radius:20px;font-weight:700;
+                text-decoration:none;font-size:0.88rem">Upgrade to Pro — £10/mo</a>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        with st.expander("⚙️  Advanced Filters", expanded=False):
+            # ── Preset selector ──────────────────────────────────────
+            _pr_col, _ap_col = st.columns([3, 1])
+            with _pr_col:
+                _preset_sel = st.selectbox(
+                    "📋 Load Preset Screener",
+                    list(_PRESETS.keys()), key="af_preset_sel",
+                    help="Select a preset to auto-fill all filters instantly.")
+            with _ap_col:
+                st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+                _is_custom = (_preset_sel == "— Custom (set filters manually) —")
+                if st.button("Apply →", key="af_apply_preset", use_container_width=True,
+                             disabled=_is_custom, type="primary"):
+                    for _pk, _pv in _PRESETS[_preset_sel].items():
+                        st.session_state[_pk] = _pv
+                    st.rerun()
+            if not _is_custom and _preset_sel in _PRESET_NOTES:
+                st.info(_PRESET_NOTES[_preset_sel])
+            st.markdown('<p style="color:#64748B;font-size:0.8rem;margin:8px 0 12px 0">'
+                'Adjust sliders below, then click <b>▶ Run Screen</b>.</p>',
                 unsafe_allow_html=True)
 
-        _rst1, _rst2 = st.columns([1, 5])
-        with _rst1:
-            if st.button("↺ Reset to Defaults", key="af_reset"):
-                for _k in ["af_cap","af_pe","af_pb","af_roe","af_gm","af_nm",
-                            "af_de","af_cc","af_div","af_vol","af_preset_sel"]:
-                    if _k in st.session_state: del st.session_state[_k]
-                st.rerun()
+            _af1, _af2, _af3, _af4, _af5 = st.columns(5)
+
+            with _af1:
+                st.markdown("**📏 Size & Liquidity**")
+                cap_bucket = st.selectbox(
+                    "Market Cap Size", list(_CAP_BUCKETS.keys()), index=0,
+                    key="af_cap",
+                    help="Filters by market capitalisation in the stock's local currency.")
+                min_cap, max_cap = _CAP_BUCKETS[cap_bucket]
+                min_vol_m = st.slider("Min Avg Daily Vol (M)", 0.0, 5.0, 0.0, 0.25,
+                    key="af_vol",
+                    help="0 = no minimum. 1.0 = at least 1M shares/day. Higher = more liquid.")
+
+            with _af2:
+                st.markdown("**💹 Valuation**")
+                pe_range = st.slider("P/E Ratio (range)", 0, 100, (0, 35),
+                    key="af_pe",
+                    help="0 = no lower limit. Stocks with negative P/E are excluded if you set min > 0.")
+                min_pe, max_pe = pe_range
+                pb_max = st.slider("Max Price/Book", 0.0, 20.0, 10.0, 0.5,
+                    key="af_pb",
+                    help="Set to 20 to disable. Low P/B can indicate undervaluation.")
+
+            with _af3:
+                st.markdown("**📈 Profitability**")
+                min_roe = st.slider("Min ROE (%)", 0, 50, 10,
+                    key="af_roe",
+                    help="Return on Equity. 0 = no minimum. >15% is good quality.") / 100
+                min_gm  = st.slider("Min Gross Margin (%)", 0, 70, 15,
+                    key="af_gm",
+                    help="0 = no minimum. Higher margins = pricing power.") / 100
+                min_nm  = st.slider("Min Net Margin (%)", 0, 40, 0,
+                    key="af_nm",
+                    help="0 = no minimum. Filters loss-making companies when >0.") / 100
+
+            with _af4:
+                st.markdown("**🏦 Financial Health**")
+                max_de = st.slider("Max Debt/Equity", 0.0, 10.0, 3.0, 0.25,
+                    key="af_de",
+                    help="Set to 10 to disable. Lower = less financial risk.")
+                min_cc = st.slider("Min Cash Conversion", 0.0, 1.5, 0.5, 0.05,
+                    key="af_cc",
+                    help="Operating cash flow / net income. >0.8 = high quality earnings. 0 = no minimum.")
+                div_filter = st.checkbox("Dividend payers only", key="af_div",
+                    help="Only show stocks that paid a dividend in the last 12 months.")
+
+            with _af5:
+                st.markdown("**📐 Technical Signal**")
+                st.markdown(
+                    '<p style="color:#64748B;font-size:0.78rem;line-height:1.4">'
+                    'Technicals are shown as <b>indicators</b> in results — not hard filters.<br>'
+                    '✅ Strong &nbsp;⚠️ Neutral &nbsp;🔴 Weak<br>'
+                    'Computed from: MA position, 52-wk proximity, volume spike.</p>',
+                    unsafe_allow_html=True)
+
+            _rst1, _rst2 = st.columns([1, 5])
+            with _rst1:
+                if st.button("↺ Reset to Defaults", key="af_reset"):
+                    for _k in ["af_cap","af_pe","af_pb","af_roe","af_gm","af_nm",
+                                "af_de","af_cc","af_div","af_vol","af_preset_sel"]:
+                        if _k in st.session_state: del st.session_state[_k]
+                    st.rerun()
 
     # Read filter values from session state (set by sliders above but not causing reruns
     # because we read them only when Run Screen is pressed)
