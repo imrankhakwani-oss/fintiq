@@ -834,21 +834,25 @@ def _check_auth_gate() -> bool:
     if st.session_state.get(_ss_month_key) != now_month:
         # New month or first load — try seeding from Supabase
         seeded = 0
+        _read_err = None
         try:
             if _sb:
                 r = _sb.table("user_searches").select("monthly_searches,search_month").eq("user_id", user_id).execute()
                 if r.data and r.data[0].get("search_month") == now_month:
                     seeded = r.data[0].get("monthly_searches", 0)
-        except Exception:
-            pass
+        except Exception as e:
+            _read_err = str(e)
         st.session_state[_ss_key] = seeded
         st.session_state[_ss_month_key] = now_month
+        # Debug: show what was read from Supabase on session start
+        st.session_state["_debug_seed"] = f"seeded={seeded} err={_read_err}"
 
     current_searches = st.session_state.get(_ss_key, 0)
 
     if current_searches < _MONTHLY_LIMIT:
         st.session_state[_ss_key] = current_searches + 1
         # Best-effort persist to Supabase
+        _write_err = None
         try:
             if _sb:
                 _sb.table("user_searches").upsert({
@@ -856,8 +860,10 @@ def _check_auth_gate() -> bool:
                     "monthly_searches": current_searches + 1,
                     "search_month": now_month,
                 }).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            _write_err = str(e)
+        if _write_err:
+            st.session_state["_debug_write"] = f"write err={_write_err}"
         return True
 
     # Limit reached — show upgrade wall
@@ -3721,6 +3727,18 @@ with tab1:
         _uw = st.session_state["_show_upgrade_wall"]
         _show_upgrade_wall(_uw[0], _uw[1])
         st.stop()
+
+    # ── TEMP DEBUG — remove after confirming refresh persistence ──
+    if st.session_state.get("_debug_seed") or st.session_state.get("_debug_write"):
+        _u = st.session_state.get("fintiq_user", {})
+        _uid = _u.get("id","")
+        _sc = st.session_state.get(f"_sc_{_uid}", "?")
+        with st.expander("🔧 Debug (temp)", expanded=True):
+            st.code(
+                f"searches this session: {_sc}/{_MONTHLY_LIMIT}\n"
+                f"seed on load: {st.session_state.get('_debug_seed','')}\n"
+                f"write: {st.session_state.get('_debug_write','ok')}"
+            )
 
     st.markdown(
         '<div style="display:flex;align-items:center;gap:10px;padding:2px 0 2px 0;margin-bottom:2px">'
