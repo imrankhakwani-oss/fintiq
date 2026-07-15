@@ -818,41 +818,44 @@ def _check_auth_gate() -> bool:
         for _k in ["screened_df", "screened_symbols"]:
             if _k in st.session_state: del st.session_state[_k]
         st.session_state["_show_auth_wall"] = True
-        return False
+        st.rerun()
 
-    # Free registered user — check monthly limit
+    # Free registered user — always read count from Supabase (source of truth)
     user_id = user.get("id", "")
+    now_month = datetime.now().strftime("%Y-%m")
 
-    # Session-state counter (primary — works even if Supabase profiles table is missing)
-    _ss_count_key = f"_usr_searches_{user_id}"
-    if _ss_count_key not in st.session_state:
-        # Try to seed from Supabase on first load
-        profile = _get_profile(user_id)
-        st.session_state["fintiq_profile"] = profile
-        if profile.get("is_pro"):
-            st.session_state["fintiq_user"]["is_pro"] = True
-            return True
-        now_month = datetime.now().strftime("%Y-%m")
-        seeded = profile.get("monthly_searches", 0) if profile.get("search_month") == now_month else 0
-        st.session_state[_ss_count_key] = seeded
-    else:
-        profile = st.session_state.get("fintiq_profile") or {}
-        if profile.get("is_pro"):
-            st.session_state["fintiq_user"]["is_pro"] = True
-            return True
+    # Read current count directly from Supabase every time
+    current_searches = 0
+    try:
+        if _sb:
+            r = _sb.table("profiles").select("monthly_searches,search_month,is_pro").eq("id", user_id).execute()
+            if r.data:
+                row = r.data[0]
+                if row.get("is_pro"):
+                    st.session_state["fintiq_user"]["is_pro"] = True
+                    return True
+                current_searches = row.get("monthly_searches", 0) if row.get("search_month") == now_month else 0
+    except Exception:
+        pass
 
-    searches = st.session_state[_ss_count_key]
-    if searches < _MONTHLY_LIMIT:
-        st.session_state[_ss_count_key] = searches + 1
-        # Also try to persist to Supabase (silent fail ok)
-        _increment_search(user_id, st.session_state.get("fintiq_profile") or {})
+    if current_searches < _MONTHLY_LIMIT:
+        # Increment in Supabase immediately
+        try:
+            if _sb:
+                _sb.table("profiles").upsert({
+                    "id": user_id,
+                    "monthly_searches": current_searches + 1,
+                    "search_month": now_month,
+                }).execute()
+        except Exception:
+            pass
         return True
 
-    # Clear stale results when showing upgrade wall
-    for _k in ["screened_df","screened_symbols"]:
+    # Limit reached — show upgrade wall
+    for _k in ["screened_df", "screened_symbols"]:
         if _k in st.session_state: del st.session_state[_k]
     st.session_state["_show_upgrade_wall"] = (user.get("email", ""), user_id)
-    return False
+    st.rerun()
 
 def _show_auth_wall():
     """Signup wall shown to guests when they try to use the app."""
