@@ -3894,24 +3894,7 @@ with tab1:
             "high cash conversion, dividend payers. Long-term hold, not a trade.",
     }
 
-    _adv_is_pro = st.session_state.get("fintiq_user", {}).get("is_pro", False)
-    if not _adv_is_pro:
-        _adv_t = st.query_params.get("_t", "")
-        _adv_href = f"?page=pricing&_t={_adv_t}" if _adv_t else "?page=pricing"
-        with st.expander("⚙️  Advanced Filters  🔒 Pro", expanded=False):
-            st.markdown(f"""
-            <div style="text-align:center;padding:28px 0">
-              <div style="font-size:1.1rem;font-weight:700;color:#F59E0B;margin-bottom:8px">
-                🔒 Advanced Filters — Fintiq Pro</div>
-              <div style="color:#64748B;font-size:0.88rem;margin-bottom:18px">
-                Preset screeners, custom sliders, and 20+ filter criteria are available on the Pro plan.</div>
-              <a href="{_adv_href}" style="background:linear-gradient(135deg,#D97706,#F59E0B);
-                color:#0F1923;padding:8px 24px;border-radius:20px;font-weight:700;
-                text-decoration:none;font-size:0.88rem">Upgrade to Pro — £10/mo</a>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        with st.expander("⚙️  Advanced Filters", expanded=False):
+    with st.expander("⚙️  Advanced Filters", expanded=False):
             # ── Preset selector ──────────────────────────────────────
             _pr_col, _ap_col = st.columns([3, 1])
             with _pr_col:
