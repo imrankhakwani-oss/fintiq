@@ -849,7 +849,7 @@ def _check_auth_gate() -> bool:
 
         for _k in ["screened_df", "screened_symbols"]:
             if _k in st.session_state: del st.session_state[_k]
-        _show_auth_wall()
+        st.session_state["_show_auth_wall"] = True
         return False
 
     # Free registered user — check monthly limit
@@ -883,7 +883,7 @@ def _check_auth_gate() -> bool:
     # Clear stale results when showing upgrade wall
     for _k in ["screened_df","screened_symbols"]:
         if _k in st.session_state: del st.session_state[_k]
-    _show_upgrade_wall(user.get("email", ""), user_id)
+    st.session_state["_show_upgrade_wall"] = (user.get("email", ""), user_id)
     return False
 
 def _show_auth_wall():
@@ -898,7 +898,7 @@ def _show_auth_wall():
       <div style="color:#F1F5F9;font-size:1.1rem;font-weight:700;margin-bottom:8px">
         You've used your 2 free searches</div>
       <div style="color:#94A3B8;font-size:0.88rem;margin-bottom:8px">
-        Create a free account to get <b style="color:#F59E0B">10 searches/month</b> — no card required.<br>
+        Create a free account to get <b style="color:#F59E0B">5 searches/month</b> — no card required.<br>
         Upgrade to Pro for unlimited access.
       </div>
     </div>""", unsafe_allow_html=True)
@@ -934,6 +934,8 @@ def _show_auth_wall():
                         _tok2 = res.session.access_token if res.session else None
                         st.session_state["fintiq_user"] = {"email": res.user.email, "id": res.user.id}
                         st.session_state["free_searches"] = 0
+                        st.session_state.pop("_show_auth_wall", None)
+                        st.session_state.pop("_show_upgrade_wall", None)
                         if _tok2:
                             st.query_params["_t"] = _tok2
                         # Process any pending Stripe payment
@@ -953,7 +955,7 @@ def _show_auth_wall():
                     st.error(f"Error: {err}")
 
 def _show_upgrade_wall(user_email: str, user_id: str):
-    """Upgrade wall shown to free users after 10 searches/month.
+    """Upgrade wall shown to free users after 5 searches/month.
     Stripe URLs pre-generated on first render and cached — no button-click API calls."""
 
     # Only cache successful URLs — retry every render if empty (avoids stale "" from earlier failure)
@@ -3717,6 +3719,15 @@ with tab_brief:
 # ═══════════════════════════════════════════════════════════════
 
 with tab1:
+    # ── Persistent walls — survive reruns caused by browser events ──
+    if st.session_state.get("_show_auth_wall") and not st.session_state.get("fintiq_user"):
+        _show_auth_wall()
+        st.stop()
+    if st.session_state.get("_show_upgrade_wall") and not st.session_state.get("fintiq_user", {}).get("is_pro"):
+        _uw = st.session_state["_show_upgrade_wall"]
+        _show_upgrade_wall(_uw[0], _uw[1])
+        st.stop()
+
     st.markdown(
         '<div style="display:flex;align-items:center;gap:10px;padding:2px 0 2px 0;margin-bottom:2px">'
         '<span style="font-size:0.95rem;font-weight:700;color:#F1F5F9">🔍 Fundamental Quality Screen</span>'
