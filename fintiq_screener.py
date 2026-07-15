@@ -810,15 +810,14 @@ def _increment_guest(guest_id: str) -> int:
     except Exception:
         return 1
 
-def _seed_search_count_on_login(user_id: str):
+def _seed_search_count_on_login(user_id: str, existing_sc: str = ""):
     """After login, restore search count from URL param (if it belongs to this user).
-    Format in URL: _sc=USERID:COUNT|YYYY-MM
-    This works without Supabase — the count stays in the URL across logout/login."""
+    Format: _sc=USERID:COUNT|YYYY-MM
+    Pass existing_sc if query_params will be cleared after this call."""
     now_month = datetime.now().strftime("%Y-%m")
     count = 0
     try:
-        _qp = st.query_params.get("_sc", "")
-        # Format: USERID:COUNT|YYYY-MM
+        _qp = existing_sc or st.query_params.get("_sc", "")
         if ":" in _qp and "|" in _qp:
             _uid_part, _rest = _qp.split(":", 1)
             _count_part, _month_part = _rest.split("|", 1)
@@ -2517,12 +2516,15 @@ def backtest_pair(df, entry_threshold=2.0):
 _qp_stripe = st.query_params.get("stripe_session", "")
 if _qp_stripe and "fintiq_user" in st.session_state:
     _uid = st.session_state["fintiq_user"].get("id", "")
+    _sc_stripe = st.query_params.get("_sc", "")
     if _verify_stripe_session(_qp_stripe, _uid):
         st.query_params.clear()
+        if _sc_stripe: st.query_params["_sc"] = _sc_stripe
         st.success("🎉 Welcome to Fintiq Pro! Unlimited searches unlocked.")
         st.rerun()
     else:
         st.query_params.clear()
+        if _sc_stripe: st.query_params["_sc"] = _sc_stripe
 
 # ── Nav bar — Login button lives inside the HTML ─────────────
 _qp_action = st.query_params.get("action", "")
@@ -2782,12 +2784,13 @@ if (_qp_action == "login" or _banner_stripe_session) and not _user_email:
                                 if _qp_ss:
                                     _verify_stripe_session(_qp_ss, res.user.id)
                                 _next_page = st.query_params.get("next", "")
+                                _sc_before_clear = st.query_params.get("_sc", "")
                                 st.query_params.clear()
                                 if _tok3:
                                     st.query_params["_t"] = _tok3
                                 if _next_page:
                                     st.query_params["page"] = _next_page
-                                _seed_search_count_on_login(res.user.id)
+                                _seed_search_count_on_login(res.user.id, _sc_before_clear)
                                 st.rerun()
                             else:
                                 st.error("Invalid email or password.")
