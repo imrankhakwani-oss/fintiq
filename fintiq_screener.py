@@ -828,32 +828,27 @@ def _check_auth_gate() -> bool:
     user_id = user.get("id", "")
     now_month = datetime.now().strftime("%Y-%m")
 
-    # Read current count via admin client (bypasses RLS)
+    # Read current count from user_searches table (no RLS, no triggers)
     current_searches = 0
-    _dbg_read_err = None
-    _dbg_write_err = None
-    _dbg_row = None
     try:
-        if _sb_admin:
-            r = _sb_admin.table("profiles").select("monthly_searches,search_month,is_pro").eq("id", user_id).execute()
-            _dbg_row = r.data
+        if _sb:
+            r = _sb.table("user_searches").select("monthly_searches,search_month").eq("user_id", user_id).execute()
             if r.data:
                 row = r.data[0]
-                if row.get("is_pro"):
-                    st.session_state["fintiq_user"]["is_pro"] = True
-                    return True
                 current_searches = row.get("monthly_searches", 0) if row.get("search_month") == now_month else 0
-    except Exception as e:
-        _dbg_read_err = str(e)
-
-    st.info(f"DEBUG: admin_client={'YES' if _sb_admin and _sb_admin is not _sb else 'FALLBACK'} | row={_dbg_row} | count={current_searches} | limit={_MONTHLY_LIMIT} | read_err={_dbg_read_err}")
+    except Exception:
+        pass
 
     if current_searches < _MONTHLY_LIMIT:
         try:
-            _sb_admin.table("profiles").upsert({"id": user_id, "monthly_searches": current_searches + 1, "search_month": now_month}).execute()
-        except Exception as e:
-            _dbg_write_err = str(e)
-            st.warning(f"DEBUG write err: {_dbg_write_err}")
+            if _sb:
+                _sb.table("user_searches").upsert({
+                    "user_id": user_id,
+                    "monthly_searches": current_searches + 1,
+                    "search_month": now_month,
+                }).execute()
+        except Exception:
+            pass
         return True
 
     # Limit reached — show upgrade wall
