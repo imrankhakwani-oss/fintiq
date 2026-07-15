@@ -828,18 +828,27 @@ def _check_auth_gate() -> bool:
     user_id = user.get("id", "")
     now_month = datetime.now().strftime("%Y-%m")
 
-    # Read current count from user_searches table (no RLS, no triggers)
-    current_searches = 0
-    try:
-        if _sb:
-            r = _sb.table("user_searches").select("monthly_searches,search_month").eq("user_id", user_id).execute()
-            if r.data:
-                row = r.data[0]
-                current_searches = row.get("monthly_searches", 0) if row.get("search_month") == now_month else 0
-    except Exception:
-        pass
+    # Session-state counter — works reliably within a session
+    _ss_key = f"_sc_{user_id}"
+    _ss_month_key = f"_sm_{user_id}"
+    if st.session_state.get(_ss_month_key) != now_month:
+        # New month or first load — try seeding from Supabase
+        seeded = 0
+        try:
+            if _sb:
+                r = _sb.table("user_searches").select("monthly_searches,search_month").eq("user_id", user_id).execute()
+                if r.data and r.data[0].get("search_month") == now_month:
+                    seeded = r.data[0].get("monthly_searches", 0)
+        except Exception:
+            pass
+        st.session_state[_ss_key] = seeded
+        st.session_state[_ss_month_key] = now_month
+
+    current_searches = st.session_state.get(_ss_key, 0)
 
     if current_searches < _MONTHLY_LIMIT:
+        st.session_state[_ss_key] = current_searches + 1
+        # Best-effort persist to Supabase
         try:
             if _sb:
                 _sb.table("user_searches").upsert({
