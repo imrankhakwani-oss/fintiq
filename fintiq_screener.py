@@ -558,30 +558,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Guest ID — persistent tracking across navigations and refreshes ──
-import uuid as _uuid
-
-def _restore_gid():
-    """After any st.query_params.clear(), restore _gid and _t if present in session state."""
-    if "_guest_id" in st.session_state:
-        st.query_params["_gid"] = st.session_state["_guest_id"]
-    if st.session_state.get("fintiq_user", {}).get("session"):
-        st.query_params["_t"] = st.session_state["fintiq_user"]["session"]
-
-# Set or restore _gid for guests
-if not st.session_state.get("fintiq_user"):
-    _existing_gid = st.query_params.get("_gid", "")
-    if _existing_gid:
-        # URL has _gid — store in session state as backup
-        st.session_state["_guest_id"] = _existing_gid
-    elif "_guest_id" in st.session_state:
-        # URL lost _gid (navigation) — restore from session state
-        st.query_params["_gid"] = st.session_state["_guest_id"]
-    else:
-        # Brand new visitor — generate fresh ID
-        _new_gid = "g_" + _uuid.uuid4().hex[:20]
-        st.session_state["_guest_id"] = _new_gid
-        st.query_params["_gid"] = _new_gid
+# (Guest ID tracking removed — login required before any action)
 
 # ─────────────────────────────────────────────────────────────
 # AUTH GATE — Login / Sign-up wall
@@ -706,7 +683,6 @@ def _show_auth():
 # ── Usage limits ─────────────────────────────────────────────
 if "free_searches" not in st.session_state:
     st.session_state["free_searches"] = 0
-_GUEST_LIMIT   = 2   # searches before signup wall
 _MONTHLY_LIMIT = 5   # free-account searches per calendar month
 
 # ── Supabase profile helpers ──────────────────────────────────
@@ -828,25 +804,8 @@ def _check_auth_gate() -> bool:
     if user.get("is_pro"):
         return True
 
-    # Guest — session state is primary (always works), Supabase is persistence layer
+    # Guest — must sign up before any action
     if not user:
-        _gid = st.query_params.get("_gid", "") or st.session_state.get("_guest_id", "")
-        if not _gid:
-            _gid = "g_" + _uuid.uuid4().hex[:20]
-            st.session_state["_guest_id"] = _gid
-            st.query_params["_gid"] = _gid
-
-        # Seed session counter from Supabase on first load of this session
-        _g_ss_key = f"_g_searches_{_gid}"
-        if _g_ss_key not in st.session_state:
-            st.session_state[_g_ss_key] = _get_guest_count(_gid)
-
-        _g_count = st.session_state[_g_ss_key]
-        if _g_count < _GUEST_LIMIT:
-            st.session_state[_g_ss_key] = _g_count + 1
-            _increment_guest(_gid)   # persist to Supabase (silent fail ok)
-            return True
-
         for _k in ["screened_df", "screened_symbols"]:
             if _k in st.session_state: del st.session_state[_k]
         st.session_state["_show_auth_wall"] = True
@@ -887,7 +846,7 @@ def _check_auth_gate() -> bool:
     return False
 
 def _show_auth_wall():
-    """Signup wall shown to guests after 2 free searches."""
+    """Signup wall shown to guests when they try to use the app."""
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0D2137,#0A1628);
         border:1px solid rgba(245,158,11,0.4);border-radius:16px;
@@ -896,7 +855,7 @@ def _show_auth_wall():
       <div style="font-size:2rem;font-weight:900;color:#F59E0B;letter-spacing:-1px;margin-bottom:8px">
         📊 Fintiq</div>
       <div style="color:#F1F5F9;font-size:1.1rem;font-weight:700;margin-bottom:8px">
-        You've used your 2 free searches</div>
+        Sign up to start using Fintiq</div>
       <div style="color:#94A3B8;font-size:0.88rem;margin-bottom:8px">
         Create a free account to get <b style="color:#F59E0B">5 searches/month</b> — no card required.<br>
         Upgrade to Pro for unlimited access.
@@ -980,7 +939,7 @@ def _show_upgrade_wall(user_email: str, user_id: str):
       <div style="font-size:2rem;font-weight:900;color:#F59E0B;letter-spacing:-1px;margin-bottom:8px">
         📊 Fintiq Pro</div>
       <div style="color:#F1F5F9;font-size:1.1rem;font-weight:700;margin-bottom:8px">
-        You've used all 10 free searches this month</div>
+        You've used all 5 free searches this month</div>
       <div style="color:#94A3B8;font-size:0.88rem;margin-bottom:20px">
         Upgrade to Pro for <b style="color:#F1F5F9">unlimited searches</b>, all global markets,
         and priority data.
@@ -3720,10 +3679,13 @@ with tab_brief:
 
 with tab1:
     # ── Persistent walls — survive reruns caused by browser events ──
-    if st.session_state.get("_show_auth_wall") and not st.session_state.get("fintiq_user"):
+    _tab1_user = st.session_state.get("fintiq_user", {})
+    # Guest wall: show if session state flag set (triggered by _check_auth_gate)
+    if not _tab1_user and st.session_state.get("_show_auth_wall"):
         _show_auth_wall()
         st.stop()
-    if st.session_state.get("_show_upgrade_wall") and not st.session_state.get("fintiq_user", {}).get("is_pro"):
+    # Upgrade wall
+    if st.session_state.get("_show_upgrade_wall") and not _tab1_user.get("is_pro"):
         _uw = st.session_state["_show_upgrade_wall"]
         _show_upgrade_wall(_uw[0], _uw[1])
         st.stop()
