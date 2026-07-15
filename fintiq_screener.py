@@ -828,17 +828,25 @@ def _check_auth_gate() -> bool:
     if user.get("is_pro"):
         return True
 
-    # Guest — persistent tracking via Supabase guest_searches table
+    # Guest — session state is primary (always works), Supabase is persistence layer
     if not user:
         _gid = st.query_params.get("_gid", "") or st.session_state.get("_guest_id", "")
         if not _gid:
             _gid = "g_" + _uuid.uuid4().hex[:20]
             st.session_state["_guest_id"] = _gid
             st.query_params["_gid"] = _gid
-        _g_count = _get_guest_count(_gid)
+
+        # Seed session counter from Supabase on first load of this session
+        _g_ss_key = f"_g_searches_{_gid}"
+        if _g_ss_key not in st.session_state:
+            st.session_state[_g_ss_key] = _get_guest_count(_gid)
+
+        _g_count = st.session_state[_g_ss_key]
         if _g_count < _GUEST_LIMIT:
-            _increment_guest(_gid)
+            st.session_state[_g_ss_key] = _g_count + 1
+            _increment_guest(_gid)   # persist to Supabase (silent fail ok)
             return True
+
         for _k in ["screened_df", "screened_symbols"]:
             if _k in st.session_state: del st.session_state[_k]
         _show_auth_wall()
@@ -5433,7 +5441,7 @@ Return ONLY valid JSON (no markdown):
                         _is_cur  = (_w == discount_r and _tg == terminal_growth)
                         _border  = "2px solid #F59E0B" if _is_cur else "1px solid rgba(255,255,255,0.06)"
                         if _iv is not None:
-                            _disp = f"{_iv:.0f}{_unit}" if raw_currency == "GBp" else f"{_unit}{_iv:.2f}"
+                            _disp = f"£{_iv/100:,.2f}" if raw_currency == "GBp" else f"{_unit}{_iv:,.2f}"
                         else:
                             _disp = "—"
                         _tbl += f'<td style="background:{_bg};color:{_fg};padding:7px 10px;border:{_border};text-align:center;font-weight:{"800" if _is_cur else "500"}">{_disp}</td>'
