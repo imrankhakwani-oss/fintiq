@@ -708,6 +708,10 @@ def _upsert_profile(user_id: str, data: dict):
     if not _sb or not user_id:
         return
     try:
+        # Attach user's JWT so RLS auth.uid() = id check passes
+        _tok = st.session_state.get("fintiq_user", {}).get("session", "")
+        if _tok:
+            _sb.postgrest.auth(_tok)
         _sb.table("profiles").upsert({"id": user_id, **data}).execute()
     except Exception:
         pass
@@ -839,15 +843,10 @@ def _check_auth_gate() -> bool:
         pass
 
     if current_searches < _MONTHLY_LIMIT:
-        try:
-            if _sb:
-                _sb.table("profiles").upsert({
-                    "id": user_id,
-                    "monthly_searches": current_searches + 1,
-                    "search_month": now_month,
-                }).execute()
-        except Exception:
-            pass
+        _upsert_profile(user_id, {
+            "monthly_searches": current_searches + 1,
+            "search_month": now_month,
+        })
         return True
 
     # Limit reached — show upgrade wall
@@ -2495,10 +2494,7 @@ if _user_email:
     _nav_right_html = (
         _pricing_link +
         f'<span style="color:#94A3B8;font-size:0.8rem;margin-right:8px">👤 {_user_email}{_pro_badge}</span>'
-        '<a href="#" onclick="window.top.location.href=\'?action=logout\';return false;" '
-        'style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);'
-        'color:#F59E0B;padding:5px 16px;border-radius:20px;font-size:0.78rem;font-weight:600;'
-        'text-decoration:none">Logout</a>'
+        '<span id="fintiq-logout-placeholder"></span>'
     )
 else:
     # If arriving from Stripe redirect, carry the stripe_session through the login URL
@@ -2542,14 +2538,41 @@ _nav_html = (
 )
 st.markdown(_nav_html, unsafe_allow_html=True)
 
-# ── Handle logout via query param ────────────────────────────
-if _qp_action == "logout" and _user_email:
-    if _sb:
-        try: _sb.auth.sign_out()
-        except Exception: pass
-    del st.session_state["fintiq_user"]
-    st.query_params.clear()
-    st.rerun()
+# ── Logout button (real Streamlit button, positioned top-right) ──
+if _user_email:
+    st.markdown("""
+    <style>
+    div[data-testid="stButton"].fintiq-logout-btn > button {
+        position: fixed !important;
+        top: 14px !important;
+        right: 24px !important;
+        z-index: 99999 !important;
+        background: rgba(245,158,11,0.12) !important;
+        border: 1px solid rgba(245,158,11,0.4) !important;
+        color: #F59E0B !important;
+        padding: 4px 16px !important;
+        border-radius: 20px !important;
+        font-size: 0.78rem !important;
+        font-weight: 600 !important;
+    }
+    div[data-testid="stButton"].fintiq-logout-btn > button:hover {
+        background: rgba(245,158,11,0.25) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    with st.container():
+        st.markdown('<div class="fintiq-logout-btn">', unsafe_allow_html=True)
+        if st.button("Logout", key="nav_logout_btn"):
+            if _sb:
+                try: _sb.auth.sign_out()
+                except Exception: pass
+            st.session_state.pop("fintiq_user", None)
+            st.session_state.pop("fintiq_profile", None)
+            st.session_state.pop("_show_auth_wall", None)
+            st.session_state.pop("_show_upgrade_wall", None)
+            st.query_params.clear()
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Pricing page (?page=pricing) ─────────────────────────────
 _qp_page = st.query_params.get("page", "")
