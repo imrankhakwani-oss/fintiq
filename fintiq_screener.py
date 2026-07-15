@@ -2540,15 +2540,15 @@ st.markdown(_nav_html, unsafe_allow_html=True)
 # ── Logout button — real Streamlit button pulled into navbar via CSS ──
 if _user_email:
     st.markdown("""<style>
-    button[kind="secondary"][data-testid="baseButton-secondary"]:has(+ div),
-    div[data-testid="stBaseButton-secondary"] { display:none; }
-    #fintiq-logout-wrap {
-        position: fixed;
-        top: 13px;
-        right: 20px;
-        z-index: 99999;
+    /* Position the logout button fixed in the navbar */
+    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]) {
+        position: fixed !important;
+        top: 10px !important;
+        right: 20px !important;
+        z-index: 99999 !important;
+        width: auto !important;
     }
-    #fintiq-logout-wrap button {
+    div[data-testid="stButton"] button[data-testid="baseButton-secondary"] {
         background: rgba(245,158,11,0.12) !important;
         border: 1px solid rgba(245,158,11,0.4) !important;
         color: #F59E0B !important;
@@ -2557,17 +2557,15 @@ if _user_email:
         font-weight: 600 !important;
         padding: 4px 18px !important;
         white-space: nowrap !important;
-        min-height: 0 !important;
+        min-height: 30px !important;
         height: 30px !important;
         line-height: 22px !important;
-        cursor: pointer !important;
     }
-    #fintiq-logout-wrap button:hover {
+    div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:hover {
         background: rgba(245,158,11,0.28) !important;
         color: #FCD34D !important;
     }
-    </style>
-    <div id="fintiq-logout-wrap">""", unsafe_allow_html=True)
+    </style>""", unsafe_allow_html=True)
     if st.button("Logout", key="nav_logout_btn"):
         if _sb:
             try: _sb.auth.sign_out()
@@ -2576,7 +2574,6 @@ if _user_email:
             st.session_state.pop(_k, None)
         st.query_params.clear()
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Pricing page (?page=pricing) ─────────────────────────────
 _qp_page = st.query_params.get("page", "")
