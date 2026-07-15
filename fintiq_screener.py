@@ -23,9 +23,13 @@ try:
     from supabase import create_client, Client as SupabaseClient
     _SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
     _SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+    _SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
     _sb: SupabaseClient = create_client(_SUPABASE_URL, _SUPABASE_KEY) if _SUPABASE_URL else None
+    # Admin client uses service role key — bypasses RLS for profile reads/writes
+    _sb_admin: SupabaseClient = create_client(_SUPABASE_URL, _SUPABASE_SERVICE_KEY) if (_SUPABASE_URL and _SUPABASE_SERVICE_KEY) else _sb
 except Exception:
     _sb = None
+    _sb_admin = None
 
 # ── Stripe ─────────────────────────────────────────────────────
 try:
@@ -696,24 +700,19 @@ _MONTHLY_LIMIT = 5   # free-account searches per calendar month
 
 # ── Supabase profile helpers ──────────────────────────────────
 def _get_profile(user_id: str) -> dict:
-    if not _sb or not user_id:
+    if not _sb_admin or not user_id:
         return {}
     try:
-        r = _sb.table("profiles").select("*").eq("id", user_id).maybe_single().execute()
+        r = _sb_admin.table("profiles").select("*").eq("id", user_id).maybe_single().execute()
         return r.data or {}
     except Exception:
         return {}
 
 def _upsert_profile(user_id: str, data: dict):
-    if not _sb or not user_id:
+    if not _sb_admin or not user_id:
         return
     try:
-        _tok = st.session_state.get("fintiq_user", {}).get("session", "")
-        if _tok:
-            # .auth() returns a new authenticated client — must chain from it
-            _sb.postgrest.auth(_tok).from_("profiles").upsert({"id": user_id, **data}).execute()
-        else:
-            _sb.table("profiles").upsert({"id": user_id, **data}).execute()
+        _sb_admin.table("profiles").upsert({"id": user_id, **data}).execute()
     except Exception:
         pass
 
@@ -829,15 +828,11 @@ def _check_auth_gate() -> bool:
     user_id = user.get("id", "")
     now_month = datetime.now().strftime("%Y-%m")
 
-    # Read current count directly from Supabase every time (with JWT so RLS passes)
+    # Read current count via admin client (bypasses RLS)
     current_searches = 0
-    _tok = st.session_state.get("fintiq_user", {}).get("session", "")
     try:
-        if _sb:
-            if _tok:
-                r = _sb.postgrest.auth(_tok).from_("profiles").select("monthly_searches,search_month,is_pro").eq("id", user_id).execute()
-            else:
-                r = _sb.table("profiles").select("monthly_searches,search_month,is_pro").eq("id", user_id).execute()
+        if _sb_admin:
+            r = _sb_admin.table("profiles").select("monthly_searches,search_month,is_pro").eq("id", user_id).execute()
             if r.data:
                 row = r.data[0]
                 if row.get("is_pro"):
@@ -2499,9 +2494,6 @@ if _user_email:
     _nav_right_html = (
         _pricing_link +
         f'<span style="color:#94A3B8;font-size:0.8rem;margin-right:8px">👤 {_user_email}{_pro_badge}</span>'
-        '<a href="?_logout=1" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);'
-        'color:#F59E0B;padding:5px 16px;border-radius:20px;font-size:0.78rem;font-weight:600;'
-        'text-decoration:none">Logout</a>'
     )
 else:
     # If arriving from Stripe redirect, carry the stripe_session through the login URL
@@ -2545,15 +2537,39 @@ _nav_html = (
 )
 st.markdown(_nav_html, unsafe_allow_html=True)
 
-# ── Handle logout ────────────────────────────────────────────
-if st.query_params.get("_logout") == "1":
-    if _sb:
-        try: _sb.auth.sign_out()
-        except Exception: pass
-    for _k in ["fintiq_user", "fintiq_profile", "_show_auth_wall", "_show_upgrade_wall"]:
-        st.session_state.pop(_k, None)
-    st.query_params.clear()
-    st.rerun()
+# ── Logout button — real Streamlit button pulled into navbar via CSS ──
+if _user_email:
+    st.markdown("""<style>
+    /* Pull the logout button up into the navbar */
+    div[data-testid="stMainBlockContainer"] > div:first-child
+        div[data-testid="stHorizontalBlock"]:first-of-type { margin-top: -52px; }
+    #logout-row { display:flex; justify-content:flex-end; margin-top:-52px; padding-right:8px; }
+    #logout-row button {
+        background: rgba(245,158,11,0.12) !important;
+        border: 1px solid rgba(245,158,11,0.4) !important;
+        color: #F59E0B !important;
+        border-radius: 20px !important;
+        font-size: 0.78rem !important;
+        font-weight: 600 !important;
+        padding: 2px 18px !important;
+        min-height: 0 !important;
+        height: 30px !important;
+        line-height: 1 !important;
+    }
+    #logout-row button:hover { background: rgba(245,158,11,0.25) !important; }
+    </style>""", unsafe_allow_html=True)
+    st.markdown('<div id="logout-row">', unsafe_allow_html=True)
+    _cols = st.columns([10, 1])
+    with _cols[1]:
+        if st.button("Logout", key="nav_logout_btn"):
+            if _sb:
+                try: _sb.auth.sign_out()
+                except Exception: pass
+            for _k in ["fintiq_user", "fintiq_profile", "_show_auth_wall", "_show_upgrade_wall"]:
+                st.session_state.pop(_k, None)
+            st.query_params.clear()
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Pricing page (?page=pricing) ─────────────────────────────
 _qp_page = st.query_params.get("page", "")
