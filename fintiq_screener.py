@@ -2547,9 +2547,6 @@ _nav_html = (
 )
 st.markdown(_nav_html, unsafe_allow_html=True)
 
-# ── Logout button — real Streamlit button pulled into navbar via CSS ──
-if _user_email:
-
 # ── Pricing page (?page=pricing) ─────────────────────────────
 _qp_page = st.query_params.get("page", "")
 if _qp_page == "pricing":
