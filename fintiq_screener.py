@@ -667,19 +667,19 @@ def _show_auth():
                     res = _sb.auth.sign_in_with_password({"email": email, "password": password})
                     if res.user:
                         _tok = res.session.access_token if res.session else None
+                        _prof = _get_profile(res.user.id)
                         st.session_state["fintiq_user"] = {
                             "email": res.user.email,
                             "id": res.user.id,
                             "session": _tok,
+                            "is_pro": bool(_prof.get("is_pro")),
                         }
-                        # Save token in URL so browser refresh restores session
+                        st.session_state["fintiq_profile"] = _prof
                         if _tok:
                             st.query_params["_t"] = _tok
-                        # Process any pending Stripe payment
                         _pss = st.session_state.pop("_pending_stripe_session", "")
                         if _pss:
                             _verify_stripe_session(_pss, res.user.id)
-                        pass  # counter lives in module-level _search_counts
                         st.rerun()
                     else:
                         st.markdown('<div class="auth-err">Invalid email or password.</div>',
@@ -719,13 +719,19 @@ def _sc_seed_from_db(user_id: str):
 
 # ── Supabase profile helpers ──────────────────────────────────
 def _get_profile(user_id: str) -> dict:
-    if not _sb_admin or not user_id:
+    if not user_id:
         return {}
-    try:
-        r = _sb_admin.table("profiles").select("*").eq("id", user_id).maybe_single().execute()
-        return r.data or {}
-    except Exception:
-        return {}
+    # Try admin client first, fall back to regular client (RLS is disabled on profiles)
+    for _client in [_sb_admin, _sb]:
+        if not _client:
+            continue
+        try:
+            r = _client.table("profiles").select("*").eq("id", user_id).maybe_single().execute()
+            if r.data:
+                return r.data
+        except Exception:
+            continue
+    return {}
 
 def _upsert_profile(user_id: str, data: dict):
     if not _sb_admin or not user_id:
@@ -936,16 +942,20 @@ def _show_auth_wall():
                     res = _sb.auth.sign_in_with_password({"email": email, "password": password})
                     if res.user:
                         _tok2 = res.session.access_token if res.session else None
-                        st.session_state["fintiq_user"] = {"email": res.user.email, "id": res.user.id}
+                        _prof2 = _get_profile(res.user.id)
+                        st.session_state["fintiq_user"] = {
+                            "email": res.user.email,
+                            "id": res.user.id,
+                            "is_pro": bool(_prof2.get("is_pro")),
+                        }
+                        st.session_state["fintiq_profile"] = _prof2
                         st.session_state.pop("_show_auth_wall", None)
                         st.session_state.pop("_show_upgrade_wall", None)
                         if _tok2:
                             st.query_params["_t"] = _tok2
-                        # Process any pending Stripe payment
                         _pss = st.session_state.pop("_pending_stripe_session", "")
                         if _pss:
                             _verify_stripe_session(_pss, res.user.id)
-                        pass  # counter lives in module-level _search_counts
                         st.rerun()
                     else:
                         st.error("Invalid email or password.")
@@ -2767,7 +2777,13 @@ if (_qp_action == "login" or _banner_stripe_session) and not _user_email:
                             res = _sb.auth.sign_in_with_password({"email": _lf_email, "password": _lf_pw})
                             if res.user:
                                 _tok3 = res.session.access_token if res.session else None
-                                st.session_state["fintiq_user"] = {"email": res.user.email, "id": res.user.id}
+                                _prof3 = _get_profile(res.user.id)
+                                st.session_state["fintiq_user"] = {
+                                    "email": res.user.email,
+                                    "id": res.user.id,
+                                    "is_pro": bool(_prof3.get("is_pro")),
+                                }
+                                st.session_state["fintiq_profile"] = _prof3
                                 # Process Stripe payment carried through login URL
                                 _qp_ss = st.query_params.get("stripe_session", "") or st.session_state.pop("_pending_stripe_session", "")
                                 if _qp_ss:
