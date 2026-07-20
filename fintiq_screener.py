@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import sqlite3, os, math, io, json
 import warnings
 warnings.filterwarnings("ignore")
+from statsmodels.tsa.stattools import adfuller
 
 # ── Supabase auth ──────────────────────────────────────────────
 try:
@@ -8006,6 +8007,167 @@ with tab4:
                 })
                 st.session_state["fintiq_pairs_watchlist"] = _pwl_cur
                 st.success(f"✅ Saved: {_save_name or pair_label}")
+
+    # ── Analyse Pair button ──────────────────────────────────────
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    _an1, _an2, _an3 = st.columns([2, 1, 2])
+    with _an2:
+        run_pair = st.button("⚡ Analyse Pair", type="primary", use_container_width=True, key="run_pair_btn")
+
+    if run_pair:
+        with st.spinner(f"Fetching data for {ticker_a} / {ticker_b}…"):
+            try:
+                _raw = yf.download([ticker_a, ticker_b], period=hist_period,
+                                   auto_adjust=True, progress=False)
+                if _raw.empty:
+                    st.error("Could not fetch price data. Check both tickers are valid.")
+                    st.stop()
+
+                # Support both multi-level and single-level column structures
+                if isinstance(_raw.columns, pd.MultiIndex):
+                    _pa = _raw["Close"][ticker_a].dropna()
+                    _pb = _raw["Close"][ticker_b].dropna()
+                else:
+                    st.error("Unexpected data format — try a different pair.")
+                    st.stop()
+
+                if len(_pa) < lookback + 10 or len(_pb) < lookback + 10:
+                    st.error(f"Not enough price history ({len(_pa)} days). Try a longer history period.")
+                    st.stop()
+
+                df_pair = calc_spread(_pa, _pb, lookback)
+                df_pair = df_pair.dropna()
+
+                # ── Cointegration (ADF on spread) ────────────────
+                adf_result  = adfuller(df_pair["spread"].dropna(), autolag="AIC")
+                adf_pval    = adf_result[1]
+                is_cointegrated = adf_pval < 0.05
+
+                # ── Half-life of mean reversion ──────────────────
+                _spread_lag  = df_pair["spread"].shift(1).dropna()
+                _spread_diff = df_pair["spread"].diff().dropna()
+                _common_idx  = _spread_lag.index.intersection(_spread_diff.index)
+                _beta        = np.polyfit(_spread_lag.loc[_common_idx],
+                                          _spread_diff.loc[_common_idx], 1)[0]
+                half_life    = -np.log(2) / _beta if _beta < 0 else float("nan")
+
+                # ── Current Z-score & signal ─────────────────────
+                current_z   = df_pair["zscore"].iloc[-1]
+                signal_text, signal_class = pair_signal(current_z)
+
+                # ── Backtest ─────────────────────────────────────
+                bt = backtest_pair(df_pair, entry_threshold=entry_z)
+
+                # ════════════════════════════════════════════════
+                # DISPLAY RESULTS
+                # ════════════════════════════════════════════════
+                st.markdown("---")
+                st.markdown(f'<div class="section-header">📊 Analysis: {pair_label}</div>',
+                            unsafe_allow_html=True)
+
+                # ── Stat summary cards ───────────────────────────
+                m1, m2, m3, m4 = st.columns(4)
+                _z_col = "#22C55E" if current_z < -entry_z else "#EF4444" if current_z > entry_z else "#F59E0B"
+                m1.markdown(
+                    f'<div style="background:rgba(13,31,53,0.9);border:1px solid #1E3A5F;border-radius:10px;'
+                    f'padding:14px;text-align:center">'
+                    f'<div style="font-size:0.7rem;color:#64748B;text-transform:uppercase">Current Z-Score</div>'
+                    f'<div style="font-size:1.8rem;font-weight:800;color:{_z_col}">{current_z:+.2f}</div></div>',
+                    unsafe_allow_html=True)
+                _coint_col = "#22C55E" if is_cointegrated else "#EF4444"
+                _coint_txt = f"YES (p={adf_pval:.3f})" if is_cointegrated else f"NO (p={adf_pval:.3f})"
+                m2.markdown(
+                    f'<div style="background:rgba(13,31,53,0.9);border:1px solid #1E3A5F;border-radius:10px;'
+                    f'padding:14px;text-align:center">'
+                    f'<div style="font-size:0.7rem;color:#64748B;text-transform:uppercase">Cointegrated</div>'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:{_coint_col}">{_coint_txt}</div></div>',
+                    unsafe_allow_html=True)
+                _hl_txt = f"{half_life:.0f} days" if not np.isnan(half_life) else "N/A"
+                m3.markdown(
+                    f'<div style="background:rgba(13,31,53,0.9);border:1px solid #1E3A5F;border-radius:10px;'
+                    f'padding:14px;text-align:center">'
+                    f'<div style="font-size:0.7rem;color:#64748B;text-transform:uppercase">Half-Life</div>'
+                    f'<div style="font-size:1.8rem;font-weight:800;color:#7DD3FC">{_hl_txt}</div></div>',
+                    unsafe_allow_html=True)
+                _wr_col = "#22C55E" if bt["win_rate"] >= 55 else "#F59E0B"
+                m4.markdown(
+                    f'<div style="background:rgba(13,31,53,0.9);border:1px solid #1E3A5F;border-radius:10px;'
+                    f'padding:14px;text-align:center">'
+                    f'<div style="font-size:0.7rem;color:#64748B;text-transform:uppercase">Backtest Win Rate</div>'
+                    f'<div style="font-size:1.8rem;font-weight:800;color:{_wr_col}">'
+                    f'{bt["win_rate"]:.0f}% ({bt["trades"]} trades)</div></div>',
+                    unsafe_allow_html=True)
+
+                # ── Signal banner ────────────────────────────────
+                st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+                _sig_bg  = "#052e16" if "LONG" in signal_text else "#450a0a" if "SHORT" in signal_text else "#1c1917"
+                _sig_bdr = "#22C55E" if "LONG" in signal_text else "#EF4444" if "SHORT" in signal_text else "#78716c"
+                _sig_col = "#22C55E" if "LONG" in signal_text else "#EF4444" if "SHORT" in signal_text else "#a8a29e"
+                st.markdown(
+                    f'<div style="background:{_sig_bg};border:2px solid {_sig_bdr};border-radius:10px;'
+                    f'padding:16px 24px;text-align:center;margin-bottom:16px">'
+                    f'<span style="font-size:1.1rem;font-weight:800;color:{_sig_col};letter-spacing:0.05em">'
+                    f'⚡ SIGNAL: {signal_text}</span>'
+                    f'<span style="font-size:0.85rem;color:#64748B;margin-left:16px">'
+                    f'Z = {current_z:+.2f} (entry threshold ±{entry_z})</span></div>',
+                    unsafe_allow_html=True)
+
+                # ── Price chart ──────────────────────────────────
+                fig_price = go.Figure()
+                _pa_norm = _pa / _pa.iloc[0] * 100
+                _pb_norm = _pb / _pb.iloc[0] * 100
+                fig_price.add_trace(go.Scatter(x=_pa_norm.index, y=_pa_norm,
+                                               name=ticker_a, line=dict(color="#7DD3FC", width=2)))
+                fig_price.add_trace(go.Scatter(x=_pb_norm.index, y=_pb_norm,
+                                               name=ticker_b, line=dict(color="#F59E0B", width=2)))
+                fig_price.update_layout(
+                    title=f"Normalised Prices — {ticker_a} vs {ticker_b} (base 100)",
+                    template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(13,31,53,0.6)", height=320,
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02))
+                st.plotly_chart(fig_price, use_container_width=True)
+
+                # ── Z-score chart ────────────────────────────────
+                fig_z = go.Figure()
+                fig_z.add_trace(go.Scatter(x=df_pair.index, y=df_pair["zscore"],
+                                           name="Z-Score", line=dict(color="#A78BFA", width=2),
+                                           fill="tozeroy", fillcolor="rgba(167,139,250,0.08)"))
+                for _lv, _col, _dash in [(entry_z, "#EF4444", "dash"),
+                                          (-entry_z, "#22C55E", "dash"),
+                                          (0, "#64748B", "dot")]:
+                    fig_z.add_hline(y=_lv, line_color=_col, line_dash=_dash, line_width=1.5)
+                fig_z.update_layout(
+                    title=f"Z-Score of Log-Spread ({lookback}-day rolling)",
+                    template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(13,31,53,0.6)", height=320,
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    yaxis=dict(zeroline=False))
+                st.plotly_chart(fig_z, use_container_width=True)
+
+                # ── Spread chart ─────────────────────────────────
+                fig_sp = go.Figure()
+                fig_sp.add_trace(go.Scatter(x=df_pair.index, y=df_pair["spread"],
+                                            name="Log Spread", line=dict(color="#34D399", width=1.5)))
+                fig_sp.add_trace(go.Scatter(x=df_pair.index, y=df_pair["spread_mean"],
+                                            name=f"{lookback}d Mean", line=dict(color="#F59E0B", width=1.5, dash="dash")))
+                fig_sp.update_layout(
+                    title="Log-Price Spread & Rolling Mean",
+                    template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(13,31,53,0.6)", height=280,
+                    margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_sp, use_container_width=True)
+
+                # ── Interpretation note ──────────────────────────
+                if not is_cointegrated:
+                    st.warning("⚠️ The ADF test suggests this pair may not be cointegrated (p > 0.05). "
+                               "The Z-score signal is less reliable. Consider a different pair or longer lookback.")
+                elif abs(current_z) < 1.0:
+                    st.info("ℹ️ Z-score near zero — pair is trading close to its historical mean. "
+                            "No trade signal currently. Monitor for divergence.")
+
+            except Exception as _e:
+                st.error(f"Analysis failed: {_e}")
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 5 — TRADING JOURNAL  (preserved — full code on Desktop copy)
