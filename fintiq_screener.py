@@ -6168,13 +6168,33 @@ with tab_factor:
       <div style="font-size:1.5rem;font-weight:900;color:#F1F5F9;margin-bottom:6px">
         🔬 Fama-French 4-Factor Model
       </div>
-      <div style="font-size:1rem;font-weight:700;color:#F59E0B;margin-bottom:8px">
-        Alpha Screener — S&amp;P 500 + Nasdaq 100
-      </div>
-      <p style="color:#94A3B8;font-size:0.85rem;max-width:680px;margin:0">
+      <p style="color:#94A3B8;font-size:0.85rem;max-width:680px;margin:0 0 16px 0">
         Each stock is regressed against Market, Size, Value and Momentum risk factors.
         Alpha is genuine outperformance above what those factors predict.
       </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px;background:#1E3A5F;
+                    border:2px solid #F59E0B;border-radius:8px;padding:8px 18px;
+                    font-weight:700;font-size:0.88rem;color:#F59E0B;cursor:default">
+          🇺🇸 US Equities
+          <span style="background:#F59E0B;color:#0A1628;font-size:0.65rem;
+                       font-weight:800;padding:2px 7px;border-radius:10px">LIVE</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.04);
+                    border:2px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 18px;
+                    font-weight:600;font-size:0.88rem;color:#475569;cursor:not-allowed;opacity:0.7">
+          🇬🇧 UK Equities
+          <span style="background:rgba(255,255,255,0.08);color:#64748B;font-size:0.65rem;
+                       font-weight:700;padding:2px 7px;border-radius:10px">Q4 2026</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.04);
+                    border:2px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 18px;
+                    font-weight:600;font-size:0.88rem;color:#475569;cursor:not-allowed;opacity:0.7">
+          🇪🇺 EU Equities
+          <span style="background:rgba(255,255,255,0.08);color:#64748B;font-size:0.65rem;
+                       font-weight:700;padding:2px 7px;border-radius:10px">2027</span>
+        </div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
