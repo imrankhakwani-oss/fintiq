@@ -6075,6 +6075,267 @@ Be direct, analytical, and specific. Avoid generic statements. Write like you're
 # TAB 2 — CATALYST ALERTS  (rebuilt)
 # ═══════════════════════════════════════════════════════════════
 
+
+# ═══ FACTOR SCREENER TAB (auto-patched) ═══
+
+import requests as _req
+import numpy as _np
+
+
+@st.cache_data(ttl=3600)
+def _fetch_factor_data(years: int) -> tuple:
+    base = "https://fintiq.uk"
+    try:
+        data_r = _req.get(f"{base}/screener-data-{years}y.json", timeout=20)
+        meta_r = _req.get(f"{base}/screener-meta-{years}y.json", timeout=10)
+        if data_r.status_code == 200:
+            return data_r.json().get("stocks", []), meta_r.json() if meta_r.status_code == 200 else {}
+    except Exception:
+        pass
+    try:
+        data_r = _req.get(f"{base}/screener-data.json", timeout=20)
+        meta_r = _req.get(f"{base}/screener-meta.json", timeout=10)
+        if data_r.status_code == 200:
+            return data_r.json().get("stocks", []), meta_r.json() if meta_r.status_code == 200 else {}
+    except Exception:
+        pass
+    return [], {}
+
+
+def _ff_signal_badge(signal: str) -> str:
+    colours = {
+        "green": ("🟢", "#22c55e", "rgba(34,197,94,0.12)", "Strong Alpha"),
+        "amber": ("🟡", "#F59E0B", "rgba(245,158,11,0.12)", "Marginal"),
+        "red":   ("🔴", "#ef4444", "rgba(239,68,68,0.10)",  "Avoid"),
+    }
+    icon, col, bg, label = colours.get(signal, ("⚪", "#94A3B8", "rgba(148,163,184,0.1)", signal))
+    return (f'<span style="background:{bg};color:{col};border:1px solid {col}40;'
+            f'padding:3px 10px;border-radius:12px;font-size:0.72rem;font-weight:700">'
+            f'{icon} {label}</span>')
+
+
+def _ff_factor_bar(label: str, value: float, colour: str) -> str:
+    pct  = min(abs(value) / 1.6 * 50, 50)
+    left = 50 if value >= 0 else (50 - pct)
+    sign = "+" if value >= 0 else ""
+    val_col = colour if value >= 0 else "#64748B"
+    return (f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
+            f'<span style="width:28px;font-size:0.62rem;color:#64748B;text-align:right;font-weight:600">{label}</span>'
+            f'<div style="flex:1;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;position:relative">'
+            f'<div style="position:absolute;left:50%;top:-1px;width:1px;height:7px;background:rgba(255,255,255,0.15)"></div>'
+            f'<div style="position:absolute;left:{left}%;width:{pct}%;height:5px;background:{colour};'
+            f'border-radius:3px;{"opacity:0.5" if value < 0 else ""}"></div>'
+            f'</div>'
+            f'<span style="font-size:0.68rem;font-weight:600;color:{val_col};width:36px">{sign}{value:.2f}</span>'
+            f'</div>')
+
+
+def _ff_decomp_html(s: dict, years: int) -> str:
+    if s.get("stock_return") is None:
+        return ""
+    fmt = lambda v: (f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%")
+    yr_lbl = f"{years} year{'s' if years > 1 else ''}"
+    rows = [
+        ("Actual return",    s["stock_return"],              "#F1F5F9"),
+        ("Model predicted",  s["predicted_return"],          "#94A3B8"),
+        ("↳ Market",         s.get("mkt_contrib", 0),        "#60a5fa"),
+        ("↳ Size (SMB)",     s.get("smb_contrib", 0),        "#a78bfa"),
+        ("↳ Value (HML)",    s.get("hml_contrib", 0),        "#f59e0b"),
+        ("↳ Momentum",       s.get("mom_contrib", 0),        "#34d399"),
+        ("= Alpha",          s["alpha"],  "#22c55e" if s["alpha"] >= 0 else "#ef4444"),
+    ]
+    html = (f'<div style="background:rgba(10,22,40,0.6);border:1px solid rgba(245,158,11,0.12);'
+            f'border-radius:8px;padding:10px 12px;font-size:0.7rem">'
+            f'<div style="color:#475569;font-size:0.62rem;text-transform:uppercase;'
+            f'letter-spacing:0.07em;font-weight:700;margin-bottom:6px">Alpha breakdown ({yr_lbl} avg/yr)</div>')
+    for i, (lbl, val, col) in enumerate(rows):
+        border = "border-top:1px solid rgba(255,255,255,0.07);padding-top:4px;margin-top:4px;" if i in (1, 6) else ""
+        weight = "font-weight:700;" if i in (0, 6) else ""
+        html += (f'<div style="display:flex;justify-content:space-between;{border}">'
+                 f'<span style="color:#64748B">{lbl}</span>'
+                 f'<span style="color:{col};{weight}">{fmt(val)}/yr</span>'
+                 f'</div>')
+    html += (f'<div style="color:#334155;font-size:0.62rem;margin-top:6px">'
+             f'p = {s["pval"]:.3f} · n = {s.get("n_obs","—")} days · R² = {s.get("r_squared",0):.2f}</div>'
+             f'</div>')
+    return html
+
+
+with tab_factor:
+    st.write("✅ Factor tab is rendering")
+    st.write(f"logged_in={st.session_state.get('logged_in','?')} is_pro={st.session_state.get('is_pro','?')}")
+    try:
+        import requests as _rtest
+        r = _rtest.get("https://fintiq.uk/screener-data-2y.json", timeout=10)
+        st.write(f"fetch status={r.status_code} len={len(r.content)}")
+    except Exception as _e:
+        st.error(f"fetch error: {_e}")
+with tab_factor:
+  try:
+    st.markdown("""
+    <div style="padding:8px 0 20px">
+      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;
+                  color:#64748B;font-weight:600;margin-bottom:8px">FAMA-FRENCH 4-FACTOR MODEL</div>
+      <h2 style="font-size:1.6rem;font-weight:900;color:#F1F5F9;margin-bottom:8px">
+        🔬 Factor Screener — Alpha Signals
+      </h2>
+      <p style="color:#94A3B8;font-size:0.9rem;max-width:680px">
+        Each stock is regressed against four risk factors (Market, Size, Value, Momentum).
+        Alpha is unexplained outperformance above what any factor exposure predicts.
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_lb, col_sig, col_search, _ = st.columns([1.2, 1.2, 2, 1])
+    with col_lb:
+        years_sel = st.selectbox("Lookback", [1, 2, 3], index=1,
+                                 format_func=lambda y: f"{y} Year{'s' if y>1 else ''}", key="ff_years")
+    with col_sig:
+        sig_filter = st.selectbox("Signal", ["All", "Strong Alpha", "Marginal", "Avoid"], key="ff_sig")
+    with col_search:
+        search_q = st.text_input("Search ticker or company", placeholder="e.g. AAPL or Apple", key="ff_search")
+
+    with st.spinner(f"Loading {years_sel}-year factor data…"):
+        ff_stocks, ff_meta = _fetch_factor_data(years_sel)
+
+    if not ff_stocks:
+        st.error("Could not load factor data. Please try again shortly.")
+    else:
+        green_n = sum(1 for s in ff_stocks if s["signal"] == "green")
+        amber_n = sum(1 for s in ff_stocks if s["signal"] == "amber")
+        red_n   = sum(1 for s in ff_stocks if s["signal"] == "red")
+        alphas  = [s["alpha"] for s in ff_stocks]
+        med_a   = round(float(_np.median(alphas)), 1) if alphas else 0
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("🟢 Strong Alpha", green_n)
+        k2.metric("🟡 Marginal", amber_n)
+        k3.metric("🔴 Avoid", red_n)
+        k4.metric("Median Alpha", f"{'+ ' if med_a >= 0 else ''}{med_a}%/yr")
+
+        gen_date = ff_meta.get("generated_date", "recent")
+        st.markdown(f'<div style="font-size:0.75rem;color:#475569;margin:4px 0 20px">'
+                    f'● {gen_date} · {ff_meta.get("universe_count", len(ff_stocks))} stocks · '
+                    f'Updated weekly · Kenneth French Data Library</div>', unsafe_allow_html=True)
+
+        sig_map = {"All": None, "Strong Alpha": "green", "Marginal": "amber", "Avoid": "red"}
+        sig_val = sig_map[sig_filter]
+        q = search_q.strip().lower()
+        filtered = [
+            s for s in ff_stocks
+            if (sig_val is None or s["signal"] == sig_val)
+            and (not q or q in s["ticker"].lower() or q in s.get("name", "").lower())
+        ]
+
+        is_pro_user = st.session_state.get("is_pro", False)
+        visible  = filtered if is_pro_user else filtered[:10]
+        F_COLOURS = {"MKT": "#60a5fa", "SMB": "#a78bfa", "HML": "#f59e0b", "MOM": "#34d399"}
+
+        st.markdown("""
+        <div style="display:grid;grid-template-columns:48px 160px 100px 120px 180px 1fr;
+                    gap:8px;padding:10px 12px;background:#0A1628;border-radius:8px 8px 0 0;
+                    border-bottom:2px solid #F59E0B;font-size:0.7rem;text-transform:uppercase;
+                    letter-spacing:0.07em;color:#64748B;font-weight:700">
+          <div>#</div><div>Stock</div><div>Alpha</div><div>Signal</div>
+          <div>Factor Loadings</div><div>Alpha Decomposition</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        for i, s in enumerate(visible):
+            alpha_col = "#22c55e" if s["alpha"] >= 0 else "#ef4444"
+            alpha_str = f"{'+ ' if s['alpha']>=0 else ''}{s['alpha']:.1f}%"
+            bars = (
+                _ff_factor_bar("MKT", s["beta"] - 1,  F_COLOURS["MKT"]) +
+                _ff_factor_bar("SMB", s["smb"],        F_COLOURS["SMB"]) +
+                _ff_factor_bar("HML", s["hml"],        F_COLOURS["HML"]) +
+                _ff_factor_bar("MOM", s["mom"],        F_COLOURS["MOM"])
+            )
+            decomp = _ff_decomp_html(s, years_sel)
+            row_bg = "rgba(34,197,94,0.03)" if s["signal"] == "green" else                          "rgba(245,158,11,0.02)" if s["signal"] == "amber" else "transparent"
+            st.markdown(f"""
+            <div style="display:grid;grid-template-columns:48px 160px 100px 120px 180px 1fr;
+                        gap:8px;padding:14px 12px;background:{row_bg};
+                        border-bottom:1px solid rgba(255,255,255,0.05);align-items:start">
+              <div style="color:#475569;font-size:0.8rem;font-weight:700;padding-top:4px">{i+1}</div>
+              <div>
+                <div style="font-size:1rem;font-weight:900;color:#F1F5F9">{s["ticker"]}</div>
+                <div style="font-size:0.72rem;color:#64748B;margin-top:2px">{s.get("name", s["ticker"])}</div>
+              </div>
+              <div>
+                <div style="font-size:1.2rem;font-weight:900;color:{alpha_col}">{alpha_str}</div>
+                <div style="font-size:0.65rem;color:#475569;margin-top:2px">per year · p={s["pval"]:.3f}</div>
+              </div>
+              <div style="padding-top:2px">{_ff_signal_badge(s["signal"])}</div>
+              <div>{bars}</div>
+              <div>{decomp}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        if not is_pro_user and len(filtered) > 10:
+            remaining = len(filtered) - 10
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0D2137,#1A3355);
+                        border:1px solid rgba(245,158,11,0.3);border-radius:12px;
+                        padding:32px;text-align:center;margin-top:16px">
+              <div style="font-size:1.2rem;font-weight:800;color:#F1F5F9;margin-bottom:10px">
+                🔬 {remaining} more stocks hidden
+              </div>
+              <div style="color:#94A3B8;font-size:0.9rem;margin-bottom:20px">
+                Upgrade to Pro to see all {len(filtered)} results.
+              </div>
+              <a href="https://fintiq.uk/factor-screener.html" target="_blank"
+                 style="background:#F59E0B;color:#0A1628;padding:12px 28px;border-radius:8px;
+                        font-weight:700;text-decoration:none;display:inline-block">
+                View Full Screener →
+              </a>
+            </div>
+            """, unsafe_allow_html=True)
+        elif not filtered:
+            st.info("No stocks match your current filters.")
+
+        # ── Coming Soon: UK & EU ──────────────────────────────
+        st.markdown("<div style='margin-top:40px'></div>", unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748B;font-weight:700;margin-bottom:12px">COMING SOON</div>', unsafe_allow_html=True)
+        col_uk, col_eu = st.columns(2)
+        _coming_soon_style = ("position:absolute;inset:0;background:rgba(13,27,42,0.78);"
+                              "display:flex;align-items:center;justify-content:center;"
+                              "border-radius:12px;border:1px solid rgba(245,158,11,0.2)")
+        for col, flag, label, exchanges in [
+            (col_uk, "🇬🇧", "UK Equities",      "FTSE 100 · FTSE 250 · AIM"),
+            (col_eu, "🇪🇺", "European Equities", "DAX · CAC 40 · AEX · IBEX"),
+        ]:
+            with col:
+                st.markdown(f"""
+                <div style="position:relative;overflow:hidden;border-radius:12px">
+                  <div style="filter:blur(4px);pointer-events:none;background:rgba(15,35,55,0.6);
+                              border:1px solid rgba(245,158,11,0.15);border-radius:12px;padding:24px">
+                    <div style="font-size:1.2rem;font-weight:900;color:#F1F5F9;margin-bottom:8px">{flag} {label}</div>
+                    <div style="color:#94A3B8;font-size:0.85rem">{exchanges}<br>Fama-French 4-Factor<br>500+ stocks ranked by alpha</div>
+                  </div>
+                  <div style="{_coming_soon_style}">
+                    <div style="text-align:center">
+                      <div style="font-size:1.5rem;margin-bottom:6px">🚧</div>
+                      <div style="color:#F59E0B;font-weight:700">Coming Soon</div>
+                    </div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="margin-top:32px;padding:16px 20px;background:rgba(15,35,55,0.4);
+                    border-left:3px solid #F59E0B;border-radius:0 8px 8px 0">
+          <span style="color:#94A3B8;font-size:0.85rem">New to factor investing?
+            <a href="https://fintiq.uk/learn/fama-french-factor-screener.html"
+               target="_blank" style="color:#F59E0B;font-weight:600">
+              Read our Fama-French guide →</a>
+          </span>
+        </div>
+        """, unsafe_allow_html=True)
+  except Exception as _ff_err:
+    st.error(f"Factor Screener error: {_ff_err}")
+    import traceback
+    st.code(traceback.format_exc())
+
 with tab2:
     st.markdown('<div class="section-header">⚡ Catalyst Alerts — Strategy 2 Layered In</div>',
                 unsafe_allow_html=True)
@@ -9206,254 +9467,3 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
-# ═══ FACTOR SCREENER TAB (auto-patched) ═══
-
-import requests as _req
-import numpy as _np
-
-
-@st.cache_data(ttl=3600)
-def _fetch_factor_data(years: int) -> tuple:
-    base = "https://fintiq.uk"
-    try:
-        data_r = _req.get(f"{base}/screener-data-{years}y.json", timeout=20)
-        meta_r = _req.get(f"{base}/screener-meta-{years}y.json", timeout=10)
-        if data_r.status_code == 200:
-            return data_r.json().get("stocks", []), meta_r.json() if meta_r.status_code == 200 else {}
-    except Exception:
-        pass
-    try:
-        data_r = _req.get(f"{base}/screener-data.json", timeout=20)
-        meta_r = _req.get(f"{base}/screener-meta.json", timeout=10)
-        if data_r.status_code == 200:
-            return data_r.json().get("stocks", []), meta_r.json() if meta_r.status_code == 200 else {}
-    except Exception:
-        pass
-    return [], {}
-
-
-def _ff_signal_badge(signal: str) -> str:
-    colours = {
-        "green": ("🟢", "#22c55e", "rgba(34,197,94,0.12)", "Strong Alpha"),
-        "amber": ("🟡", "#F59E0B", "rgba(245,158,11,0.12)", "Marginal"),
-        "red":   ("🔴", "#ef4444", "rgba(239,68,68,0.10)",  "Avoid"),
-    }
-    icon, col, bg, label = colours.get(signal, ("⚪", "#94A3B8", "rgba(148,163,184,0.1)", signal))
-    return (f'<span style="background:{bg};color:{col};border:1px solid {col}40;'
-            f'padding:3px 10px;border-radius:12px;font-size:0.72rem;font-weight:700">'
-            f'{icon} {label}</span>')
-
-
-def _ff_factor_bar(label: str, value: float, colour: str) -> str:
-    pct  = min(abs(value) / 1.6 * 50, 50)
-    left = 50 if value >= 0 else (50 - pct)
-    sign = "+" if value >= 0 else ""
-    val_col = colour if value >= 0 else "#64748B"
-    return (f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
-            f'<span style="width:28px;font-size:0.62rem;color:#64748B;text-align:right;font-weight:600">{label}</span>'
-            f'<div style="flex:1;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;position:relative">'
-            f'<div style="position:absolute;left:50%;top:-1px;width:1px;height:7px;background:rgba(255,255,255,0.15)"></div>'
-            f'<div style="position:absolute;left:{left}%;width:{pct}%;height:5px;background:{colour};'
-            f'border-radius:3px;{"opacity:0.5" if value < 0 else ""}"></div>'
-            f'</div>'
-            f'<span style="font-size:0.68rem;font-weight:600;color:{val_col};width:36px">{sign}{value:.2f}</span>'
-            f'</div>')
-
-
-def _ff_decomp_html(s: dict, years: int) -> str:
-    if s.get("stock_return") is None:
-        return ""
-    fmt = lambda v: (f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%")
-    yr_lbl = f"{years} year{'s' if years > 1 else ''}"
-    rows = [
-        ("Actual return",    s["stock_return"],              "#F1F5F9"),
-        ("Model predicted",  s["predicted_return"],          "#94A3B8"),
-        ("↳ Market",         s.get("mkt_contrib", 0),        "#60a5fa"),
-        ("↳ Size (SMB)",     s.get("smb_contrib", 0),        "#a78bfa"),
-        ("↳ Value (HML)",    s.get("hml_contrib", 0),        "#f59e0b"),
-        ("↳ Momentum",       s.get("mom_contrib", 0),        "#34d399"),
-        ("= Alpha",          s["alpha"],  "#22c55e" if s["alpha"] >= 0 else "#ef4444"),
-    ]
-    html = (f'<div style="background:rgba(10,22,40,0.6);border:1px solid rgba(245,158,11,0.12);'
-            f'border-radius:8px;padding:10px 12px;font-size:0.7rem">'
-            f'<div style="color:#475569;font-size:0.62rem;text-transform:uppercase;'
-            f'letter-spacing:0.07em;font-weight:700;margin-bottom:6px">Alpha breakdown ({yr_lbl} avg/yr)</div>')
-    for i, (lbl, val, col) in enumerate(rows):
-        border = "border-top:1px solid rgba(255,255,255,0.07);padding-top:4px;margin-top:4px;" if i in (1, 6) else ""
-        weight = "font-weight:700;" if i in (0, 6) else ""
-        html += (f'<div style="display:flex;justify-content:space-between;{border}">'
-                 f'<span style="color:#64748B">{lbl}</span>'
-                 f'<span style="color:{col};{weight}">{fmt(val)}/yr</span>'
-                 f'</div>')
-    html += (f'<div style="color:#334155;font-size:0.62rem;margin-top:6px">'
-             f'p = {s["pval"]:.3f} · n = {s.get("n_obs","—")} days · R² = {s.get("r_squared",0):.2f}</div>'
-             f'</div>')
-    return html
-
-
-with tab_factor:
-  try:
-    st.markdown("""
-    <div style="padding:8px 0 20px">
-      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;
-                  color:#64748B;font-weight:600;margin-bottom:8px">FAMA-FRENCH 4-FACTOR MODEL</div>
-      <h2 style="font-size:1.6rem;font-weight:900;color:#F1F5F9;margin-bottom:8px">
-        🔬 Factor Screener — Alpha Signals
-      </h2>
-      <p style="color:#94A3B8;font-size:0.9rem;max-width:680px">
-        Each stock is regressed against four risk factors (Market, Size, Value, Momentum).
-        Alpha is unexplained outperformance above what any factor exposure predicts.
-      </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_lb, col_sig, col_search, _ = st.columns([1.2, 1.2, 2, 1])
-    with col_lb:
-        years_sel = st.selectbox("Lookback", [1, 2, 3], index=1,
-                                 format_func=lambda y: f"{y} Year{'s' if y>1 else ''}", key="ff_years")
-    with col_sig:
-        sig_filter = st.selectbox("Signal", ["All", "Strong Alpha", "Marginal", "Avoid"], key="ff_sig")
-    with col_search:
-        search_q = st.text_input("Search ticker or company", placeholder="e.g. AAPL or Apple", key="ff_search")
-
-    with st.spinner(f"Loading {years_sel}-year factor data…"):
-        ff_stocks, ff_meta = _fetch_factor_data(years_sel)
-
-    if not ff_stocks:
-        st.error("Could not load factor data. Please try again shortly.")
-    else:
-        green_n = sum(1 for s in ff_stocks if s["signal"] == "green")
-        amber_n = sum(1 for s in ff_stocks if s["signal"] == "amber")
-        red_n   = sum(1 for s in ff_stocks if s["signal"] == "red")
-        alphas  = [s["alpha"] for s in ff_stocks]
-        med_a   = round(float(_np.median(alphas)), 1) if alphas else 0
-
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("🟢 Strong Alpha", green_n)
-        k2.metric("🟡 Marginal", amber_n)
-        k3.metric("🔴 Avoid", red_n)
-        k4.metric("Median Alpha", f"{'+ ' if med_a >= 0 else ''}{med_a}%/yr")
-
-        gen_date = ff_meta.get("generated_date", "recent")
-        st.markdown(f'<div style="font-size:0.75rem;color:#475569;margin:4px 0 20px">'
-                    f'● {gen_date} · {ff_meta.get("universe_count", len(ff_stocks))} stocks · '
-                    f'Updated weekly · Kenneth French Data Library</div>', unsafe_allow_html=True)
-
-        sig_map = {"All": None, "Strong Alpha": "green", "Marginal": "amber", "Avoid": "red"}
-        sig_val = sig_map[sig_filter]
-        q = search_q.strip().lower()
-        filtered = [
-            s for s in ff_stocks
-            if (sig_val is None or s["signal"] == sig_val)
-            and (not q or q in s["ticker"].lower() or q in s.get("name", "").lower())
-        ]
-
-        is_pro_user = st.session_state.get("is_pro", False)
-        visible  = filtered if is_pro_user else filtered[:10]
-        F_COLOURS = {"MKT": "#60a5fa", "SMB": "#a78bfa", "HML": "#f59e0b", "MOM": "#34d399"}
-
-        st.markdown("""
-        <div style="display:grid;grid-template-columns:48px 160px 100px 120px 180px 1fr;
-                    gap:8px;padding:10px 12px;background:#0A1628;border-radius:8px 8px 0 0;
-                    border-bottom:2px solid #F59E0B;font-size:0.7rem;text-transform:uppercase;
-                    letter-spacing:0.07em;color:#64748B;font-weight:700">
-          <div>#</div><div>Stock</div><div>Alpha</div><div>Signal</div>
-          <div>Factor Loadings</div><div>Alpha Decomposition</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        for i, s in enumerate(visible):
-            alpha_col = "#22c55e" if s["alpha"] >= 0 else "#ef4444"
-            alpha_str = f"{'+ ' if s['alpha']>=0 else ''}{s['alpha']:.1f}%"
-            bars = (
-                _ff_factor_bar("MKT", s["beta"] - 1,  F_COLOURS["MKT"]) +
-                _ff_factor_bar("SMB", s["smb"],        F_COLOURS["SMB"]) +
-                _ff_factor_bar("HML", s["hml"],        F_COLOURS["HML"]) +
-                _ff_factor_bar("MOM", s["mom"],        F_COLOURS["MOM"])
-            )
-            decomp = _ff_decomp_html(s, years_sel)
-            row_bg = "rgba(34,197,94,0.03)" if s["signal"] == "green" else                          "rgba(245,158,11,0.02)" if s["signal"] == "amber" else "transparent"
-            st.markdown(f"""
-            <div style="display:grid;grid-template-columns:48px 160px 100px 120px 180px 1fr;
-                        gap:8px;padding:14px 12px;background:{row_bg};
-                        border-bottom:1px solid rgba(255,255,255,0.05);align-items:start">
-              <div style="color:#475569;font-size:0.8rem;font-weight:700;padding-top:4px">{i+1}</div>
-              <div>
-                <div style="font-size:1rem;font-weight:900;color:#F1F5F9">{s["ticker"]}</div>
-                <div style="font-size:0.72rem;color:#64748B;margin-top:2px">{s.get("name", s["ticker"])}</div>
-              </div>
-              <div>
-                <div style="font-size:1.2rem;font-weight:900;color:{alpha_col}">{alpha_str}</div>
-                <div style="font-size:0.65rem;color:#475569;margin-top:2px">per year · p={s["pval"]:.3f}</div>
-              </div>
-              <div style="padding-top:2px">{_ff_signal_badge(s["signal"])}</div>
-              <div>{bars}</div>
-              <div>{decomp}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        if not is_pro_user and len(filtered) > 10:
-            remaining = len(filtered) - 10
-            st.markdown(f"""
-            <div style="background:linear-gradient(135deg,#0D2137,#1A3355);
-                        border:1px solid rgba(245,158,11,0.3);border-radius:12px;
-                        padding:32px;text-align:center;margin-top:16px">
-              <div style="font-size:1.2rem;font-weight:800;color:#F1F5F9;margin-bottom:10px">
-                🔬 {remaining} more stocks hidden
-              </div>
-              <div style="color:#94A3B8;font-size:0.9rem;margin-bottom:20px">
-                Upgrade to Pro to see all {len(filtered)} results.
-              </div>
-              <a href="https://fintiq.uk/factor-screener.html" target="_blank"
-                 style="background:#F59E0B;color:#0A1628;padding:12px 28px;border-radius:8px;
-                        font-weight:700;text-decoration:none;display:inline-block">
-                View Full Screener →
-              </a>
-            </div>
-            """, unsafe_allow_html=True)
-        elif not filtered:
-            st.info("No stocks match your current filters.")
-
-        # ── Coming Soon: UK & EU ──────────────────────────────
-        st.markdown("<div style='margin-top:40px'></div>", unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748B;font-weight:700;margin-bottom:12px">COMING SOON</div>', unsafe_allow_html=True)
-        col_uk, col_eu = st.columns(2)
-        _coming_soon_style = ("position:absolute;inset:0;background:rgba(13,27,42,0.78);"
-                              "display:flex;align-items:center;justify-content:center;"
-                              "border-radius:12px;border:1px solid rgba(245,158,11,0.2)")
-        for col, flag, label, exchanges in [
-            (col_uk, "🇬🇧", "UK Equities",      "FTSE 100 · FTSE 250 · AIM"),
-            (col_eu, "🇪🇺", "European Equities", "DAX · CAC 40 · AEX · IBEX"),
-        ]:
-            with col:
-                st.markdown(f"""
-                <div style="position:relative;overflow:hidden;border-radius:12px">
-                  <div style="filter:blur(4px);pointer-events:none;background:rgba(15,35,55,0.6);
-                              border:1px solid rgba(245,158,11,0.15);border-radius:12px;padding:24px">
-                    <div style="font-size:1.2rem;font-weight:900;color:#F1F5F9;margin-bottom:8px">{flag} {label}</div>
-                    <div style="color:#94A3B8;font-size:0.85rem">{exchanges}<br>Fama-French 4-Factor<br>500+ stocks ranked by alpha</div>
-                  </div>
-                  <div style="{_coming_soon_style}">
-                    <div style="text-align:center">
-                      <div style="font-size:1.5rem;margin-bottom:6px">🚧</div>
-                      <div style="color:#F59E0B;font-weight:700">Coming Soon</div>
-                    </div>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("""
-        <div style="margin-top:32px;padding:16px 20px;background:rgba(15,35,55,0.4);
-                    border-left:3px solid #F59E0B;border-radius:0 8px 8px 0">
-          <span style="color:#94A3B8;font-size:0.85rem">New to factor investing?
-            <a href="https://fintiq.uk/learn/fama-french-factor-screener.html"
-               target="_blank" style="color:#F59E0B;font-weight:600">
-              Read our Fama-French guide →</a>
-          </span>
-        </div>
-        """, unsafe_allow_html=True)
-  except Exception as _ff_err:
-    st.error(f"Factor Screener error: {_ff_err}")
-    import traceback
-    st.code(traceback.format_exc())
