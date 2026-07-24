@@ -6152,20 +6152,35 @@ def _ff_decomp_html(s: dict, years: int) -> str:
         ("↳ Momentum (MOM)",    mom,               "#34d399",  False, False),
         ("= Alpha",             s["alpha"],        alpha_col,  True,  True),
     ]
-    html = (f'<div style="background:rgba(10,22,40,0.6);border:1px solid rgba(245,158,11,0.12);'
-            f'border-radius:8px;padding:10px 12px;font-size:0.7rem">'
-            f'<div style="color:#475569;font-size:0.62rem;text-transform:uppercase;'
-            f'letter-spacing:0.07em;font-weight:700;margin-bottom:6px">Alpha breakdown ({yr_lbl} avg/yr)</div>')
-    for i, (lbl, val, col, bold, border_top) in enumerate(rows):
+    # Insight commentary text (from JSON)
+    insight = s.get("insight", "")
+    insight_html = (f'<div style="font-size:0.75rem;color:#64748B;font-style:italic;'
+                    f'line-height:1.4;margin-bottom:8px">{insight}</div>') if insight else ""
+    # Build rows HTML
+    rows_html = ""
+    for lbl, val, col, bold, border_top in rows:
         border = "border-top:1px solid rgba(255,255,255,0.07);padding-top:4px;margin-top:4px;" if border_top else ""
         weight = "font-weight:700;" if bold else ""
-        html += (f'<div style="display:flex;justify-content:space-between;{border}">'
-                 f'<span style="color:#64748B">{lbl}</span>'
-                 f'<span style="color:{col};{weight}">{fmt(val)}/yr</span>'
-                 f'</div>')
-    html += (f'<div style="color:#334155;font-size:0.62rem;margin-top:6px">'
-             f'p = {s["pval"]:.3f} · n = {s.get("n_obs","—")} days · R² = {s.get("r_squared",0):.2f}</div>'
-             f'</div>')
+        rows_html += (f'<div style="display:flex;justify-content:space-between;{border}">'
+                      f'<span style="color:#64748B">{lbl}</span>'
+                      f'<span style="color:{col};{weight}">{fmt(val)}/yr</span>'
+                      f'</div>')
+    # Collapsible details/summary wrapper
+    summary_label = f"▶ Alpha breakdown ({yr_lbl} avg/yr)"
+    html = (
+        f'{insight_html}'
+        f'<details style="margin-top:8px">'
+        f'<summary style="font-size:0.68rem;font-weight:600;color:#94A3B8;cursor:pointer;'
+        f'padding:5px 8px;background:rgba(15,35,55,0.5);border:1px solid rgba(245,158,11,0.15);'
+        f'border-radius:6px;list-style:none;user-select:none">{summary_label}</summary>'
+        f'<div style="background:rgba(10,22,40,0.6);border:1px solid rgba(245,158,11,0.12);'
+        f'border-top:none;border-radius:0 0 8px 8px;padding:10px 12px;font-size:0.7rem">'
+        f'{rows_html}'
+        f'<div style="color:#334155;font-size:0.62rem;margin-top:6px">'
+        f'p = {s["pval"]:.3f} · n = {s.get("n_obs","—")} days · R² = {s.get("r_squared",0):.2f}</div>'
+        f'</div>'
+        f'</details>'
+    )
     return html
 
 
@@ -6303,7 +6318,7 @@ with tab_factor:
             st.markdown(f"""
             <div style="display:grid;grid-template-columns:48px 160px 100px 120px 180px 1fr;
                         gap:8px;padding:14px 12px;background:{row_bg};
-                        border-bottom:1px solid rgba(255,255,255,0.05);align-items:start">
+                        border-bottom:1px solid rgba(255,255,255,0.15);align-items:start">
               <div style="color:#475569;font-size:0.8rem;font-weight:700;padding-top:4px">{i+1}</div>
               <div>
                 <div style="font-size:1rem;font-weight:900;color:#F1F5F9">{s["ticker"]}</div>
