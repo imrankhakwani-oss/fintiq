@@ -6135,22 +6135,30 @@ def _ff_decomp_html(s: dict, years: int) -> str:
         return ""
     fmt = lambda v: (f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%")
     yr_lbl = f"{years} year{'s' if years > 1 else ''}"
+    rf  = s.get("rf_annual", 0)
+    mkt = s.get("mkt_contrib", 0)
+    smb = s.get("smb_contrib", 0)
+    hml = s.get("hml_contrib", 0)
+    mom = s.get("mom_contrib", 0)
+    predicted = rf + mkt + smb + hml + mom
+    alpha_col = "#22c55e" if s["alpha"] >= 0 else "#ef4444"
     rows = [
-        ("Actual return",    s["stock_return"],              "#F1F5F9"),
-        ("Model predicted",  s["predicted_return"],          "#94A3B8"),
-        ("↳ Market",         s.get("mkt_contrib", 0),        "#60a5fa"),
-        ("↳ Size (SMB)",     s.get("smb_contrib", 0),        "#a78bfa"),
-        ("↳ Value (HML)",    s.get("hml_contrib", 0),        "#f59e0b"),
-        ("↳ Momentum",       s.get("mom_contrib", 0),        "#34d399"),
-        ("= Alpha",          s["alpha"],  "#22c55e" if s["alpha"] >= 0 else "#ef4444"),
+        ("Actual return",       s["stock_return"], "#F1F5F9",  True,  False),
+        ("Model predicted",     predicted,         "#94A3B8",  False, True),
+        ("↳ Risk-free rate",    rf,                "#94A3B8",  False, False),
+        ("↳ Market (MKT)",      mkt,               "#60a5fa",  False, False),
+        ("↳ Size (SMB)",        smb,               "#a78bfa",  False, False),
+        ("↳ Value (HML)",       hml,               "#f59e0b",  False, False),
+        ("↳ Momentum (MOM)",    mom,               "#34d399",  False, False),
+        ("= Alpha",             s["alpha"],        alpha_col,  True,  True),
     ]
     html = (f'<div style="background:rgba(10,22,40,0.6);border:1px solid rgba(245,158,11,0.12);'
             f'border-radius:8px;padding:10px 12px;font-size:0.7rem">'
             f'<div style="color:#475569;font-size:0.62rem;text-transform:uppercase;'
             f'letter-spacing:0.07em;font-weight:700;margin-bottom:6px">Alpha breakdown ({yr_lbl} avg/yr)</div>')
-    for i, (lbl, val, col) in enumerate(rows):
-        border = "border-top:1px solid rgba(255,255,255,0.07);padding-top:4px;margin-top:4px;" if i in (1, 6) else ""
-        weight = "font-weight:700;" if i in (0, 6) else ""
+    for i, (lbl, val, col, bold, border_top) in enumerate(rows):
+        border = "border-top:1px solid rgba(255,255,255,0.07);padding-top:4px;margin-top:4px;" if border_top else ""
+        weight = "font-weight:700;" if bold else ""
         html += (f'<div style="display:flex;justify-content:space-between;{border}">'
                  f'<span style="color:#64748B">{lbl}</span>'
                  f'<span style="color:{col};{weight}">{fmt(val)}/yr</span>'
