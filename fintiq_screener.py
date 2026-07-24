@@ -6219,16 +6219,44 @@ with tab_factor:
         alphas  = [s["alpha"] for s in ff_stocks]
         med_a   = round(float(_np.median(alphas)), 1) if alphas else 0
 
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("🟢 Strong Alpha", green_n)
-        k2.metric("🟡 Marginal", amber_n)
-        k3.metric("🔴 Avoid", red_n)
-        k4.metric("Median Alpha", f"{'+ ' if med_a >= 0 else ''}{med_a}%/yr")
-
         gen_date = ff_meta.get("generated_date", "recent")
-        st.markdown(f'<div style="font-size:0.75rem;color:#475569;margin:4px 0 20px">'
-                    f'● {gen_date} · {ff_meta.get("universe_count", len(ff_stocks))} stocks · '
-                    f'Updated weekly · Kenneth French Data Library</div>', unsafe_allow_html=True)
+        med_sign = "+" if med_a >= 0 else ""
+        med_col  = "#22c55e" if med_a >= 0 else "#ef4444"
+        st.markdown(f"""
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:8px 0 6px">
+          <div style="background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.25);
+                      border-radius:12px;padding:18px 20px">
+            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;
+                        color:#64748B;font-weight:700;margin-bottom:6px">STRONG ALPHA (GREEN)</div>
+            <div style="font-size:2.4rem;font-weight:900;color:#22c55e;line-height:1">{green_n}</div>
+            <div style="font-size:0.72rem;color:#475569;margin-top:6px">p &lt; 0.05, α &gt; 0%</div>
+          </div>
+          <div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.25);
+                      border-radius:12px;padding:18px 20px">
+            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;
+                        color:#64748B;font-weight:700;margin-bottom:6px">MARGINAL SIGNAL (AMBER)</div>
+            <div style="font-size:2.4rem;font-weight:900;color:#F59E0B;line-height:1">{amber_n}</div>
+            <div style="font-size:0.72rem;color:#475569;margin-top:6px">Positive but below hurdle</div>
+          </div>
+          <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.25);
+                      border-radius:12px;padding:18px 20px">
+            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;
+                        color:#64748B;font-weight:700;margin-bottom:6px">AVOID (RED)</div>
+            <div style="font-size:2.4rem;font-weight:900;color:#ef4444;line-height:1">{red_n}</div>
+            <div style="font-size:0.72rem;color:#475569;margin-top:6px">Negative or insignificant α</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
+                      border-radius:12px;padding:18px 20px">
+            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;
+                        color:#64748B;font-weight:700;margin-bottom:6px">MEDIAN ALPHA (UNIVERSE)</div>
+            <div style="font-size:2.4rem;font-weight:900;color:{med_col};line-height:1">{med_sign}{med_a}%</div>
+            <div style="font-size:0.72rem;color:#475569;margin-top:6px">Annualised, current lookback</div>
+          </div>
+        </div>
+        <div style="font-size:0.72rem;color:#475569;margin:6px 0 16px">
+          ● {gen_date} · {ff_meta.get("universe_count", len(ff_stocks))} stocks · Updated weekly · Kenneth French Data Library
+        </div>
+        """, unsafe_allow_html=True)
 
         sig_map = {"All": None, "Strong Alpha": "green", "Marginal": "amber", "Avoid": "red"}
         sig_val = sig_map[sig_filter]
