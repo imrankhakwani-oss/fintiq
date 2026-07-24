@@ -6162,26 +6162,18 @@ def _ff_decomp_html(s: dict, years: int) -> str:
 
 
 with tab_factor:
-    st.write("✅ Factor tab is rendering")
-    st.write(f"logged_in={st.session_state.get('logged_in','?')} is_pro={st.session_state.get('is_pro','?')}")
-    try:
-        import requests as _rtest
-        r = _rtest.get("https://fintiq.uk/screener-data-2y.json", timeout=10)
-        st.write(f"fetch status={r.status_code} len={len(r.content)}")
-    except Exception as _e:
-        st.error(f"fetch error: {_e}")
-with tab_factor:
   try:
     st.markdown("""
-    <div style="padding:8px 0 20px">
-      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;
-                  color:#64748B;font-weight:600;margin-bottom:8px">FAMA-FRENCH 4-FACTOR MODEL</div>
-      <h2 style="font-size:1.6rem;font-weight:900;color:#F1F5F9;margin-bottom:8px">
-        🔬 Factor Screener — Alpha Signals
-      </h2>
-      <p style="color:#94A3B8;font-size:0.9rem;max-width:680px">
-        Each stock is regressed against four risk factors (Market, Size, Value, Momentum).
-        Alpha is unexplained outperformance above what any factor exposure predicts.
+    <div style="padding:8px 0 16px">
+      <div style="font-size:1.5rem;font-weight:900;color:#F1F5F9;margin-bottom:6px">
+        🔬 Fama-French 4-Factor Model
+      </div>
+      <div style="font-size:1rem;font-weight:700;color:#F59E0B;margin-bottom:8px">
+        Alpha Screener — S&amp;P 500 + Nasdaq 100
+      </div>
+      <p style="color:#94A3B8;font-size:0.85rem;max-width:680px;margin:0">
+        Each stock is regressed against Market, Size, Value and Momentum risk factors.
+        Alpha is genuine outperformance above what those factors predict.
       </p>
     </div>
     """, unsafe_allow_html=True)
@@ -6228,7 +6220,7 @@ with tab_factor:
         ]
 
         is_pro_user = st.session_state.get("is_pro", False)
-        visible  = filtered if is_pro_user else filtered[:10]
+        visible  = filtered if is_pro_user else filtered[:3]
         F_COLOURS = {"MKT": "#60a5fa", "SMB": "#a78bfa", "HML": "#f59e0b", "MOM": "#34d399"}
 
         st.markdown("""
@@ -6271,21 +6263,26 @@ with tab_factor:
             </div>
             """, unsafe_allow_html=True)
 
-        if not is_pro_user and len(filtered) > 10:
-            remaining = len(filtered) - 10
+        if not is_pro_user and len(filtered) > 3:
+            remaining = len(filtered) - 3
             st.markdown(f"""
+            <div style="background:linear-gradient(to bottom,transparent,rgba(13,33,55,0.95));
+                        margin-top:-40px;height:60px;position:relative;z-index:2"></div>
             <div style="background:linear-gradient(135deg,#0D2137,#1A3355);
                         border:1px solid rgba(245,158,11,0.3);border-radius:12px;
-                        padding:32px;text-align:center;margin-top:16px">
-              <div style="font-size:1.2rem;font-weight:800;color:#F1F5F9;margin-bottom:10px">
-                🔬 {remaining} more stocks hidden
+                        padding:32px;text-align:center;margin-top:0">
+              <div style="font-size:1.1rem;font-weight:800;color:#F1F5F9;margin-bottom:8px">
+                🔬 Showing 3 of {len(filtered)} stocks
               </div>
-              <div style="color:#94A3B8;font-size:0.9rem;margin-bottom:20px">
-                Upgrade to Pro to see all {len(filtered)} results.
+              <div style="color:#94A3B8;font-size:0.88rem;margin-bottom:6px">
+                <strong style="color:#F59E0B">{remaining} alpha signals hidden</strong> behind the paywall
+              </div>
+              <div style="color:#64748B;font-size:0.78rem;margin-bottom:20px">
+                Pro subscribers see all {len(filtered)} ranked stocks with full decomposition &amp; 1yr/2yr/3yr lookback
               </div>
               <a href="https://fintiq.uk/factor-screener.html" target="_blank"
                  style="background:#F59E0B;color:#0A1628;padding:12px 28px;border-radius:8px;
-                        font-weight:700;text-decoration:none;display:inline-block">
+                        font-weight:700;text-decoration:none;display:inline-block;margin-right:10px">
                 View Full Screener →
               </a>
             </div>
