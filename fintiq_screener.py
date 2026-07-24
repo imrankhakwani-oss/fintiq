@@ -2891,17 +2891,17 @@ if _ticker_html_items:
 # TABS
 # ─────────────────────────────────────────────────────────────
 
-tab0, tab_brief, tab1, tab2, tab3, tab_mc, tab5, tab_opt, tab4, tab_factor = st.tabs([
-    "🏠  Home",
-    "🌍  Morning Brief",
-    "🔍  Fundamental",
-    "⚡  Catalyst",
-    "📈  Technical",
-    "🎲  Monte Carlo",
-    "📒  Journal",
-    "📐  Optimiser",
-    "⚖️  Pairs Trading",
-        "🔬  Factor Screener",
+tab0, tab_brief, tab1, tab_factor, tab2, tab3, tab_mc, tab5, tab_opt, tab4 = st.tabs([
+    "🏠 Home",
+    "🌍 Brief",
+    "🔍 Fundamental",
+    "🔬 Factor",
+    "⚡ Catalyst",
+    "📈 Technical",
+    "🎲 Monte Carlo",
+    "📒 Journal",
+    "📐 Optimiser",
+    "⚖️ Pairs",
 ])
 
 # ═══════════════════════════════════════════════════════════════
@@ -9293,6 +9293,7 @@ def _ff_decomp_html(s: dict, years: int) -> str:
 
 
 with tab_factor:
+  try:
     st.markdown("""
     <div style="padding:8px 0 20px">
       <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;
@@ -9452,3 +9453,7 @@ with tab_factor:
           </span>
         </div>
         """, unsafe_allow_html=True)
+  except Exception as _ff_err:
+    st.error(f"Factor Screener error: {_ff_err}")
+    import traceback
+    st.code(traceback.format_exc())
