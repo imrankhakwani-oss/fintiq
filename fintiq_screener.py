@@ -2910,13 +2910,578 @@ tab0, tab_brief, tab1, tab_factor, tab2, tab3, tab_mc, tab5, tab_opt, tab4 = st.
 
 with tab0:
 
-    # ── FRED API key ──
     import os as _os_dash
     _FRED_KEY = _os_dash.environ.get("FRED_API_KEY", "86e24a8082e08115879cca1041a8cc70")
 
+    # ─────────────────────────────────────────────────────────────
+    # HELPER FUNCTIONS
+    # ─────────────────────────────────────────────────────────────
     @st.cache_data(ttl=86400)
-    def _fred_obs(series_id: str, limit: int = 14) -> list:
-        """Fetch FRED series observations newest-first. Returns [(date, value), ...]."""
+    def _fred_obs(series_id: str, limit: int = 90) -> list:
+        try:
+            url = (f"https://api.stlouisfed.org/fred/series/observations"
+                   f"?series_id={series_id}&api_key={_FRED_KEY}&file_type=json"
+                   f"&sort_order=desc&limit={limit}")
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                return [(o["date"], float(o["value"]))
+                        for o in r.json().get("observations", []) if o["value"] != "."]
+        except Exception:
+            pass
+        return []
+
+    @st.cache_data(ttl=300)
+    def _fetch_dash_prices() -> dict:
+        symbols = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E",
+                   "000001.SS","EEM","^N225","^VIX","GC=F","BZ=F","DX-Y.NYB","^TNX"]
+        out = {}
+        for sym in symbols:
+            try:
+                ti = yf.Ticker(sym).fast_info
+                price = getattr(ti, "last_price", None)
+                prev  = getattr(ti, "previous_close", None)
+                pct = (price - prev) / prev * 100 if price and prev and prev != 0 else None
+                out[sym] = {"price": price, "pct": pct}
+            except Exception:
+                out[sym] = {"price": None, "pct": None}
+        return out
+
+    @st.cache_data(ttl=3600)
+    def _fetch_all_sparks() -> dict:
+        tickers = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E","000001.SS","EEM","^N225",
+                   "^VIX","GC=F","BZ=F","DX-Y.NYB","^TNX"]
+        out = {}
+        for t in tickers:
+            try:
+                df = yf.download(t, period="3mo", interval="1d", progress=False, auto_adjust=True)
+                out[t] = df["Close"].dropna().tolist() if not df.empty else []
+            except Exception:
+                out[t] = []
+        return out
+
+    @st.cache_data(ttl=86400)
+    def _eps_batch(tickers_key: str) -> dict:
+        result = {}
+        for tk in tickers_key.split(","):
+            try:
+                r1 = requests.get(f"{FMP_BASE}/v3/historical/earning_calendar/{tk}?limit=8&apikey={FMP_KEY}", timeout=6)
+                r2 = requests.get(f"{FMP_BASE}/v3/analyst-estimates/{tk}?period=quarter&limit=4&apikey={FMP_KEY}", timeout=6)
+                result[tk] = {
+                    "hist": r1.json() if r1.status_code == 200 and isinstance(r1.json(), list) else [],
+                    "est":  r2.json() if r2.status_code == 200 and isinstance(r2.json(), list) else [],
+                }
+            except Exception:
+                result[tk] = {"hist": [], "est": []}
+        return result
+
+    def _mini_svg(prices, w=110, h=46):
+        if len(prices) < 2:
+            return f'<svg width="{w}" height="{h}"></svg>'
+        mn, mx = min(prices), max(prices); rng = mx - mn or 1; n = len(prices)
+        pts = " ".join(f"{i/(n-1)*w:.1f},{h-3-(p-mn)/rng*(h-8):.1f}" for i,p in enumerate(prices))
+        col = "#22C55E" if prices[-1] >= prices[0] else "#EF4444"
+        fill = "#22C55E14" if prices[-1] >= prices[0] else "#EF444414"
+        return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+                f'<polygon points="0,{h} {pts} {w},{h}" fill="{fill}"/>'
+                f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="1.8" stroke-linejoin="round"/>'
+                f'</svg>')
+
+    def _full_svg(prices, w=480, h=180):
+        if len(prices) < 2:
+            return f'<svg width="{w}" height="{h}"><text x="50%" y="50%" text-anchor="middle" fill="#64748B" font-family="sans-serif" font-size="14">No data</text></svg>'
+        mn, mx = min(prices), max(prices); rng = mx - mn or 1; n = len(prices)
+        px, py = 14, 14
+        pts = " ".join(f"{px+i/(n-1)*(w-2*px):.1f},{h-py-(p-mn)/rng*(h-2*py):.1f}" for i,p in enumerate(prices))
+        col = "#22C55E" if prices[-1] >= prices[0] else "#EF4444"
+        fill = "#22C55E10" if prices[-1] >= prices[0] else "#EF444410"
+        mn_i = prices.index(mn); mx_i = prices.index(mx)
+        mnx = px+mn_i/(n-1)*(w-2*px); mxx = px+mx_i/(n-1)*(w-2*px)
+        return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" style="width:100%;height:auto">'
+                f'<polygon points="{px},{h} {pts} {w-px},{h}" fill="{fill}"/>'
+                f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="2.2" stroke-linejoin="round"/>'
+                f'<circle cx="{mnx:.0f}" cy="{h-py:.0f}" r="4" fill="#EF4444"/>'
+                f'<text x="{mnx:.0f}" y="{h-py+14:.0f}" text-anchor="middle" font-size="10" fill="#EF4444" font-family="sans-serif">{mn:.2f}</text>'
+                f'<circle cx="{mxx:.0f}" cy="{py:.0f}" r="4" fill="#22C55E"/>'
+                f'<text x="{mxx:.0f}" y="{max(py-5,10):.0f}" text-anchor="middle" font-size="10" fill="#22C55E" font-family="sans-serif">{mx:.2f}</text>'
+                f'</svg>')
+
+    def _nc(dates):
+        today = datetime.now().date()
+        f = [d for d in dates if datetime.strptime(d,"%Y-%m-%d").date() >= today]
+        return min(f) if f else None
+
+    def _dt(ds):
+        return (datetime.strptime(ds,"%Y-%m-%d").date() - datetime.now().date()).days if ds else None
+
+    def _nb(ds):
+        d = _dt(ds)
+        if d is None: return ""
+        if d == 0: return '<span style="background:#EF4444;color:#fff;font-size:0.56rem;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:3px">TODAY</span>'
+        if d <= 7: return f'<span style="background:rgba(245,158,11,0.2);color:#F59E0B;font-size:0.56rem;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:3px">In {d}d</span>'
+        return f'<span style="color:#334155;font-size:0.58rem;margin-left:3px">{ds}</span>'
+
+    def _fv(v, dp=2, pre="", suf=""):
+        return f"{pre}{v:.{dp}f}{suf}" if v is not None else "—"
+
+    # ─────────────────────────────────────────────────────────────
+    # CALENDARS
+    # ─────────────────────────────────────────────────────────────
+    _FOMC26 = ["2026-01-29","2026-03-19","2026-05-07","2026-06-18",
+                "2026-07-30","2026-09-17","2026-10-29","2026-12-10"]
+    _CPI26  = ["2026-08-13","2026-09-10","2026-10-15","2026-11-12","2026-12-10"]
+    _NFP26  = ["2026-08-07","2026-09-04","2026-10-02","2026-11-06","2026-12-04"]
+    _PMI26  = ["2026-08-03","2026-09-01","2026-10-01","2026-11-02","2026-12-01"]
+
+    _nxt_fomc = _nc(_FOMC26); _fomc_d = _dt(_nxt_fomc)
+    _nxt_cpi  = _nc(_CPI26)
+    _nxt_nfp  = _nc(_NFP26)
+    _nxt_pmi  = _nc(_PMI26)
+
+    # ─────────────────────────────────────────────────────────────
+    # FETCH DATA
+    # ─────────────────────────────────────────────────────────────
+    _fo  = _fred_obs("FEDFUNDS", 30)
+    _t10 = _fred_obs("DGS10", 90)
+    _cpi = _fred_obs("CPIAUCSL", 25)
+    _cor = _fred_obs("CPILFESL", 25)
+    _pmi = _fred_obs("NAPM", 30)
+    _nfp = _fred_obs("PAYEMS", 25)
+    _yc  = _fred_obs("T10Y2Y", 90)
+    _ur  = _fred_obs("UNRATE", 24)
+
+    _live  = _fetch_dash_prices()
+    _sparks = _fetch_all_sparks()
+
+    # Scalars
+    _fed_v = _fo[0][1]  if _fo  else None
+    _t10_v = _t10[0][1] if _t10 else None
+    _pmi_v = _pmi[0][1] if _pmi else None
+    _ur_v  = _ur[0][1]  if _ur  else None
+    _yc_v  = _yc[0][1]  if _yc  else None
+    _vix_v = _live.get("^VIX",{}).get("price")
+    _gold_v= _live.get("GC=F",{}).get("price")
+    _oil_v = _live.get("BZ=F",{}).get("price")
+    _dxy_v = _live.get("DX-Y.NYB",{}).get("price")
+    _tnx_v = _live.get("^TNX",{}).get("price")
+
+    def _yoy_s(obs):
+        r = list(reversed(obs))
+        return [(r[i][1]/r[i-12][1]-1)*100 for i in range(12, len(r))] if len(r) >= 13 else []
+
+    def _mom_s(obs):
+        r = list(reversed(obs))
+        return [int((r[i][1]-r[i-1][1])*1000) for i in range(1, len(r))]
+
+    _cpi_s = _yoy_s(_cpi);  _cpi_v  = _cpi_s[-1]  if _cpi_s  else None
+    _cor_s = _yoy_s(_cor);  _cor_v  = _cor_s[-1]  if _cor_s  else None
+    _nfp_s = _mom_s(_nfp);  _nfp_v  = _nfp_s[-1]  if _nfp_s  else None
+
+    # Colors
+    _cc = "#EF4444" if (_cpi_v or 0)>3 else "#F59E0B" if (_cpi_v or 0)>2 else "#22C55E"
+    _cp = "#22C55E" if (_pmi_v or 0)>52 else "#F59E0B" if (_pmi_v or 0)>=50 else "#EF4444"
+    _cv = "#22C55E" if (_vix_v or 99)<16 else "#F59E0B" if (_vix_v or 99)<25 else "#EF4444"
+    _cy = "#EF4444" if (_yc_v or 99)<0 else "#22C55E"
+    _cn = "#22C55E" if (_nfp_v or 0)>150000 else "#F59E0B" if (_nfp_v or 0)>0 else "#EF4444"
+    _cf = "#EF4444" if (_fomc_d or 99)<=3 else "#F59E0B" if (_fomc_d or 99)<=14 else "#60A5FA"
+    _nfp_str = f"+{_nfp_v:,}" if _nfp_v and _nfp_v>0 else (_fv(_nfp_v, 0) if _nfp_v else "—")
+
+    # Build price series for FRED indicators (oldest-first)
+    def _fp(obs): return [v for _,v in reversed(obs)]
+
+    # Generate mini + full SVGs
+    _SVG = {
+        "fomc": (_mini_svg(_fp(_fo)),          _full_svg(_fp(_fo))),
+        "t10y": (_mini_svg(_fp(_t10)),         _full_svg(_fp(_t10))),
+        "cpi":  (_mini_svg(_cpi_s),            _full_svg(_cpi_s)),
+        "pmi":  (_mini_svg(_fp(_pmi)),         _full_svg(_fp(_pmi))),
+        "yc":   (_mini_svg(_fp(_yc)),          _full_svg(_fp(_yc))),
+        "nfp":  (_mini_svg(_nfp_s),            _full_svg(_nfp_s)),
+        "vix":  (_mini_svg(_sparks.get("^VIX",[])),   _full_svg(_sparks.get("^VIX",[])) ),
+        "dxy":  (_mini_svg(_sparks.get("DX-Y.NYB",[])),_full_svg(_sparks.get("DX-Y.NYB",[])) ),
+        "oil":  (_mini_svg(_sparks.get("BZ=F",[])),   _full_svg(_sparks.get("BZ=F",[])) ),
+        "gold": (_mini_svg(_sparks.get("GC=F",[])),   _full_svg(_sparks.get("GC=F",[])) ),
+    }
+    _IDX_TICKERS = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E","000001.SS","EEM","^N225"]
+    _ISVG = {t: (_mini_svg(_sparks.get(t,[])), _full_svg(_sparks.get(t,[]))) for t in _IDX_TICKERS}
+
+    # Labels for modal
+    _SVG_LBL = {
+        "fomc":"Fed Funds Rate — 24 Month History","t10y":"10Y Treasury Yield — 3 Month",
+        "cpi":"CPI Inflation YoY % — Rolling 24 Month","pmi":"ISM Manufacturing PMI — 24 Month",
+        "yc":"Yield Curve (10Y−2Y) — 3 Month","nfp":"Non-Farm Payrolls MoM Added — 24 Month",
+        "vix":"VIX Fear Index — 3 Month","dxy":"Dollar Index DXY — 3 Month",
+        "oil":"Brent Crude Oil — 3 Month","gold":"Gold $/oz — 3 Month",
+    }
+    _IDX_LBL = {"^GSPC":"S&P 500 — 3 Month","^NDX":"NASDAQ 100 — 3 Month","^DJI":"Dow Jones — 3 Month",
+                "^FTSE":"FTSE 100 — 3 Month","^STOXX50E":"Euro Stoxx 50 — 3 Month",
+                "000001.SS":"Shanghai Composite — 3 Month","EEM":"MSCI Emerging Markets — 3 Month",
+                "^N225":"Nikkei 225 — 3 Month"}
+
+    # Hidden SVG library for modal
+    _hdiv = ""
+    for k,(m,f) in _SVG.items():
+        _hdiv += f'<div id="fs-{k}" data-lbl="{_SVG_LBL.get(k,k)}">{f}</div>'
+    for t,(m,f) in _ISVG.items():
+        _sid = t.replace("^","").replace(".","_").replace("=","")
+        _hdiv += f'<div id="fs-{_sid}" data-lbl="{_IDX_LBL.get(t,t)}">{f}</div>'
+
+    # ─────────────────────────────────────────────────────────────
+    # FLIP CARD BUILDER
+    # ─────────────────────────────────────────────────────────────
+    def _flip(cid, col, lbl, val, sub, mini, nd=None):
+        nr = (f'<div style="margin-top:3px;display:flex;align-items:center;gap:2px">'
+              f'<span style="color:#334155;font-size:0.56rem">Next:</span>{_nb(nd)}</div>') if nd else ""
+        return (f'<div class="ffc" onclick="ff(this)">'
+                f'<div class="ffi">'
+                f'<div class="fff" style="border-top:2px solid {col}">'
+                f'<div class="ffl">{lbl}</div>'
+                f'<div class="ffv" style="color:{col}">{val}</div>'
+                f'<div class="ffs">{sub}</div>{nr}'
+                f'</div>'
+                f'<div class="ffb" onclick="fe(event,\'fs-{cid}\')">'
+                f'{mini}'
+                f'<div style="font-size:0.56rem;color:#475569;margin-top:3px">▲ expand</div>'
+                f'</div>'
+                f'</div></div>')
+
+    def _iflip(t, n, flag, mini, price, pct):
+        tc = "#22C55E" if (pct or 0)>=0 else "#EF4444"
+        ps = f"{price:,.2f}" if price and price>100 else (f"{price:.4f}" if price else "—")
+        pc = f"{'▲' if (pct or 0)>=0 else '▼'} {abs(pct):.2f}%" if pct is not None else "—"
+        sid = t.replace("^","").replace(".","_").replace("=","")
+        return (f'<div class="ffc" style="height:96px" onclick="ff(this)">'
+                f'<div class="ffi">'
+                f'<div class="fff" style="border-top:2px solid {tc};padding:9px 12px">'
+                f'<div style="font-size:0.66rem;color:#64748B">{flag} {n}</div>'
+                f'<div style="font-size:1.0rem;font-weight:800;color:#F1F5F9;margin-top:1px">{ps}</div>'
+                f'<div style="font-size:0.8rem;font-weight:700;color:{tc}">{pc}</div>'
+                f'</div>'
+                f'<div class="ffb" onclick="fe(event,\'fs-{sid}\')">'
+                f'{mini}<div style="font-size:0.56rem;color:#475569;margin-top:3px">▲ expand</div>'
+                f'</div>'
+                f'</div></div>')
+
+    # Build macro card list
+    _mc = [
+        _flip("fomc", _cf,    "NEXT FOMC",    f"{_fomc_d}d" if _fomc_d is not None else "—",
+              f"{_nxt_fomc} · Rate {_fv(_fed_v,2,'','%')}", _SVG["fomc"][0]),
+        _flip("t10y", "#A78BFA","10Y TREASURY", _fv(_tnx_v or _t10_v, 2, suf="%"),
+              "Risk-free / discount rate", _SVG["t10y"][0]),
+        _flip("cpi",  _cc,    "CPI (YOY)",    _fv(_cpi_v, 1, suf="%"),
+              f"Core: {_fv(_cor_v,1,'','%')}", _SVG["cpi"][0], _nxt_cpi),
+        _flip("pmi",  _cp,    "ISM MFG PMI",  _fv(_pmi_v, 1),
+              ">50 expansion · <50 contraction", _SVG["pmi"][0], _nxt_pmi),
+        _flip("yc",   _cy,    "YIELD CURVE",  _fv(_yc_v, 2, suf="%"),
+              "10Y−2Y · negative = inversion", _SVG["yc"][0]),
+        _flip("nfp",  _cn,    "NFP (MOM)",    _nfp_str,
+              f"Jobs · Unempl: {_fv(_ur_v,1,'','%')}", _SVG["nfp"][0], _nxt_nfp),
+        _flip("vix",  _cv,    "VIX",          _fv(_vix_v, 1),
+              "<16 calm · >25 fear · >30 panic", _SVG["vix"][0]),
+        _flip("dxy",  "#94A3B8","DOLLAR (DXY)", _fv(_dxy_v, 1),
+              "USD strength index", _SVG["dxy"][0]),
+        _flip("oil",  "#F59E0B","BRENT CRUDE",  _fv(_oil_v, 1, "$"),
+              "$/bbl · global demand signal", _SVG["oil"][0]),
+        _flip("gold", "#F59E0B","GOLD",         f"${_gold_v:,.0f}" if _gold_v else "—",
+              "Risk-off / inflation hedge", _SVG["gold"][0]),
+    ]
+    _mr1 = "".join(_mc[:5])
+    _mr2 = "".join(_mc[5:])
+
+    # Build index cards
+    _IMeta = [("^GSPC","S&P 500","🇺🇸"),("^NDX","NASDAQ 100","🇺🇸"),
+              ("^DJI","Dow Jones","🇺🇸"),("^FTSE","FTSE 100","🇬🇧"),
+              ("^STOXX50E","Euro Stoxx 50","🇪🇺"),("000001.SS","Shanghai","🇨🇳"),
+              ("EEM","MSCI EM","🌍"),("^N225","Nikkei 225","🇯🇵")]
+    _ic = "".join(_iflip(t,n,f, _ISVG.get(t,("",""))[0],
+                         _live.get(t,{}).get("price"), _live.get(t,{}).get("pct"))
+                  for t,n,f in _IMeta)
+
+    # ─────────────────────────────────────────────────────────────
+    # EPS HEATMAP BUILDER
+    # ─────────────────────────────────────────────────────────────
+    _SPX_T = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","BRK-B","AVGO","JPM","LLY","UNH","V","XOM","MA"]
+    _NDX_T = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","ASML","ADBE","COST","AMD","QCOM","NFLX","INTC"]
+    _FTSE_T= ["SHEL.L","AZN.L","HSBA.L","ULVR.L","BP.L","RIO.L","GSK.L","LLOY.L","BATS.L","DGE.L"]
+
+    def _qof(ds):
+        try:
+            d = datetime.strptime(ds[:10], "%Y-%m-%d")
+            return f"Q{(d.month-1)//3+1}" if d.year == 2026 else None
+        except: return None
+
+    def _etable(tickers, data):
+        hdr = '<thead><tr style="background:rgba(13,31,53,0.9)">'
+        hdr += '<th style="text-align:left;padding:6px 10px;color:#64748B;font-size:0.66rem;font-weight:600;white-space:nowrap">Ticker</th>'
+        for q in ["Q1 Mar","Q2 Jun","Q3 Sep","Q4 Dec"]:
+            hdr += (f'<th style="text-align:center;padding:6px 10px;color:#64748B;font-size:0.66rem;font-weight:600">'
+                    f'{q} 2026<br><span style="font-weight:400;font-size:0.58rem;color:#334155">EPS actual / est / beat</span></th>')
+        hdr += '</tr></thead>'
+        rows = ""
+        for tk in tickers:
+            d = data.get(tk, {}); hist = d.get("hist",[]); est = d.get("est",[])
+            cells = {}
+            for h in hist:
+                q = _qof(h.get("date",""))
+                if q: cells[q] = {"act": h.get("eps"), "est_v": h.get("epsEstimated"), "done": True}
+            for e in est:
+                q = _qof(e.get("date",""))
+                if q and q not in cells:
+                    cells[q] = {"act": None, "est_v": e.get("estimatedEpsAvg"), "done": False}
+            rows += f'<tr style="border-bottom:1px solid rgba(255,255,255,0.06)">'
+            rows += f'<td style="padding:5px 10px;font-weight:700;color:#F1F5F9;font-size:0.8rem;white-space:nowrap">{tk}</td>'
+            for q in ["Q1","Q2","Q3","Q4"]:
+                c = cells.get(q)
+                if not c:
+                    rows += '<td style="text-align:center;padding:5px;color:#1E3A5F;font-size:0.72rem">—</td>'
+                elif c["done"] and c["act"] is not None:
+                    act, ev = c["act"], c["est_v"]
+                    if ev and ev != 0:
+                        bp = (act-ev)/abs(ev)*100
+                        bg = "rgba(34,197,94,0.12)" if bp>2 else "rgba(239,68,68,0.1)" if bp<-2 else "rgba(245,158,11,0.08)"
+                        bc = "#22C55E" if bp>2 else "#EF4444" if bp<-2 else "#F59E0B"
+                        bico = "✅" if bp>2 else "❌" if bp<-2 else "≈"
+                        bstr = f'<div style="font-size:0.58rem;color:{bc}">{bico} {bp:+.1f}%</div>'
+                        estr = f'{ev:.2f}'
+                    else:
+                        bg="rgba(100,116,139,0.06)"; bstr=""; estr="—"
+                    rows += (f'<td style="text-align:center;padding:4px 5px">'
+                             f'<div style="background:{bg};border-radius:5px;padding:3px 5px">'
+                             f'<div style="font-weight:700;color:#F1F5F9;font-size:0.8rem">{act:.2f}</div>'
+                             f'<div style="font-size:0.58rem;color:#475569">est {estr}</div>'
+                             f'{bstr}</div></td>')
+                else:
+                    ev = c.get("est_v")
+                    rows += (f'<td style="text-align:center;padding:4px 5px">'
+                             f'<div style="background:rgba(100,116,139,0.05);border-radius:5px;padding:3px 5px">'
+                             f'<div style="font-size:0.62rem;color:#334155">est</div>'
+                             f'<div style="font-weight:600;color:#64748B;font-size:0.8rem">{"—" if ev is None else f"{ev:.2f}"}</div>'
+                             f'</div></td>')
+            rows += '</tr>'
+        return (f'<div style="overflow-x:auto">'
+                f'<table style="width:100%;border-collapse:collapse">{hdr}<tbody>{rows}</tbody></table></div>')
+
+    # ─────────────────────────────────────────────────────────────
+    # PERSONAL DASHBOARD
+    # ─────────────────────────────────────────────────────────────
+    _dash_user = st.session_state.get("user")
+    _is_demo   = not _dash_user
+
+    if _dash_user:
+        _wl = st.session_state.get("watchlist", [])
+        _wlp = _fetch_brief_data(_wl[:10]) if _wl else {}
+        _n_open = 0
+        try:
+            import sqlite3 as _sq3
+            _jc = _sq3.connect("fintiq_journal.db", check_same_thread=False)
+            _n_open = int(pd.read_sql_query("SELECT COUNT(*) as n FROM journal WHERE status='open'", _jc).iloc[0]["n"])
+            _jc.close()
+        except Exception: pass
+        try:
+            _ffr = requests.get("https://fintiq.uk/screener-data-2y.json", timeout=8)
+            _tops = next((s for s in _ffr.json().get("stocks",[]) if s.get("signal")=="green" and s.get("pval",1)<0.05), None) if _ffr.status_code==200 else None
+        except Exception: _tops = None
+    else:
+        _wl  = ["AAPL","MSFT","NVDA","TSLA","AMZN"]
+        _wlp = {"AAPL":{"price":213.49,"chg_pct":1.24},"MSFT":{"price":445.82,"chg_pct":-0.31},
+                "NVDA":{"price":138.15,"chg_pct":2.87},"TSLA":{"price":261.43,"chg_pct":-1.52},
+                "AMZN":{"price":201.17,"chg_pct":0.63}}
+        _n_open = 3
+        _tops   = {"ticker":"NVDA","name":"NVIDIA Corporation","alpha":47.2,"pval":0.012,
+                   "insight":"Strong momentum-driven alpha. Market factor explains 38% of returns."}
+
+    def _wlrow(sym, d):
+        p=d.get("price"); c=d.get("chg_pct"); cc="#22C55E" if (c or 0)>=0 else "#EF4444"
+        ps=f"{p:,.2f}" if p and p>10 else (f"{p:.4f}" if p else "—")
+        cs=f"{'▲' if (c or 0)>=0 else '▼'} {abs(c):.2f}%" if c is not None else "—"
+        return (f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.06)">'
+                f'<span style="font-weight:700;color:#F1F5F9;font-size:0.83rem;min-width:55px">{sym}</span>'
+                f'<span style="color:#94A3B8;font-size:0.78rem">{ps}</span>'
+                f'<span style="color:{cc};font-weight:700;font-size:0.78rem">{cs}</span></div>')
+
+    _wl_html = "".join(_wlrow(s, _wlp.get(s,{})) for s in _wl)
+    _demo_banner = ('<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.22);'
+                    'border-radius:6px;padding:5px 12px;font-size:0.7rem;color:#F59E0B;margin-bottom:10px;text-align:center">'
+                    '🔒 Demo data · Sign in to see your real watchlist &amp; positions</div>') if _is_demo else ""
+
+    _ts_html = ""
+    if _tops:
+        _ts_html = (f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px">'
+                    f'<div><div style="font-size:1.1rem;font-weight:900;color:#F1F5F9">{_tops["ticker"]}</div>'
+                    f'<div style="font-size:0.68rem;color:#64748B">{_tops.get("name","")}</div></div>'
+                    f'<div style="text-align:right"><div style="font-size:1rem;font-weight:900;color:#22C55E">+{_tops.get("alpha",0):.1f}%/yr</div>'
+                    f'<div style="font-size:0.58rem;color:#475569">p={_tops.get("pval",0):.3f}</div></div></div>'
+                    f'<div style="font-size:0.68rem;color:#64748B;font-style:italic">{_tops.get("insight","")}</div>')
+
+    _open_html = (f'<div style="font-size:1.8rem;font-weight:900;color:#F59E0B;line-height:1">{_n_open}</div>'
+                  f'<div style="font-size:0.72rem;color:#94A3B8">open positions</div>')
+
+    # ─────────────────────────────────────────────────────────────
+    # DECISION FRAMEWORK — compact horizontal strip
+    # ─────────────────────────────────────────────────────────────
+    _steps = [
+        ("🔍","Screen","Fundamental tab","#F59E0B"),
+        ("💎","Value","DCF · Graham","#60A5FA"),
+        ("🎲","Simulate","Monte Carlo","#A78BFA"),
+        ("📈","Time","Technical + Catalyst","#4ADE80"),
+        ("📐","Size ⭐","MPT Optimiser","#F59E0B"),
+        ("🎯","Decide","Decision Dashboard","#22C55E"),
+    ]
+    _step_html = ""
+    for i,(ico,lbl,sub,col) in enumerate(_steps):
+        _step_html += (f'<div style="flex:1;text-align:center;padding:8px 4px;min-width:80px">'
+                       f'<div style="font-size:1.4rem">{ico}</div>'
+                       f'<div style="font-size:0.68rem;font-weight:700;color:{col};margin-top:3px">{lbl}</div>'
+                       f'<div style="font-size:0.56rem;color:#475569;margin-top:1px">{sub}</div>'
+                       f'</div>')
+        if i < len(_steps)-1:
+            _step_html += '<div style="color:#334155;font-size:0.9rem;display:flex;align-items:center;padding-top:6px">›</div>'
+
+    # ─────────────────────────────────────────────────────────────
+    # RENDER COMPLETE DASHBOARD
+    # ─────────────────────────────────────────────────────────────
+    st.markdown(f"""
+<style>
+.ffc{{perspective:900px;cursor:pointer;height:92px;}}
+.ffi{{position:relative;width:100%;height:100%;transition:transform 0.52s ease;transform-style:preserve-3d;}}
+.ffi.flipped{{transform:rotateY(180deg);}}
+.fff,.ffb{{position:absolute;width:100%;height:100%;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:10px;overflow:hidden;box-sizing:border-box;}}
+.fff{{background:#0D1F33;border:1px solid rgba(100,116,139,0.18);padding:10px 13px;}}
+.ffb{{background:#081828;border:1px solid rgba(100,116,139,0.28);transform:rotateY(180deg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;cursor:pointer;}}
+.ffl{{font-size:0.57rem;text-transform:uppercase;letter-spacing:0.07em;color:#475569;font-weight:600;margin-bottom:1px;}}
+.ffv{{font-size:1.25rem;font-weight:900;line-height:1;margin-bottom:2px;}}
+.ffs{{font-size:0.63rem;color:#64748B;}}
+#fiq-modal{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:99999;align-items:center;justify-content:center;}}
+#fiq-mbox{{background:#0D1F33;border:1px solid rgba(245,158,11,0.3);border-radius:16px;padding:22px 26px;max-width:580px;width:92%;position:relative;}}
+</style>
+<script>
+function ff(el){{el.querySelector('.ffi').classList.toggle('flipped');}}
+function fe(e,id){{
+  e.stopPropagation();
+  var s=document.getElementById(id);if(!s)return;
+  document.getElementById('fiq-mlbl').textContent=s.dataset.lbl||'';
+  document.getElementById('fiq-msvg').innerHTML=s.innerHTML;
+  document.getElementById('fiq-modal').style.display='flex';
+}}
+function fiqC(){{document.getElementById('fiq-modal').style.display='none';}}
+document.addEventListener('keydown',function(e){{if(e.key==='Escape')fiqC();}});
+</script>
+
+<!-- Modal -->
+<div id="fiq-modal" onclick="if(event.target===this)fiqC()">
+  <div id="fiq-mbox">
+    <button onclick="fiqC()" style="position:absolute;top:10px;right:14px;background:none;border:none;color:#94A3B8;font-size:1.3rem;cursor:pointer;line-height:1">✕</button>
+    <div id="fiq-mlbl" style="font-size:0.68rem;font-weight:700;color:#F59E0B;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px"></div>
+    <div id="fiq-msvg"></div>
+    <div style="font-size:0.62rem;color:#475569;text-align:center;margin-top:8px">Source: FRED / Yahoo Finance · Green = uptrend · Red = downtrend</div>
+  </div>
+</div>
+<div style="display:none">{_hdiv}</div>
+
+<!-- ═══ HEADER ═══ -->
+<div style="display:flex;align-items:center;justify-content:space-between;
+            padding:4px 0 10px;border-bottom:1px solid rgba(245,158,11,0.15);margin-bottom:12px">
+  <div>
+    <div style="font-size:1.3rem;font-weight:900;color:#F1F5F9">📊 Fintiq Dashboard</div>
+    <div style="font-size:0.72rem;color:#64748B;margin-top:1px">Macro intelligence · Global markets · Personal positions</div>
+  </div>
+  <div style="font-size:0.65rem;color:#475569;text-align:right">Refreshes every 5 min<br><span style="color:#22C55E">● Live</span></div>
+</div>
+
+<!-- ═══ MACRO INDICATORS ═══ -->
+<div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:7px">
+  🌐 Macro Indicators
+  <span style="font-size:0.6rem;font-weight:400;color:#475569">· click card → see trend · click chart → expand</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:18px">{_mr2}</div>
+
+<!-- ═══ EPS PLACEHOLDER (loaded below via expander) ═══ -->
+
+<!-- ═══ MAJOR MARKETS ═══ -->
+<div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:7px">
+  📈 Major Markets — 3 Month
+  <span style="font-size:0.6rem;font-weight:400;color:#475569">· click card → see chart · click chart → expand</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px">{_ic}</div>
+
+<!-- ═══ MY DASHBOARD ═══ -->
+<div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:8px">👤 My Dashboard</div>
+{_demo_banner}
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">
+
+  <!-- Open positions -->
+  <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);border-radius:10px;padding:14px 16px">
+    <div style="font-size:0.58rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">💼 Open Positions</div>
+    {_open_html}
+    <div style="font-size:0.65rem;color:#334155;margin-top:8px">Log trades in the 📒 Journal tab</div>
+  </div>
+
+  <!-- Watchlist -->
+  <div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.18);border-radius:10px;padding:12px 14px">
+    <div style="font-size:0.58rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">👁 Watchlist</div>
+    {_wl_html if _wl_html else '<div style="color:#334155;font-size:0.78rem">Add stocks in the Fundamental tab</div>'}
+  </div>
+
+  <!-- Top factor signal -->
+  <div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:12px 14px">
+    <div style="font-size:0.58rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">🔬 Top Factor Signal (2yr)</div>
+    {_ts_html if _ts_html else '<div style="color:#334155;font-size:0.78rem">No signal loaded</div>'}
+  </div>
+</div>
+
+<!-- ═══ DECISION FRAMEWORK ═══ -->
+<div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:8px">🧭 The Fintiq Method — 6 Steps to a Conviction Trade</div>
+<div style="display:flex;align-items:center;background:rgba(13,31,53,0.8);border:1px solid rgba(245,158,11,0.15);border-radius:12px;padding:12px 6px;margin-bottom:20px;overflow-x:auto">
+  {_step_html}
+</div>
+
+<!-- ═══ FOOTER ═══ -->
+<div style="padding:10px 16px;background:rgba(127,29,29,0.1);border:1px solid rgba(239,68,68,0.14);
+            border-radius:8px;font-size:0.73rem;color:#475569;text-align:center">
+  ⚠️ <strong style="color:#F87171">For educational purposes only.</strong>
+  Fintiq is not a regulated investment adviser. Nothing here constitutes financial advice.
+  Always conduct your own due diligence before making any investment decision.
+  <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(239,68,68,0.12);
+              font-size:0.68rem;display:flex;justify-content:center;gap:18px;flex-wrap:wrap">
+    <span><strong style="color:#F59E0B">Fintiq</strong> · © 2025 Fintiq Ltd · Registered in England &amp; Wales</span>
+    <span>✉ <a href="mailto:contactfintiq@gmail.com" style="color:#64748B;text-decoration:none">contactfintiq@gmail.com</a></span>
+    <span>💡 <a href="mailto:contactfintiq@gmail.com?subject=Feature%20Suggestion" style="color:#64748B;text-decoration:none">Suggest a feature</a></span>
+    <a href="https://fintiq.uk" style="color:#64748B;text-decoration:none">fintiq.uk</a>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────────────────────
+    # EPS EARNINGS TRACKER (collapsible — loads FMP data on expand)
+    # ─────────────────────────────────────────────────────────────
+    with st.expander("📊 EPS Earnings Tracker — Q1–Q4 2026 · Actual vs Estimate · Beat/Miss", expanded=False):
+        _eps_idx = st.radio("Index", ["S&P 500 Top 15","NASDAQ 100 Top 15","FTSE 100 Top 10"],
+                             horizontal=True, key="eps_idx_sel", label_visibility="collapsed")
+        if _eps_idx == "S&P 500 Top 15":
+            _eps_tickers = _SPX_T
+        elif _eps_idx == "NASDAQ 100 Top 15":
+            _eps_tickers = _NDX_T
+        else:
+            _eps_tickers = _FTSE_T
+
+        with st.spinner("Loading earnings data..."):
+            _edata = _eps_batch(",".join(_eps_tickers))
+
+        st.markdown("""
+        <div style="font-size:0.7rem;color:#64748B;margin-bottom:8px">
+        ✅ Beat (>+2%) &nbsp;|&nbsp; ❌ Miss (<-2%) &nbsp;|&nbsp; ≈ In-line &nbsp;|&nbsp;
+        <span style="color:#475569">Grey = future quarter (estimate only)</span>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown(_etable(_eps_tickers, _edata), unsafe_allow_html=True)
+
+    if False:  # dead block — old marketing content (never executes)
+        pass
+
+    if False:  # legacy v1 helper functions — never executes
+        def _fred_obs_LEGACY(series_id: str, limit: int = 14) -> list:
+            """Fetch FRED series observations newest-first. Returns [(date, value), ...]."""
         try:
             url = (f"https://api.stlouisfed.org/fred/series/observations"
                    f"?series_id={series_id}&api_key={_FRED_KEY}&file_type=json"
@@ -2930,11 +3495,12 @@ with tab0:
             pass
         return []
 
-    @st.cache_data(ttl=300)
-    def _fetch_dash_prices() -> dict:
-        symbols = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E",
-                   "000001.SS","EEM","^N225",
-                   "^VIX","GC=F","BZ=F","DX-Y.NYB","^TNX"]
+    # ↓ old v1 dashboard code removed — replaced by new implementation above
+    if False:
+        def _fetch_dash_prices_LEGACY() -> dict:
+            symbols = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E",
+                       "000001.SS","EEM","^N225",
+                       "^VIX","GC=F","BZ=F","DX-Y.NYB","^TNX"]
         out = {}
         for sym in symbols:
             try:
@@ -3054,255 +3620,7 @@ with tab0:
     _nfp_col  = "#22C55E" if (_nfp_chg or 0) > 150000 else "#F59E0B" if (_nfp_chg or 0) > 0 else "#EF4444"
     _nfp_str  = f"+{_nfp_chg:,}" if _nfp_chg and _nfp_chg > 0 else (f"{_nfp_chg:,}" if _nfp_chg else "—")
 
-    # ──────────────────────────────────────────────────────────
-    # DASHBOARD HEADER
-    # ──────────────────────────────────────────────────────────
-    st.markdown("""
-    <div style="display:flex;align-items:center;justify-content:space-between;
-                padding:8px 0 14px;border-bottom:1px solid rgba(245,158,11,0.18);margin-bottom:18px">
-      <div>
-        <div style="font-size:1.4rem;font-weight:900;color:#F1F5F9">📊 Fintiq Dashboard</div>
-        <div style="font-size:0.78rem;color:#64748B;margin-top:2px">
-          Macro intelligence · Global markets · Personal positions
-        </div>
-      </div>
-      <div style="text-align:right;font-size:0.72rem;color:#475569">
-        Markets refresh every 5 min<br><span style="color:#22C55E">● Live</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ──────────────────────────────────────────────────────────
-    # SECTION 1 — MACRO INDICATORS
-    # ──────────────────────────────────────────────────────────
-    st.markdown('<div style="font-size:1rem;font-weight:800;color:#F59E0B;margin-bottom:10px">🌐 Macro Indicators</div>',
-                unsafe_allow_html=True)
-
-    # FOMC countdown banner
-    _fc = "#EF4444" if (_fomc_days or 99) <= 3 else "#F59E0B" if (_fomc_days or 99) <= 14 else "#60A5FA"
-    st.markdown(f"""
-    <div style="background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.2);
-                border-left:4px solid #60A5FA;border-radius:8px;
-                padding:10px 16px;margin-bottom:12px;
-                display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <div style="font-size:1.4rem">🏛️</div>
-      <div style="flex:1;min-width:140px">
-        <div style="font-size:0.68rem;font-weight:700;color:#60A5FA;text-transform:uppercase;letter-spacing:0.05em">
-          Next FOMC Meeting</div>
-        <div style="font-size:1rem;font-weight:800;color:#F1F5F9;margin-top:2px">{_next_fomc or "—"}</div>
-      </div>
-      <div style="text-align:center;background:rgba(96,165,250,0.1);
-                  border-radius:8px;padding:8px 18px">
-        <div style="font-size:1.8rem;font-weight:900;color:{_fc};line-height:1">{_fomc_days if _fomc_days is not None else "—"}</div>
-        <div style="font-size:0.62rem;color:#475569">days away</div>
-      </div>
-      <div style="font-size:0.75rem;color:#64748B;max-width:300px;
-                  border-left:1px solid rgba(96,165,250,0.15);padding-left:14px">
-        Rate decisions are the biggest single-day market mover.
-        <strong style="color:#94A3B8">Avoid large new positions 48h before.</strong><br>
-        Current rate: <strong style="color:#60A5FA">{_fmt_v(_fed_rate, 2, suffix="%")}</strong>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Macro cards grid — row 1
-    st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:9px">'
-        + _macro_card("Fed Funds Rate",   _fmt_v(_fed_rate, 2, suffix="%"),  "Current rate corridor",          "#60A5FA")
-        + _macro_card("10Y Treasury",     _fmt_v(_tnx or _t10y, 2, suffix="%"), "Risk-free / discount rate",  "#A78BFA")
-        + _macro_card("CPI (YoY)",        _fmt_v(_cpi_yoy, 1, suffix="%"),   f"Core: {_fmt_v(_core_yoy,1,'','%')}", _cpi_col, _next_cpi)
-        + _macro_card("ISM Mfg PMI",      _fmt_v(_pmi, 1),                   ">50 expansion · <50 contraction", _pmi_col, _next_pmi)
-        + _macro_card("Yield Curve",      _fmt_v(_t10y2y, 2, suffix="%"),    "10Y−2Y · negative = inversion",   _tc_col)
-        + '</div>',
-        unsafe_allow_html=True
-    )
-    # Macro cards grid — row 2
-    st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:20px">'
-        + _macro_card("NFP (MoM)",        _nfp_str,                          f"Jobs added · Unempl: {_fmt_v(_unrate,1,'','%')}", _nfp_col, _next_nfp)
-        + _macro_card("VIX",              _fmt_v(_vix, 1),                   "<16 calm · >25 fear · >30 panic",  _vix_col)
-        + _macro_card("Dollar (DXY)",     _fmt_v(_dxy, 1),                   "USD strength index",               "#94A3B8")
-        + _macro_card("Brent Crude",      _fmt_v(_oil, 1, prefix="$"),       "Global demand signal",             "#F59E0B")
-        + _macro_card("Gold",             f"${_gold:,.0f}" if _gold else "—","Risk-off / inflation hedge",       "#F59E0B")
-        + '</div>',
-        unsafe_allow_html=True
-    )
-
-    # ──────────────────────────────────────────────────────────
-    # SECTION 2 — MAJOR MARKET CHARTS
-    # ──────────────────────────────────────────────────────────
-    st.markdown('<div style="font-size:1rem;font-weight:800;color:#F59E0B;margin-bottom:10px">📈 Major Markets — 3 Month</div>',
-                unsafe_allow_html=True)
-
-    _spark_data  = _fetch_sparklines()
-    _INDEX_META = [
-        ("^GSPC",     "S&P 500",       "🇺🇸"),
-        ("^NDX",      "NASDAQ 100",    "🇺🇸"),
-        ("^DJI",      "Dow Jones",     "🇺🇸"),
-        ("^FTSE",     "FTSE 100",      "🇬🇧"),
-        ("^STOXX50E", "Euro Stoxx 50", "🇪🇺"),
-        ("000001.SS", "Shanghai Comp", "🇨🇳"),
-        ("EEM",       "MSCI EM",       "🌍"),
-        ("^N225",     "Nikkei 225",    "🇯🇵"),
-    ]
-
-    def _idx_card(ticker, name, flag):
-        prices = _spark_data.get(ticker, [])
-        pd_    = _live.get(ticker, {})
-        price  = pd_.get("price")
-        pct    = pd_.get("pct")
-        tc     = "#22C55E" if (pct or 0) >= 0 else "#EF4444"
-        ps     = f"{price:,.2f}" if price and price > 100 else (f"{price:.4f}" if price else "—")
-        pc     = f"{'▲' if (pct or 0)>=0 else '▼'} {abs(pct):.2f}%" if pct is not None else "—"
-        svg    = _svg_spark(prices)
-        return (f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.2);'
-                f'border-radius:10px;padding:12px 14px">'
-                f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-                f'<div><div style="font-size:0.68rem;color:#64748B">{flag} {name}</div>'
-                f'<div style="font-size:1.05rem;font-weight:800;color:#F1F5F9;margin-top:2px">{ps}</div>'
-                f'<div style="font-size:0.82rem;font-weight:700;color:{tc}">{pc}</div></div>'
-                f'<div>{svg}</div></div></div>')
-
-    st.markdown(
-        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px">'
-        + "".join(_idx_card(t, n, f) for t, n, f in _INDEX_META)
-        + '</div>',
-        unsafe_allow_html=True
-    )
-
-    # ──────────────────────────────────────────────────────────
-    # SECTION 3 — PERSONAL DASHBOARD
-    # ──────────────────────────────────────────────────────────
-    _dash_user = st.session_state.get("user")
-
-    st.markdown('<div style="font-size:1rem;font-weight:800;color:#F59E0B;margin-bottom:10px">👤 My Dashboard</div>',
-                unsafe_allow_html=True)
-
-    if _dash_user:
-        _pcol, _rcol = st.columns([1, 2])
-
-        with _pcol:
-            # Open positions count from journal
-            _n_open = 0
-            try:
-                import sqlite3 as _sql3
-                _jdb = _sql3.connect("fintiq_journal.db", check_same_thread=False)
-                _n_open = pd.read_sql_query(
-                    "SELECT COUNT(*) as n FROM journal WHERE status='open'", _jdb
-                ).iloc[0]["n"]
-                _jdb.close()
-            except Exception:
-                pass
-
-            st.markdown(f"""
-            <div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);
-                        border-radius:12px;padding:16px;margin-bottom:12px">
-              <div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">
-                💼 Open Positions
-              </div>
-              <div style="font-size:2.2rem;font-weight:900;color:#F59E0B;line-height:1">{_n_open}</div>
-              <div style="font-size:0.75rem;color:#94A3B8;margin-top:4px">trades in journal</div>
-              <div style="font-size:0.68rem;color:#334155;margin-top:10px">
-                Log trades in the 📒 Journal tab to track P&amp;L here.
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Quick launch buttons
-            st.markdown('<div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">⚡ Quick Launch</div>',
-                        unsafe_allow_html=True)
-            _q1, _q2 = st.columns(2)
-            with _q1:
-                st.button("🔍 Screener",   key="ql_screen", use_container_width=True)
-                st.button("🔬 Factor",     key="ql_factor", use_container_width=True)
-                st.button("📐 Optimiser",  key="ql_opt",    use_container_width=True)
-            with _q2:
-                st.button("⚖️ Pairs",      key="ql_pairs",  use_container_width=True)
-                st.button("🎲 Monte Carlo",key="ql_mc",     use_container_width=True)
-                st.button("📒 Journal",    key="ql_jnl",    use_container_width=True)
-
-        with _rcol:
-            # Watchlist live prices
-            _wl = st.session_state.get("watchlist", [])
-            if _wl:
-                _wl_prices = _fetch_brief_data(_wl[:12])
-                _wl_rows = ""
-                for _sym in _wl[:12]:
-                    _wd = _wl_prices.get(_sym, {})
-                    _wp = _wd.get("price")
-                    _wc = _wd.get("chg_pct")
-                    _wcc = "#22C55E" if (_wc or 0) >= 0 else "#EF4444"
-                    _ps = f"{_wp:,.2f}" if _wp and _wp > 10 else (f"{_wp:.4f}" if _wp else "—")
-                    _cs = f"{'▲' if (_wc or 0)>=0 else '▼'} {abs(_wc):.2f}%" if _wc is not None else "—"
-                    _wl_rows += (f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                                 f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">'
-                                 f'<span style="font-weight:700;color:#F1F5F9;font-size:0.88rem;min-width:60px">{_sym}</span>'
-                                 f'<span style="color:#94A3B8;font-size:0.82rem">{_ps}</span>'
-                                 f'<span style="color:{_wcc};font-weight:700;font-size:0.82rem">{_cs}</span></div>')
-                st.markdown(
-                    f'<div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">👁 My Watchlist</div>'
-                    f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.2);'
-                    f'border-radius:10px;padding:10px 14px;margin-bottom:12px">{_wl_rows}</div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown("""
-                <div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">👁 My Watchlist</div>
-                <div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.15);border-radius:10px;
-                            padding:16px;margin-bottom:12px;text-align:center;color:#475569;font-size:0.82rem">
-                  Add stocks to your watchlist in the Fundamental tab
-                </div>""", unsafe_allow_html=True)
-
-            # Top Factor Signal
-            try:
-                _ff_r = requests.get("https://fintiq.uk/screener-data-2y.json", timeout=8)
-                if _ff_r.status_code == 200:
-                    _ff_stocks = _ff_r.json().get("stocks", [])
-                    _top = next((s for s in _ff_stocks
-                                 if s.get("signal") == "green" and s.get("pval", 1) < 0.05), None)
-                    if _top:
-                        st.markdown(
-                            f'<div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">🔬 Top Factor Signal (2yr)</div>'
-                            f'<div style="background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.25);'
-                            f'border-radius:10px;padding:12px 16px">'
-                            f'<div style="display:flex;align-items:center;gap:12px">'
-                            f'<div><div style="font-size:1.3rem;font-weight:900;color:#F1F5F9">{_top["ticker"]}</div>'
-                            f'<div style="font-size:0.72rem;color:#64748B">{_top.get("name","")}</div></div>'
-                            f'<div style="margin-left:auto;text-align:right">'
-                            f'<div style="font-size:1.25rem;font-weight:900;color:#22C55E">+{_top.get("alpha",0):.1f}%/yr</div>'
-                            f'<div style="font-size:0.62rem;color:#475569">alpha · p={_top.get("pval",0):.3f}</div></div></div>'
-                            f'<div style="font-size:0.72rem;color:#64748B;font-style:italic;margin-top:8px">'
-                            f'{_top.get("insight","")}</div></div>',
-                            unsafe_allow_html=True
-                        )
-            except Exception:
-                pass
-
-    else:
-        st.markdown("""
-        <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);
-                    border-radius:12px;padding:22px;text-align:center">
-          <div style="font-size:1rem;font-weight:800;color:#F1F5F9;margin-bottom:6px">
-            🔐 Sign in to see your personalised dashboard
-          </div>
-          <div style="font-size:0.85rem;color:#94A3B8">
-            Watchlist live prices · Open positions · Top factor signal · Quick launch
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── condensed disclaimer ──
-    st.markdown("""
-    <div style="margin-top:28px;padding:10px 16px;background:rgba(127,29,29,0.1);
-                border:1px solid rgba(239,68,68,0.15);border-radius:8px;
-                font-size:0.75rem;color:#475569;text-align:center">
-      ⚠️ <strong style="color:#F87171">For educational purposes only.</strong>
-      Fintiq is not a regulated investment adviser. Nothing here constitutes financial advice.
-      Always do your own due diligence. ·
-      <a href="mailto:contactfintiq@gmail.com" style="color:#475569">contactfintiq@gmail.com</a> ·
-      <a href="https://fintiq.uk" style="color:#475569">fintiq.uk</a>
-    </div>
-    """, unsafe_allow_html=True)
+    # [v1 dashboard rendering removed — replaced by new flip-card implementation above]
 
     if False:  # dead block — old marketing content preserved below but never executes
       st.markdown("""<div style="padding:32px 40px 36px;
