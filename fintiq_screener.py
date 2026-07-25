@@ -2986,23 +2986,39 @@ with tab0:
                 f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="1.8" stroke-linejoin="round"/>'
                 f'</svg>')
 
-    def _full_svg(prices, w=480, h=180):
+    def _full_svg(prices, w=500, h=190):
         if len(prices) < 2:
-            return f'<svg width="{w}" height="{h}"><text x="50%" y="50%" text-anchor="middle" fill="#64748B" font-family="sans-serif" font-size="14">No data</text></svg>'
+            return (f'<svg width="{w}" height="{h}"><text x="{w//2}" y="{h//2}" '
+                    f'text-anchor="middle" fill="#64748B" font-family="sans-serif" font-size="13">No data available</text></svg>')
         mn, mx = min(prices), max(prices); rng = mx - mn or 1; n = len(prices)
-        px, py = 14, 14
-        pts = " ".join(f"{px+i/(n-1)*(w-2*px):.1f},{h-py-(p-mn)/rng*(h-2*py):.1f}" for i,p in enumerate(prices))
+        pl, pr, pt, pb = 58, 14, 18, 28   # padding: left (y-axis), right, top, bottom (x-axis)
+        pw = w - pl - pr; ph = h - pt - pb
         col = "#22C55E" if prices[-1] >= prices[0] else "#EF4444"
-        fill = "#22C55E10" if prices[-1] >= prices[0] else "#EF444410"
-        mn_i = prices.index(mn); mx_i = prices.index(mx)
-        mnx = px+mn_i/(n-1)*(w-2*px); mxx = px+mx_i/(n-1)*(w-2*px)
+        fill_a = "rgba(34,197,94,0.08)" if col == "#22C55E" else "rgba(239,68,68,0.08)"
+        # chart points
+        pts = " ".join(f"{pl+i/(n-1)*pw:.1f},{pt+ph-(p-mn)/rng*ph:.1f}" for i,p in enumerate(prices))
+        # y-axis: 4 gridlines + labels
+        y_steps = [mn, mn+(mx-mn)*0.33, mn+(mx-mn)*0.66, mx]
+        y_lines = ""
+        y_lbls  = ""
+        for v in y_steps:
+            yy = pt + ph - (v - mn) / rng * ph
+            y_lines += f'<line x1="{pl}" y1="{yy:.1f}" x2="{w-pr}" y2="{yy:.1f}" stroke="rgba(100,116,139,0.12)" stroke-width="1"/>'
+            y_lbls  += f'<text x="{pl-5}" y="{yy+4:.1f}" text-anchor="end" fill="#64748B" font-size="9.5" font-family="sans-serif">{v:.2f}</text>'
+        # x-axis: 3 date labels
+        x_labs = [(pl,"3mo ago"),(pl+pw//2,"6wk ago"),(w-pr,"Today")]
+        x_lbls = "".join(f'<text x="{x}" y="{h-6}" text-anchor="{"start" if i==0 else "middle" if i==1 else "end"}" fill="#64748B" font-size="9.5" font-family="sans-serif">{lbl}</text>' for i,(x,lbl) in enumerate(x_labs))
+        # current value indicator
+        last_y = pt + ph - (prices[-1]-mn)/rng*ph
+        chg_pct = (prices[-1]-prices[0])/abs(prices[0])*100 if prices[0] else 0
+        chg_col = "#22C55E" if chg_pct >= 0 else "#EF4444"
+        summary  = f'<text x="{pl+4}" y="{pt+11}" fill="{chg_col}" font-size="10" font-weight="bold" font-family="sans-serif">{"▲" if chg_pct>=0 else "▼"} {abs(chg_pct):.1f}% · Now: {prices[-1]:.2f}</text>'
         return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" style="width:100%;height:auto">'
-                f'<polygon points="{px},{h} {pts} {w-px},{h}" fill="{fill}"/>'
-                f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="2.2" stroke-linejoin="round"/>'
-                f'<circle cx="{mnx:.0f}" cy="{h-py:.0f}" r="4" fill="#EF4444"/>'
-                f'<text x="{mnx:.0f}" y="{h-py+14:.0f}" text-anchor="middle" font-size="10" fill="#EF4444" font-family="sans-serif">{mn:.2f}</text>'
-                f'<circle cx="{mxx:.0f}" cy="{py:.0f}" r="4" fill="#22C55E"/>'
-                f'<text x="{mxx:.0f}" y="{max(py-5,10):.0f}" text-anchor="middle" font-size="10" fill="#22C55E" font-family="sans-serif">{mx:.2f}</text>'
+                f'{y_lines}'
+                f'<polygon points="{pl},{pt+ph} {pts} {w-pr},{pt+ph}" fill="{fill_a}"/>'
+                f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>'
+                f'<circle cx="{w-pr}" cy="{last_y:.1f}" r="3.5" fill="{col}"/>'
+                f'{y_lbls}{x_lbls}{summary}'
                 f'</svg>')
 
     def _nc(dates):
@@ -3131,6 +3147,8 @@ with tab0:
     def _flip(cid, col, lbl, val, sub, mini, nd=None):
         nr = (f'<div style="margin-top:3px;display:flex;align-items:center;gap:2px">'
               f'<span style="color:#334155;font-size:0.56rem">Next:</span>{_nb(nd)}</div>') if nd else ""
+        back = mini if mini and "<polyline" in mini else (
+            f'<div style="color:#334155;font-size:0.65rem;text-align:center">Chart loading…</div>')
         return (f'<div class="ffc">'
                 f'<div class="ffi">'
                 f'<div class="fff" style="border-top:2px solid {col}">'
@@ -3139,7 +3157,7 @@ with tab0:
                 f'<div class="ffs">{sub}</div>{nr}'
                 f'</div>'
                 f'<div class="ffb" onclick="fe(event,\'fs-{cid}\')">'
-                f'{mini}'
+                f'{back}'
                 f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
                 f'</div></div>')
@@ -3149,6 +3167,10 @@ with tab0:
         ps = f"{price:,.2f}" if price and price>100 else (f"{price:.4f}" if price else "—")
         pc = f"{'▲' if (pct or 0)>=0 else '▼'} {abs(pct):.2f}%" if pct is not None else "—"
         sid = t.replace("^","").replace(".","_").replace("=","")
+        # if sparkline empty show price change chart as text
+        back_content = mini if mini and "<polyline" in mini else (
+            f'<div style="text-align:center;color:{tc};font-size:1.2rem;font-weight:900">{pc}</div>'
+            f'<div style="font-size:0.6rem;color:#475569;margin-top:4px">3mo chart loading…</div>')
         return (f'<div class="ffc" style="height:96px">'
                 f'<div class="ffi">'
                 f'<div class="fff" style="border-top:2px solid {tc};padding:9px 12px">'
@@ -3157,7 +3179,7 @@ with tab0:
                 f'<div style="font-size:0.8rem;font-weight:700;color:{tc}">{pc}</div>'
                 f'</div>'
                 f'<div class="ffb" onclick="fe(event,\'fs-{sid}\')">'
-                f'{mini}'
+                f'{back_content}'
                 f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
                 f'</div></div>')
@@ -3262,6 +3284,70 @@ with tab0:
                 f'<table style="width:100%;border-collapse:collapse">{hdr}<tbody>{rows}</tbody></table></div>')
 
     # ─────────────────────────────────────────────────────────────
+    # PRE-FETCH EPS + BUILD INLINE EPS HTML
+    # ─────────────────────────────────────────────────────────────
+    with st.spinner("Loading earnings data…"):
+        _edata_spx  = _eps_batch(",".join(_SPX_T))
+        _edata_ndx  = _eps_batch(",".join(_NDX_T))
+        _edata_ftse = _eps_batch(",".join(_FTSE_T))
+
+    def _eps_section(idx_key):
+        tickers = {"spx": _SPX_T, "ndx": _NDX_T, "ftse": _FTSE_T}[idx_key]
+        data    = {"spx": _edata_spx, "ndx": _edata_ndx, "ftse": _edata_ftse}[idx_key]
+        return _etable(tickers, data)
+
+    # CSS-only tab switcher using hidden radio inputs
+    _eps_tabs_css = """
+<style>
+.fiq-etab input[type=radio]{display:none}
+.fiq-etab label{cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;color:#475569;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);transition:all 0.2s;white-space:nowrap}
+.fiq-etab input:checked+label{background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.5);color:#F59E0B}
+.fiq-epanel{display:none}
+#fiq-e1:checked~.fiq-epanels #fiq-ep1,
+#fiq-e2:checked~.fiq-epanels #fiq-ep2,
+#fiq-e3:checked~.fiq-epanels #fiq-ep3{display:block}
+</style>"""
+
+    _eps_spx_html  = _eps_section("spx")
+    _eps_ndx_html  = _eps_section("ndx")
+    _eps_ftse_html = _eps_section("ftse")
+
+    _eps_inline_html = f"""{_eps_tabs_css}
+<div style="background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px;margin-bottom:18px">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+    <div>
+      <div style="font-size:0.92rem;font-weight:800;color:#F59E0B">📋 EPS Earnings Tracker — 2026</div>
+      <div style="font-size:0.65rem;color:#475569;margin-top:2px">Actual vs Estimate · Beat/Miss · ✅ Beat &gt;+2% · ❌ Miss &lt;-2% · ≈ In-line · Grey = future</div>
+    </div>
+    <input type="text" id="fiq-eticker" oninput="fiqEF(this.value)" placeholder="🔍 Filter ticker…"
+      style="background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;
+             padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:160px;outline:none">
+  </div>
+  <div class="fiq-etab">
+    <input type="radio" name="fiq-et" id="fiq-e1" checked>
+    <label for="fiq-e1">S&amp;P 500 Top 15</label>
+    <input type="radio" name="fiq-et" id="fiq-e2">
+    <label for="fiq-e2">NASDAQ 100 Top 15</label>
+    <input type="radio" name="fiq-et" id="fiq-e3">
+    <label for="fiq-e3">FTSE 100 Top 10</label>
+    <div class="fiq-epanels" style="margin-top:12px">
+      <div class="fiq-epanel" id="fiq-ep1">{_eps_spx_html}</div>
+      <div class="fiq-epanel" id="fiq-ep2">{_eps_ndx_html}</div>
+      <div class="fiq-epanel" id="fiq-ep3">{_eps_ftse_html}</div>
+    </div>
+  </div>
+</div>
+<script>
+function fiqEF(q){{
+  var rows=document.querySelectorAll('.fiq-epanel:not([style*="display: none"]) tbody tr');
+  rows.forEach(function(r){{
+    var tk=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
+    r.style.display=!q||tk.includes(q.toLowerCase())?'':'none';
+  }});
+}}
+</script>"""
+
+    # ─────────────────────────────────────────────────────────────
     # PERSONAL DASHBOARD
     # ─────────────────────────────────────────────────────────────
     _dash_user = st.session_state.get("user")
@@ -3358,30 +3444,28 @@ with tab0:
   opacity:0;}}
 .ffc:hover .fiq-tip{{animation:fiq-tip 2.2s forwards 0.55s;}}
 @keyframes fiq-tip{{0%{{opacity:0}}10%{{opacity:1}}75%{{opacity:1}}100%{{opacity:0}}}}
-#fiq-modal{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:99999;align-items:center;justify-content:center;}}
-#fiq-mbox{{background:#0D1F33;border:1px solid rgba(245,158,11,0.3);border-radius:16px;padding:22px 26px;max-width:580px;width:92%;position:relative;}}
 </style>
 <script>
-function fe(e,id){{
+function fe(e,svgId){{
   e.stopPropagation();
-  var s=document.getElementById(id);if(!s)return;
-  document.getElementById('fiq-mlbl').textContent=s.dataset.lbl||'';
-  document.getElementById('fiq-msvg').innerHTML=s.innerHTML;
-  document.getElementById('fiq-modal').style.display='flex';
+  e.preventDefault();
+  var s=document.getElementById(svgId);
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.88);z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  var lbl=s?s.dataset.lbl:'';
+  var inner=document.createElement('div');
+  inner.style.cssText='background:#0D1F33;border:1px solid rgba(245,158,11,0.35);border-radius:14px;padding:20px 22px;max-width:560px;width:94%;cursor:default;position:relative';
+  inner.innerHTML='<button onclick="this.closest(\\'[data-fiq-ov]\\').remove()" style="position:absolute;top:8px;right:12px;background:none;border:none;color:#94A3B8;font-size:1.2rem;cursor:pointer">✕</button>'
+    +'<div style="font-size:0.66rem;font-weight:700;color:#F59E0B;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">'+lbl+'</div>'
+    +(s?s.innerHTML:'<p style="color:#64748B">No data</p>')
+    +'<div style="text-align:center;font-size:0.6rem;color:#475569;margin-top:8px">FRED / Yahoo Finance · Green = uptrend · Red = downtrend · Click outside to close</div>';
+  ov.setAttribute('data-fiq-ov','1');
+  ov.appendChild(inner);
+  ov.onclick=function(ev){{if(ev.target===ov)ov.remove();}};
+  document.body.appendChild(ov);
 }}
-function fiqC(){{document.getElementById('fiq-modal').style.display='none';}}
-document.addEventListener('keydown',function(e){{if(e.key==='Escape')fiqC();}});
+document.addEventListener('keydown',function(e){{if(e.key==='Escape'){{var o=document.querySelector('[data-fiq-ov]');if(o)o.remove();}}}});
 </script>
-
-<!-- Modal -->
-<div id="fiq-modal" onclick="if(event.target===this)fiqC()">
-  <div id="fiq-mbox">
-    <button onclick="fiqC()" style="position:absolute;top:10px;right:14px;background:none;border:none;color:#94A3B8;font-size:1.3rem;cursor:pointer;line-height:1">✕</button>
-    <div id="fiq-mlbl" style="font-size:0.68rem;font-weight:700;color:#F59E0B;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px"></div>
-    <div id="fiq-msvg"></div>
-    <div style="font-size:0.62rem;color:#475569;text-align:center;margin-top:8px">Source: FRED / Yahoo Finance · Green = uptrend · Red = downtrend</div>
-  </div>
-</div>
 <div style="display:none">{_hdiv}</div>
 
 <!-- ═══ HEADER ═══ -->
@@ -3402,12 +3486,12 @@ document.addEventListener('keydown',function(e){{if(e.key==='Escape')fiqC();}});
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:18px">{_mr2}</div>
 
-<!-- ═══ EPS PLACEHOLDER (loaded below via expander) ═══ -->
+{_eps_inline_html}
 
 <!-- ═══ MAJOR MARKETS ═══ -->
 <div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:7px">
   📈 Major Markets — 3 Month
-  <span style="font-size:0.6rem;font-weight:400;color:#475569">· click card → see chart · click chart → expand</span>
+  <span style="font-size:0.6rem;font-weight:400;color:#475569">· hover card → see chart · click chart → expand</span>
 </div>
 <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px">{_ic}</div>
 
@@ -3458,34 +3542,12 @@ document.addEventListener('keydown',function(e){{if(e.key==='Escape')fiqC();}});
 </div>
 """, unsafe_allow_html=True)
 
-    # ─────────────────────────────────────────────────────────────
-    # EPS EARNINGS TRACKER (collapsible — loads FMP data on expand)
-    # ─────────────────────────────────────────────────────────────
-    with st.expander("📊 EPS Earnings Tracker — Q1–Q4 2026 · Actual vs Estimate · Beat/Miss", expanded=False):
-        _eps_idx = st.radio("Index", ["S&P 500 Top 15","NASDAQ 100 Top 15","FTSE 100 Top 10"],
-                             horizontal=True, key="eps_idx_sel", label_visibility="collapsed")
-        if _eps_idx == "S&P 500 Top 15":
-            _eps_tickers = _SPX_T
-        elif _eps_idx == "NASDAQ 100 Top 15":
-            _eps_tickers = _NDX_T
-        else:
-            _eps_tickers = _FTSE_T
+    # EPS tracker rendered inline in main HTML block above — expander removed
 
-        with st.spinner("Loading earnings data..."):
-            _edata = _eps_batch(",".join(_eps_tickers))
-
-        st.markdown("""
-        <div style="font-size:0.7rem;color:#64748B;margin-bottom:8px">
-        ✅ Beat (>+2%) &nbsp;|&nbsp; ❌ Miss (<-2%) &nbsp;|&nbsp; ≈ In-line &nbsp;|&nbsp;
-        <span style="color:#475569">Grey = future quarter (estimate only)</span>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown(_etable(_eps_tickers, _edata), unsafe_allow_html=True)
-
-    if False:  # dead block — old marketing content (never executes)
-        pass
-
-    # [v1 legacy helper stubs removed — caused SyntaxError: return outside function]
+    # ── v1 stubs below are harmless (define functions / assign vars, no rendering) ──
+    # ──────────────────────────────────────────────────────
+    # END OF TAB 0 (new code above; v1 stubs below are inert)
+    # ──────────────────────────────────────────────────────
 
     @st.cache_data(ttl=3600)
     def _fetch_sparklines() -> dict:
