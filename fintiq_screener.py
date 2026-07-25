@@ -3131,7 +3131,7 @@ with tab0:
     def _flip(cid, col, lbl, val, sub, mini, nd=None):
         nr = (f'<div style="margin-top:3px;display:flex;align-items:center;gap:2px">'
               f'<span style="color:#334155;font-size:0.56rem">Next:</span>{_nb(nd)}</div>') if nd else ""
-        return (f'<div class="ffc" onclick="ff(this)">'
+        return (f'<div class="ffc">'
                 f'<div class="ffi">'
                 f'<div class="fff" style="border-top:2px solid {col}">'
                 f'<div class="ffl">{lbl}</div>'
@@ -3140,7 +3140,7 @@ with tab0:
                 f'</div>'
                 f'<div class="ffb" onclick="fe(event,\'fs-{cid}\')">'
                 f'{mini}'
-                f'<div style="font-size:0.56rem;color:#475569;margin-top:3px">▲ expand</div>'
+                f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
                 f'</div></div>')
 
@@ -3149,7 +3149,7 @@ with tab0:
         ps = f"{price:,.2f}" if price and price>100 else (f"{price:.4f}" if price else "—")
         pc = f"{'▲' if (pct or 0)>=0 else '▼'} {abs(pct):.2f}%" if pct is not None else "—"
         sid = t.replace("^","").replace(".","_").replace("=","")
-        return (f'<div class="ffc" style="height:96px" onclick="ff(this)">'
+        return (f'<div class="ffc" style="height:96px">'
                 f'<div class="ffi">'
                 f'<div class="fff" style="border-top:2px solid {tc};padding:9px 12px">'
                 f'<div style="font-size:0.66rem;color:#64748B">{flag} {n}</div>'
@@ -3157,7 +3157,8 @@ with tab0:
                 f'<div style="font-size:0.8rem;font-weight:700;color:{tc}">{pc}</div>'
                 f'</div>'
                 f'<div class="ffb" onclick="fe(event,\'fs-{sid}\')">'
-                f'{mini}<div style="font-size:0.56rem;color:#475569;margin-top:3px">▲ expand</div>'
+                f'{mini}'
+                f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
                 f'</div></div>')
 
@@ -3342,20 +3343,25 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     st.markdown(f"""
 <style>
-.ffc{{perspective:900px;cursor:pointer;height:92px;}}
-.ffi{{position:relative;width:100%;height:100%;transition:transform 0.52s ease;transform-style:preserve-3d;}}
-.ffi.flipped{{transform:rotateY(180deg);}}
+.ffc{{perspective:900px;height:92px;position:relative;}}
+.ffi{{position:relative;width:100%;height:100%;transition:transform 0.5s ease;transform-style:preserve-3d;}}
+.ffc:hover .ffi{{transform:rotateY(180deg);}}
 .fff,.ffb{{position:absolute;width:100%;height:100%;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:10px;overflow:hidden;box-sizing:border-box;}}
 .fff{{background:#0D1F33;border:1px solid rgba(100,116,139,0.18);padding:10px 13px;}}
-.ffb{{background:#081828;border:1px solid rgba(100,116,139,0.28);transform:rotateY(180deg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;cursor:pointer;}}
+.ffb{{background:#081828;border:1px solid rgba(100,116,139,0.28);transform:rotateY(180deg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;cursor:pointer;position:relative;}}
 .ffl{{font-size:0.57rem;text-transform:uppercase;letter-spacing:0.07em;color:#475569;font-weight:600;margin-bottom:1px;}}
 .ffv{{font-size:1.25rem;font-weight:900;line-height:1;margin-bottom:2px;}}
 .ffs{{font-size:0.63rem;color:#64748B;}}
+.fiq-tip{{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
+  background:rgba(245,158,11,0.92);color:#000;font-size:0.54rem;font-weight:700;
+  padding:2px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;
+  opacity:0;}}
+.ffc:hover .fiq-tip{{animation:fiq-tip 2.2s forwards 0.55s;}}
+@keyframes fiq-tip{{0%{{opacity:0}}10%{{opacity:1}}75%{{opacity:1}}100%{{opacity:0}}}}
 #fiq-modal{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:99999;align-items:center;justify-content:center;}}
 #fiq-mbox{{background:#0D1F33;border:1px solid rgba(245,158,11,0.3);border-radius:16px;padding:22px 26px;max-width:580px;width:92%;position:relative;}}
 </style>
 <script>
-function ff(el){{el.querySelector('.ffi').classList.toggle('flipped');}}
 function fe(e,id){{
   e.stopPropagation();
   var s=document.getElementById(id);if(!s)return;
@@ -3479,39 +3485,7 @@ document.addEventListener('keydown',function(e){{if(e.key==='Escape')fiqC();}});
     if False:  # dead block — old marketing content (never executes)
         pass
 
-    if False:  # legacy v1 helper functions — never executes
-        def _fred_obs_LEGACY(series_id: str, limit: int = 14) -> list:
-            """Fetch FRED series observations newest-first. Returns [(date, value), ...]."""
-        try:
-            url = (f"https://api.stlouisfed.org/fred/series/observations"
-                   f"?series_id={series_id}&api_key={_FRED_KEY}&file_type=json"
-                   f"&sort_order=desc&limit={limit}")
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                return [(o["date"], float(o["value"]))
-                        for o in r.json().get("observations", [])
-                        if o["value"] != "."]
-        except Exception:
-            pass
-        return []
-
-    # ↓ old v1 dashboard code removed — replaced by new implementation above
-    if False:
-        def _fetch_dash_prices_LEGACY() -> dict:
-            symbols = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E",
-                       "000001.SS","EEM","^N225",
-                       "^VIX","GC=F","BZ=F","DX-Y.NYB","^TNX"]
-        out = {}
-        for sym in symbols:
-            try:
-                ti = yf.Ticker(sym).fast_info
-                price = getattr(ti, "last_price", None)
-                prev  = getattr(ti, "previous_close", None)
-                pct = (price - prev) / prev * 100 if price and prev and prev != 0 else None
-                out[sym] = {"price": price, "pct": pct}
-            except Exception:
-                out[sym] = {"price": None, "pct": None}
-        return out
+    # [v1 legacy helper stubs removed — caused SyntaxError: return outside function]
 
     @st.cache_data(ttl=3600)
     def _fetch_sparklines() -> dict:
