@@ -2909,11 +2909,403 @@ tab0, tab_brief, tab1, tab_factor, tab2, tab3, tab_mc, tab5, tab_opt, tab4 = st.
 # ═══════════════════════════════════════════════════════════════
 
 with tab0:
-    st.markdown("""
-    <div style="max-width:920px;margin:0 auto;padding:10px 0">
 
-      <!-- Hero — title + tagline only, clean and fully visible above fold -->
-      <div style="padding:32px 40px 36px;
+    # ── FRED API key ──
+    import os as _os_dash
+    _FRED_KEY = _os_dash.environ.get("FRED_API_KEY", "86e24a8082e08115879cca1041a8cc70")
+
+    @st.cache_data(ttl=86400)
+    def _fred_obs(series_id: str, limit: int = 14) -> list:
+        """Fetch FRED series observations newest-first. Returns [(date, value), ...]."""
+        try:
+            url = (f"https://api.stlouisfed.org/fred/series/observations"
+                   f"?series_id={series_id}&api_key={_FRED_KEY}&file_type=json"
+                   f"&sort_order=desc&limit={limit}")
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                return [(o["date"], float(o["value"]))
+                        for o in r.json().get("observations", [])
+                        if o["value"] != "."]
+        except Exception:
+            pass
+        return []
+
+    @st.cache_data(ttl=300)
+    def _fetch_dash_prices() -> dict:
+        symbols = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E",
+                   "000001.SS","EEM","^N225",
+                   "^VIX","GC=F","BZ=F","DX-Y.NYB","^TNX"]
+        out = {}
+        for sym in symbols:
+            try:
+                ti = yf.Ticker(sym).fast_info
+                price = getattr(ti, "last_price", None)
+                prev  = getattr(ti, "previous_close", None)
+                pct = (price - prev) / prev * 100 if price and prev and prev != 0 else None
+                out[sym] = {"price": price, "pct": pct}
+            except Exception:
+                out[sym] = {"price": None, "pct": None}
+        return out
+
+    @st.cache_data(ttl=3600)
+    def _fetch_sparklines() -> dict:
+        tickers = ["^GSPC","^NDX","^DJI","^FTSE","^STOXX50E","000001.SS","EEM","^N225"]
+        out = {}
+        for t in tickers:
+            try:
+                df = yf.download(t, period="3mo", interval="1d",
+                                 progress=False, auto_adjust=True)
+                out[t] = df["Close"].dropna().tolist() if not df.empty else []
+            except Exception:
+                out[t] = []
+        return out
+
+    def _svg_spark(prices, w=100, h=36):
+        if len(prices) < 2:
+            return f'<svg width="{w}" height="{h}"></svg>'
+        mn, mx = min(prices), max(prices)
+        rng = mx - mn or 1
+        n = len(prices)
+        pts = " ".join(f"{i/(n-1)*w:.1f},{h-(p-mn)/rng*h:.1f}" for i,p in enumerate(prices))
+        col = "#22C55E" if prices[-1] >= prices[0] else "#EF4444"
+        return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+                f'<polyline points="{pts}" fill="none" stroke="{col}" '
+                f'stroke-width="1.8" stroke-linejoin="round"/></svg>')
+
+    def _next_cal_date(dates):
+        today = datetime.now().date()
+        future = [d for d in dates if datetime.strptime(d, "%Y-%m-%d").date() >= today]
+        return min(future) if future else None
+
+    def _days_until(ds):
+        if not ds: return None
+        return (datetime.strptime(ds, "%Y-%m-%d").date() - datetime.now().date()).days
+
+    # FOMC 2026 announcement dates
+    _FOMC_DATES = ["2026-01-29","2026-03-19","2026-05-07","2026-06-18",
+                    "2026-07-30","2026-09-17","2026-10-29","2026-12-10"]
+    # Economic release calendars 2026
+    _CPI_DATES  = ["2026-08-13","2026-09-10","2026-10-15","2026-11-12","2026-12-10"]
+    _NFP_DATES  = ["2026-08-07","2026-09-04","2026-10-02","2026-11-06","2026-12-04"]
+    _PMI_DATES  = ["2026-08-03","2026-09-01","2026-10-01","2026-11-02","2026-12-01"]
+
+    _next_fomc = _next_cal_date(_FOMC_DATES)
+    _next_cpi  = _next_cal_date(_CPI_DATES)
+    _next_nfp  = _next_cal_date(_NFP_DATES)
+    _next_pmi  = _next_cal_date(_PMI_DATES)
+    _fomc_days = _days_until(_next_fomc)
+
+    # ── Fetch FRED data ──
+    _fed_obs    = _fred_obs("FEDFUNDS", 2)
+    _t10y_obs   = _fred_obs("DGS10", 2)
+    _cpi_obs    = _fred_obs("CPIAUCSL", 14)
+    _core_obs   = _fred_obs("CPILFESL", 14)
+    _pmi_obs    = _fred_obs("NAPM", 2)
+    _nfp_obs    = _fred_obs("PAYEMS", 3)
+    _t10y2y_obs = _fred_obs("T10Y2Y", 2)
+    _unrate_obs = _fred_obs("UNRATE", 2)
+
+    _live = _fetch_dash_prices()
+
+    _fed_rate = _fed_obs[0][1]  if _fed_obs  else None
+    _t10y     = _t10y_obs[0][1] if _t10y_obs else None
+    _pmi      = _pmi_obs[0][1]  if _pmi_obs  else None
+    _unrate   = _unrate_obs[0][1] if _unrate_obs else None
+    _t10y2y   = _t10y2y_obs[0][1] if _t10y2y_obs else None
+
+    _cpi_yoy = (_cpi_obs[0][1] / _cpi_obs[12][1] - 1) * 100 if len(_cpi_obs) >= 13 else None
+    _core_yoy = (_core_obs[0][1] / _core_obs[12][1] - 1) * 100 if len(_core_obs) >= 13 else None
+    _nfp_chg  = int((_nfp_obs[0][1] - _nfp_obs[1][1]) * 1000) if len(_nfp_obs) >= 2 else None
+
+    _vix  = _live.get("^VIX",{}).get("price")
+    _gold = _live.get("GC=F",{}).get("price")
+    _oil  = _live.get("BZ=F",{}).get("price")
+    _dxy  = _live.get("DX-Y.NYB",{}).get("price")
+    _tnx  = _live.get("^TNX",{}).get("price")   # live 10Y yield
+
+    def _fmt_v(v, dp=2, prefix="", suffix=""):
+        return f"{prefix}{v:.{dp}f}{suffix}" if v is not None else "—"
+
+    def _date_badge(ds):
+        d = _days_until(ds)
+        if d is None or not ds: return ""
+        if d == 0:
+            return '<span style="background:#EF4444;color:#fff;font-size:0.58rem;padding:1px 6px;border-radius:4px;font-weight:700">TODAY</span>'
+        if d <= 7:
+            return f'<span style="background:rgba(245,158,11,0.2);color:#F59E0B;font-size:0.58rem;padding:1px 6px;border-radius:4px;font-weight:700">In {d}d</span>'
+        return f'<span style="color:#334155;font-size:0.62rem">{ds}</span>'
+
+    def _macro_card(label, val_str, sub, border_col, next_ds=None):
+        nr = (f'<div style="margin-top:6px;display:flex;align-items:center;gap:5px">'
+              f'<span style="color:#334155;font-size:0.6rem">Next:</span> {_date_badge(next_ds)}</div>'
+              if next_ds else "")
+        return (f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.18);'
+                f'border-top:2px solid {border_col};border-radius:10px;padding:14px 16px;min-height:96px">'
+                f'<div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.06em;'
+                f'color:#475569;font-weight:600;margin-bottom:4px">{label}</div>'
+                f'<div style="font-size:1.4rem;font-weight:900;color:{border_col};line-height:1">{val_str}</div>'
+                f'<div style="font-size:0.7rem;color:#64748B;margin-top:3px">{sub}</div>'
+                f'{nr}</div>')
+
+    _cpi_col  = "#EF4444" if (_cpi_yoy or 0) > 3 else "#F59E0B" if (_cpi_yoy or 0) > 2 else "#22C55E"
+    _pmi_col  = "#22C55E" if (_pmi  or 0) > 52 else "#F59E0B" if (_pmi or 0) >= 50 else "#EF4444"
+    _vix_col  = "#22C55E" if (_vix  or 99) < 16 else "#F59E0B" if (_vix or 99) < 25 else "#EF4444"
+    _tc_col   = "#EF4444" if (_t10y2y or 99) < 0 else "#22C55E"
+    _nfp_col  = "#22C55E" if (_nfp_chg or 0) > 150000 else "#F59E0B" if (_nfp_chg or 0) > 0 else "#EF4444"
+    _nfp_str  = f"+{_nfp_chg:,}" if _nfp_chg and _nfp_chg > 0 else (f"{_nfp_chg:,}" if _nfp_chg else "—")
+
+    # ──────────────────────────────────────────────────────────
+    # DASHBOARD HEADER
+    # ──────────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:8px 0 14px;border-bottom:1px solid rgba(245,158,11,0.18);margin-bottom:18px">
+      <div>
+        <div style="font-size:1.4rem;font-weight:900;color:#F1F5F9">📊 Fintiq Dashboard</div>
+        <div style="font-size:0.78rem;color:#64748B;margin-top:2px">
+          Macro intelligence · Global markets · Personal positions
+        </div>
+      </div>
+      <div style="text-align:right;font-size:0.72rem;color:#475569">
+        Markets refresh every 5 min<br><span style="color:#22C55E">● Live</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ──────────────────────────────────────────────────────────
+    # SECTION 1 — MACRO INDICATORS
+    # ──────────────────────────────────────────────────────────
+    st.markdown('<div style="font-size:1rem;font-weight:800;color:#F59E0B;margin-bottom:10px">🌐 Macro Indicators</div>',
+                unsafe_allow_html=True)
+
+    # FOMC countdown banner
+    _fc = "#EF4444" if (_fomc_days or 99) <= 3 else "#F59E0B" if (_fomc_days or 99) <= 14 else "#60A5FA"
+    st.markdown(f"""
+    <div style="background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.2);
+                border-left:4px solid #60A5FA;border-radius:8px;
+                padding:10px 16px;margin-bottom:12px;
+                display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="font-size:1.4rem">🏛️</div>
+      <div style="flex:1;min-width:140px">
+        <div style="font-size:0.68rem;font-weight:700;color:#60A5FA;text-transform:uppercase;letter-spacing:0.05em">
+          Next FOMC Meeting</div>
+        <div style="font-size:1rem;font-weight:800;color:#F1F5F9;margin-top:2px">{_next_fomc or "—"}</div>
+      </div>
+      <div style="text-align:center;background:rgba(96,165,250,0.1);
+                  border-radius:8px;padding:8px 18px">
+        <div style="font-size:1.8rem;font-weight:900;color:{_fc};line-height:1">{_fomc_days if _fomc_days is not None else "—"}</div>
+        <div style="font-size:0.62rem;color:#475569">days away</div>
+      </div>
+      <div style="font-size:0.75rem;color:#64748B;max-width:300px;
+                  border-left:1px solid rgba(96,165,250,0.15);padding-left:14px">
+        Rate decisions are the biggest single-day market mover.
+        <strong style="color:#94A3B8">Avoid large new positions 48h before.</strong><br>
+        Current rate: <strong style="color:#60A5FA">{_fmt_v(_fed_rate, 2, suffix="%")}</strong>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Macro cards grid — row 1
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:9px">'
+        + _macro_card("Fed Funds Rate",   _fmt_v(_fed_rate, 2, suffix="%"),  "Current rate corridor",          "#60A5FA")
+        + _macro_card("10Y Treasury",     _fmt_v(_tnx or _t10y, 2, suffix="%"), "Risk-free / discount rate",  "#A78BFA")
+        + _macro_card("CPI (YoY)",        _fmt_v(_cpi_yoy, 1, suffix="%"),   f"Core: {_fmt_v(_core_yoy,1,'','%')}", _cpi_col, _next_cpi)
+        + _macro_card("ISM Mfg PMI",      _fmt_v(_pmi, 1),                   ">50 expansion · <50 contraction", _pmi_col, _next_pmi)
+        + _macro_card("Yield Curve",      _fmt_v(_t10y2y, 2, suffix="%"),    "10Y−2Y · negative = inversion",   _tc_col)
+        + '</div>',
+        unsafe_allow_html=True
+    )
+    # Macro cards grid — row 2
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:20px">'
+        + _macro_card("NFP (MoM)",        _nfp_str,                          f"Jobs added · Unempl: {_fmt_v(_unrate,1,'','%')}", _nfp_col, _next_nfp)
+        + _macro_card("VIX",              _fmt_v(_vix, 1),                   "<16 calm · >25 fear · >30 panic",  _vix_col)
+        + _macro_card("Dollar (DXY)",     _fmt_v(_dxy, 1),                   "USD strength index",               "#94A3B8")
+        + _macro_card("Brent Crude",      _fmt_v(_oil, 1, prefix="$"),       "Global demand signal",             "#F59E0B")
+        + _macro_card("Gold",             f"${_gold:,.0f}" if _gold else "—","Risk-off / inflation hedge",       "#F59E0B")
+        + '</div>',
+        unsafe_allow_html=True
+    )
+
+    # ──────────────────────────────────────────────────────────
+    # SECTION 2 — MAJOR MARKET CHARTS
+    # ──────────────────────────────────────────────────────────
+    st.markdown('<div style="font-size:1rem;font-weight:800;color:#F59E0B;margin-bottom:10px">📈 Major Markets — 3 Month</div>',
+                unsafe_allow_html=True)
+
+    _spark_data  = _fetch_sparklines()
+    _INDEX_META = [
+        ("^GSPC",     "S&P 500",       "🇺🇸"),
+        ("^NDX",      "NASDAQ 100",    "🇺🇸"),
+        ("^DJI",      "Dow Jones",     "🇺🇸"),
+        ("^FTSE",     "FTSE 100",      "🇬🇧"),
+        ("^STOXX50E", "Euro Stoxx 50", "🇪🇺"),
+        ("000001.SS", "Shanghai Comp", "🇨🇳"),
+        ("EEM",       "MSCI EM",       "🌍"),
+        ("^N225",     "Nikkei 225",    "🇯🇵"),
+    ]
+
+    def _idx_card(ticker, name, flag):
+        prices = _spark_data.get(ticker, [])
+        pd_    = _live.get(ticker, {})
+        price  = pd_.get("price")
+        pct    = pd_.get("pct")
+        tc     = "#22C55E" if (pct or 0) >= 0 else "#EF4444"
+        ps     = f"{price:,.2f}" if price and price > 100 else (f"{price:.4f}" if price else "—")
+        pc     = f"{'▲' if (pct or 0)>=0 else '▼'} {abs(pct):.2f}%" if pct is not None else "—"
+        svg    = _svg_spark(prices)
+        return (f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.2);'
+                f'border-radius:10px;padding:12px 14px">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+                f'<div><div style="font-size:0.68rem;color:#64748B">{flag} {name}</div>'
+                f'<div style="font-size:1.05rem;font-weight:800;color:#F1F5F9;margin-top:2px">{ps}</div>'
+                f'<div style="font-size:0.82rem;font-weight:700;color:{tc}">{pc}</div></div>'
+                f'<div>{svg}</div></div></div>')
+
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px">'
+        + "".join(_idx_card(t, n, f) for t, n, f in _INDEX_META)
+        + '</div>',
+        unsafe_allow_html=True
+    )
+
+    # ──────────────────────────────────────────────────────────
+    # SECTION 3 — PERSONAL DASHBOARD
+    # ──────────────────────────────────────────────────────────
+    _dash_user = st.session_state.get("user")
+
+    st.markdown('<div style="font-size:1rem;font-weight:800;color:#F59E0B;margin-bottom:10px">👤 My Dashboard</div>',
+                unsafe_allow_html=True)
+
+    if _dash_user:
+        _pcol, _rcol = st.columns([1, 2])
+
+        with _pcol:
+            # Open positions count from journal
+            _n_open = 0
+            try:
+                import sqlite3 as _sql3
+                _jdb = _sql3.connect("fintiq_journal.db", check_same_thread=False)
+                _n_open = pd.read_sql_query(
+                    "SELECT COUNT(*) as n FROM journal WHERE status='open'", _jdb
+                ).iloc[0]["n"]
+                _jdb.close()
+            except Exception:
+                pass
+
+            st.markdown(f"""
+            <div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);
+                        border-radius:12px;padding:16px;margin-bottom:12px">
+              <div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">
+                💼 Open Positions
+              </div>
+              <div style="font-size:2.2rem;font-weight:900;color:#F59E0B;line-height:1">{_n_open}</div>
+              <div style="font-size:0.75rem;color:#94A3B8;margin-top:4px">trades in journal</div>
+              <div style="font-size:0.68rem;color:#334155;margin-top:10px">
+                Log trades in the 📒 Journal tab to track P&amp;L here.
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Quick launch buttons
+            st.markdown('<div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">⚡ Quick Launch</div>',
+                        unsafe_allow_html=True)
+            _q1, _q2 = st.columns(2)
+            with _q1:
+                st.button("🔍 Screener",   key="ql_screen", use_container_width=True)
+                st.button("🔬 Factor",     key="ql_factor", use_container_width=True)
+                st.button("📐 Optimiser",  key="ql_opt",    use_container_width=True)
+            with _q2:
+                st.button("⚖️ Pairs",      key="ql_pairs",  use_container_width=True)
+                st.button("🎲 Monte Carlo",key="ql_mc",     use_container_width=True)
+                st.button("📒 Journal",    key="ql_jnl",    use_container_width=True)
+
+        with _rcol:
+            # Watchlist live prices
+            _wl = st.session_state.get("watchlist", [])
+            if _wl:
+                _wl_prices = _fetch_brief_data(_wl[:12])
+                _wl_rows = ""
+                for _sym in _wl[:12]:
+                    _wd = _wl_prices.get(_sym, {})
+                    _wp = _wd.get("price")
+                    _wc = _wd.get("chg_pct")
+                    _wcc = "#22C55E" if (_wc or 0) >= 0 else "#EF4444"
+                    _ps = f"{_wp:,.2f}" if _wp and _wp > 10 else (f"{_wp:.4f}" if _wp else "—")
+                    _cs = f"{'▲' if (_wc or 0)>=0 else '▼'} {abs(_wc):.2f}%" if _wc is not None else "—"
+                    _wl_rows += (f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                                 f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">'
+                                 f'<span style="font-weight:700;color:#F1F5F9;font-size:0.88rem;min-width:60px">{_sym}</span>'
+                                 f'<span style="color:#94A3B8;font-size:0.82rem">{_ps}</span>'
+                                 f'<span style="color:{_wcc};font-weight:700;font-size:0.82rem">{_cs}</span></div>')
+                st.markdown(
+                    f'<div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">👁 My Watchlist</div>'
+                    f'<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.2);'
+                    f'border-radius:10px;padding:10px 14px;margin-bottom:12px">{_wl_rows}</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown("""
+                <div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">👁 My Watchlist</div>
+                <div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.15);border-radius:10px;
+                            padding:16px;margin-bottom:12px;text-align:center;color:#475569;font-size:0.82rem">
+                  Add stocks to your watchlist in the Fundamental tab
+                </div>""", unsafe_allow_html=True)
+
+            # Top Factor Signal
+            try:
+                _ff_r = requests.get("https://fintiq.uk/screener-data-2y.json", timeout=8)
+                if _ff_r.status_code == 200:
+                    _ff_stocks = _ff_r.json().get("stocks", [])
+                    _top = next((s for s in _ff_stocks
+                                 if s.get("signal") == "green" and s.get("pval", 1) < 0.05), None)
+                    if _top:
+                        st.markdown(
+                            f'<div style="font-size:0.62rem;text-transform:uppercase;color:#475569;font-weight:700;margin-bottom:6px">🔬 Top Factor Signal (2yr)</div>'
+                            f'<div style="background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.25);'
+                            f'border-radius:10px;padding:12px 16px">'
+                            f'<div style="display:flex;align-items:center;gap:12px">'
+                            f'<div><div style="font-size:1.3rem;font-weight:900;color:#F1F5F9">{_top["ticker"]}</div>'
+                            f'<div style="font-size:0.72rem;color:#64748B">{_top.get("name","")}</div></div>'
+                            f'<div style="margin-left:auto;text-align:right">'
+                            f'<div style="font-size:1.25rem;font-weight:900;color:#22C55E">+{_top.get("alpha",0):.1f}%/yr</div>'
+                            f'<div style="font-size:0.62rem;color:#475569">alpha · p={_top.get("pval",0):.3f}</div></div></div>'
+                            f'<div style="font-size:0.72rem;color:#64748B;font-style:italic;margin-top:8px">'
+                            f'{_top.get("insight","")}</div></div>',
+                            unsafe_allow_html=True
+                        )
+            except Exception:
+                pass
+
+    else:
+        st.markdown("""
+        <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);
+                    border-radius:12px;padding:22px;text-align:center">
+          <div style="font-size:1rem;font-weight:800;color:#F1F5F9;margin-bottom:6px">
+            🔐 Sign in to see your personalised dashboard
+          </div>
+          <div style="font-size:0.85rem;color:#94A3B8">
+            Watchlist live prices · Open positions · Top factor signal · Quick launch
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── condensed disclaimer ──
+    st.markdown("""
+    <div style="margin-top:28px;padding:10px 16px;background:rgba(127,29,29,0.1);
+                border:1px solid rgba(239,68,68,0.15);border-radius:8px;
+                font-size:0.75rem;color:#475569;text-align:center">
+      ⚠️ <strong style="color:#F87171">For educational purposes only.</strong>
+      Fintiq is not a regulated investment adviser. Nothing here constitutes financial advice.
+      Always do your own due diligence. ·
+      <a href="mailto:contactfintiq@gmail.com" style="color:#475569">contactfintiq@gmail.com</a> ·
+      <a href="https://fintiq.uk" style="color:#475569">fintiq.uk</a>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if False:  # dead block — old marketing content preserved below but never executes
+      st.markdown("""<div style="padding:32px 40px 36px;
                   background:linear-gradient(135deg,rgba(10,22,40,0.95) 0%,rgba(8,18,32,0.99) 100%);
                   border-radius:20px;border:1px solid rgba(245,158,11,0.25);
                   box-shadow:0 8px 50px rgba(0,0,0,0.7);margin-bottom:28px;text-align:center">
