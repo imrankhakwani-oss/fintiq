@@ -3226,58 +3226,71 @@ with tab0:
     _NDX_T = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","ASML","ADBE","COST","AMD","QCOM","NFLX","INTC"]
     _FTSE_T= ["SHEL.L","AZN.L","HSBA.L","ULVR.L","BP.L","RIO.L","GSK.L","LLOY.L","BATS.L","DGE.L"]
 
-    def _qof(ds):
+    def _qlbl(ds):
+        """Short label like 'Jun 26' from a date string."""
         try:
-            d = datetime.strptime(ds[:10], "%Y-%m-%d")
-            return f"Q{(d.month-1)//3+1}" if d.year == 2026 else None
-        except: return None
+            from datetime import datetime as _dtp
+            return _dtp.strptime(ds[:10],"%Y-%m-%d").strftime("%b %y")
+        except: return ds[:7] if ds else "?"
 
     def _etable(tickers, data):
         hdr = '<thead><tr style="background:rgba(13,31,53,0.9)">'
         hdr += '<th style="text-align:left;padding:6px 10px;color:#64748B;font-size:0.66rem;font-weight:600;white-space:nowrap">Ticker</th>'
-        for q in ["Q1 Mar","Q2 Jun","Q3 Sep","Q4 Dec"]:
-            hdr += (f'<th style="text-align:center;padding:6px 10px;color:#64748B;font-size:0.66rem;font-weight:600">'
-                    f'{q} 2026<br><span style="font-weight:400;font-size:0.58rem;color:#334155">EPS actual / est / beat</span></th>')
+        for col in ["Oldest Q","Q-2","Q-1","Latest Q"]:
+            hdr += (f'<th style="text-align:center;padding:6px 8px;color:#64748B;font-size:0.64rem;font-weight:600">'
+                    f'{col}<br><span style="font-weight:400;font-size:0.57rem;color:#334155">EPS · Est · Beat%</span></th>')
         hdr += '</tr></thead>'
         rows = ""
         for tk in tickers:
             d = data.get(tk, {}); hist = d.get("hist",[]); est = d.get("est",[])
-            cells = {}
+            quarters = []; seen = set()
+            # Historical actuals — use fiscalDateEnding as the key date
             for h in hist:
-                q = _qof(h.get("fiscalDateEnding", h.get("date","")))
-                if q: cells[q] = {"act": h.get("eps"), "est_v": h.get("epsEstimated"), "done": True}
+                fde = (h.get("fiscalDateEnding") or h.get("date",""))[:10]
+                if fde and fde not in seen:
+                    seen.add(fde)
+                    quarters.append({"date":fde,"act":h.get("eps"),
+                                     "est_v":h.get("epsEstimated"),"done":True})
+            # Future estimates — use date field (which is fiscal period end for analyst-estimates)
             for e in est:
-                q = _qof(e.get("date",""))
-                if q and q not in cells:
-                    cells[q] = {"act": None, "est_v": e.get("estimatedEpsAvg"), "done": False}
-            rows += f'<tr style="border-bottom:1px solid rgba(255,255,255,0.06)">'
+                fde = (e.get("date",""))[:10]
+                if fde and fde not in seen:
+                    seen.add(fde)
+                    quarters.append({"date":fde,"act":None,
+                                     "est_v":e.get("estimatedEpsAvg"),"done":False})
+            # Sort oldest→newest, take last 4
+            quarters.sort(key=lambda x: x.get("date",""))
+            quarters = quarters[-4:]
+            while len(quarters) < 4: quarters.insert(0, None)
+            rows += '<tr style="border-bottom:1px solid rgba(255,255,255,0.06)">'
             rows += f'<td style="padding:5px 10px;font-weight:700;color:#F1F5F9;font-size:0.8rem;white-space:nowrap">{tk}</td>'
-            for q in ["Q1","Q2","Q3","Q4"]:
-                c = cells.get(q)
-                if not c:
-                    rows += '<td style="text-align:center;padding:5px;color:#1E3A5F;font-size:0.72rem">—</td>'
-                elif c["done"] and c["act"] is not None:
-                    act, ev = c["act"], c["est_v"]
+            for q in quarters:
+                if q is None:
+                    rows += '<td style="text-align:center;padding:5px;color:#1E3A5F">—</td>'; continue
+                dlbl = _qlbl(q["date"])
+                if q["done"] and q["act"] is not None:
+                    act, ev = q["act"], q["est_v"]
                     if ev and ev != 0:
                         bp = (act-ev)/abs(ev)*100
                         bg = "rgba(34,197,94,0.12)" if bp>2 else "rgba(239,68,68,0.1)" if bp<-2 else "rgba(245,158,11,0.08)"
                         bc = "#22C55E" if bp>2 else "#EF4444" if bp<-2 else "#F59E0B"
                         bico = "✅" if bp>2 else "❌" if bp<-2 else "≈"
-                        bstr = f'<div style="font-size:0.58rem;color:{bc}">{bico} {bp:+.1f}%</div>'
+                        bstr = f'<div style="font-size:0.57rem;color:{bc}">{bico} {bp:+.1f}%</div>'
                         estr = f'{ev:.2f}'
-                    else:
-                        bg="rgba(100,116,139,0.06)"; bstr=""; estr="—"
-                    rows += (f'<td style="text-align:center;padding:4px 5px">'
+                    else: bg="rgba(100,116,139,0.06)"; bstr=""; estr="—"
+                    rows += (f'<td style="text-align:center;padding:3px 4px">'
                              f'<div style="background:{bg};border-radius:5px;padding:3px 5px">'
-                             f'<div style="font-weight:700;color:#F1F5F9;font-size:0.8rem">{act:.2f}</div>'
-                             f'<div style="font-size:0.58rem;color:#475569">est {estr}</div>'
+                             f'<div style="font-size:0.54rem;color:#475569">{dlbl}</div>'
+                             f'<div style="font-weight:700;color:#F1F5F9;font-size:0.78rem">{act:.2f}</div>'
+                             f'<div style="font-size:0.57rem;color:#475569">vs {estr}</div>'
                              f'{bstr}</div></td>')
                 else:
-                    ev = c.get("est_v")
-                    rows += (f'<td style="text-align:center;padding:4px 5px">'
+                    ev = q.get("est_v")
+                    rows += (f'<td style="text-align:center;padding:3px 4px">'
                              f'<div style="background:rgba(100,116,139,0.05);border-radius:5px;padding:3px 5px">'
-                             f'<div style="font-size:0.62rem;color:#334155">est</div>'
-                             f'<div style="font-weight:600;color:#64748B;font-size:0.8rem">{"—" if ev is None else f"{ev:.2f}"}</div>'
+                             f'<div style="font-size:0.54rem;color:#475569">{dlbl}</div>'
+                             f'<div style="font-size:0.6rem;color:#334155">est</div>'
+                             f'<div style="font-weight:600;color:#64748B;font-size:0.78rem">{"—" if ev is None else f"{ev:.2f}"}</div>'
                              f'</div></td>')
             rows += '</tr>'
         return (f'<div style="overflow-x:auto">'
@@ -3378,6 +3391,11 @@ window.fiqEF=function(q){{
                 "NVDA":{"price":138.15,"chg_pct":2.87},"TSLA":{"price":261.43,"chg_pct":-1.52},
                 "AMZN":{"price":201.17,"chg_pct":0.63}}
         _n_open = 3
+        _demo_positions = [
+            {"ticker":"NVDA","name":"NVIDIA","qty":10,"entry":98.40,"curr":138.15,"alloc":37.6},
+            {"ticker":"AAPL","name":"Apple","qty":8,"entry":195.20,"curr":213.49,"alloc":46.5},
+            {"ticker":"MSFT","name":"Microsoft","qty":2,"entry":460.00,"curr":445.82,"alloc":15.9},
+        ]
         _tops   = {"ticker":"NVDA","name":"NVIDIA Corporation","alpha":47.2,"pval":0.012,
                    "insight":"Strong momentum-driven alpha. Market factor explains 38% of returns."}
 
@@ -3405,8 +3423,52 @@ window.fiqEF=function(q){{
                     f'<div style="font-size:0.58rem;color:#475569">p={_tops.get("pval",0):.3f}</div></div></div>'
                     f'<div style="font-size:0.68rem;color:#64748B;font-style:italic">{_tops.get("insight","")}</div>')
 
-    _open_html = (f'<div style="font-size:1.8rem;font-weight:900;color:#F59E0B;line-height:1">{_n_open}</div>'
-                  f'<div style="font-size:0.72rem;color:#94A3B8">open positions</div>')
+    # Build open positions table
+    def _pos_rows(positions):
+        rows = ""
+        total_val = sum(p["qty"]*p["curr"] for p in positions)
+        for p in positions:
+            cost = p["qty"]*p["entry"]
+            curr_val = p["qty"]*p["curr"]
+            pnl_abs = curr_val - cost
+            pnl_pct = (pnl_abs/cost*100) if cost else 0
+            col = "#22C55E" if pnl_pct >= 0 else "#EF4444"
+            ico = "▲" if pnl_pct >= 0 else "▼"
+            rows += (f'<div style="display:grid;grid-template-columns:auto 1fr auto auto;'
+                     f'align-items:center;gap:4px 8px;padding:6px 0;'
+                     f'border-bottom:1px solid rgba(255,255,255,0.06)">'
+                     f'<div><div style="font-weight:800;color:#F1F5F9;font-size:0.85rem">{p["ticker"]}</div>'
+                     f'<div style="font-size:0.6rem;color:#64748B">{p["qty"]} sh · avg ${p["entry"]:.2f}</div></div>'
+                     f'<div style="font-size:0.78rem;color:#94A3B8;text-align:right">${p["curr"]:.2f}</div>'
+                     f'<div style="text-align:right">'
+                     f'<div style="font-weight:700;color:{col};font-size:0.8rem">{ico} {abs(pnl_pct):.1f}%</div>'
+                     f'<div style="font-size:0.6rem;color:{col}">${pnl_abs:+,.0f}</div></div>'
+                     f'<div style="font-size:0.6rem;color:#475569;text-align:right;min-width:36px">'
+                     f'{p["alloc"]:.1f}%<br><span style="color:#334155">alloc</span></div></div>')
+        return rows
+
+    _positions = _demo_positions if _is_demo else []  # real positions would be fetched from journal DB
+
+    if _positions:
+        total_cost = sum(p["qty"]*p["entry"] for p in _positions)
+        total_curr = sum(p["qty"]*p["curr"] for p in _positions)
+        total_pnl_pct = (total_curr-total_cost)/total_cost*100 if total_cost else 0
+        total_pnl_abs = total_curr - total_cost
+        tcol = "#22C55E" if total_pnl_pct >= 0 else "#EF4444"
+        _open_html = (
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+            f'<div><div style="font-size:1.05rem;font-weight:900;color:#F59E0B">'
+            f'${total_curr:,.0f}</div>'
+            f'<div style="font-size:0.6rem;color:#64748B">portfolio value</div></div>'
+            f'<div style="text-align:right">'
+            f'<div style="font-weight:800;color:{tcol};font-size:0.95rem">'
+            f'{"▲" if total_pnl_pct>=0 else "▼"} {abs(total_pnl_pct):.1f}%</div>'
+            f'<div style="font-size:0.62rem;color:{tcol}">${total_pnl_abs:+,.0f} total P&amp;L</div></div></div>'
+            + _pos_rows(_positions)
+        )
+    else:
+        _open_html = (f'<div style="font-size:1.8rem;font-weight:900;color:#F59E0B;line-height:1">{_n_open}</div>'
+                      f'<div style="font-size:0.72rem;color:#94A3B8">open positions</div>')
 
     # ─────────────────────────────────────────────────────────────
     # DECISION FRAMEWORK — compact horizontal strip
@@ -3452,26 +3514,43 @@ window.fiqEF=function(q){{
 </style>
 <script>
 window.fe=function(e,svgId){{
-  e.stopPropagation();
-  e.preventDefault();
+  e.stopPropagation(); e.preventDefault();
   var s=document.getElementById(svgId);
   if(!s){{var all=document.querySelectorAll('[id^="fs-"]');for(var i=0;i<all.length;i++){{if(all[i].id===svgId){{s=all[i];break;}}}}}}
-  var ov=document.createElement('div');
-  ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.88);z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer';
-  var lbl=s?s.dataset.lbl:'';
-  var inner=document.createElement('div');
-  inner.style.cssText='background:#0D1F33;border:1px solid rgba(245,158,11,0.35);border-radius:14px;padding:20px 22px;max-width:560px;width:94%;cursor:default;position:relative';
-  inner.innerHTML='<button onclick="this.closest(\\'[data-fiq-ov]\\').remove()" style="position:absolute;top:8px;right:12px;background:none;border:none;color:#94A3B8;font-size:1.2rem;cursor:pointer">✕</button>'
-    +'<div style="font-size:0.66rem;font-weight:700;color:#F59E0B;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">'+lbl+'</div>'
-    +(s?s.innerHTML:'<p style="color:#64748B">No data</p>')
-    +'<div style="text-align:center;font-size:0.6rem;color:#475569;margin-top:8px">FRED / Yahoo Finance · Green = uptrend · Red = downtrend · Click outside to close</div>';
-  ov.setAttribute('data-fiq-ov','1');
-  ov.appendChild(inner);
-  ov.onclick=function(ev){{if(ev.target===ov)ov.remove();}};
-  document.body.appendChild(ov);
-}}
-document.addEventListener('keydown',function(e){{if(e.key==='Escape'){{var o=document.querySelector('[data-fiq-ov]');if(o)o.remove();}}}});
+  var ov=document.getElementById('fiq-modal-ov');
+  if(!ov)return;
+  document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';
+  document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style="color:#64748B">No data available</p>';
+  ov.style.display='flex';
+}};
+window.fiqMHide=function(){{
+  var ov=document.getElementById('fiq-modal-ov');
+  if(ov)ov.style.display='none';
+}};
+document.addEventListener('keydown',function(e){{if(e.key==='Escape')window.fiqMHide();}});
 </script>
+
+<!-- ═══ PRE-RENDERED MODAL (show/hide, avoids React DOM conflicts) ═══ -->
+<div id="fiq-modal-ov" onclick="if(event.target===this)window.fiqMHide()"
+     style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+            background:rgba(0,0,0,0.88);z-index:2147483647;
+            align-items:center;justify-content:center">
+  <div style="background:#0D1F33;border:1px solid rgba(245,158,11,0.35);
+              border-radius:14px;padding:20px 22px;max-width:580px;width:94%;
+              position:relative;cursor:default">
+    <button onclick="window.fiqMHide()"
+            style="position:absolute;top:8px;right:12px;background:none;
+                   border:none;color:#94A3B8;font-size:1.2rem;cursor:pointer">✕</button>
+    <div id="fiq-modal-lbl"
+         style="font-size:0.66rem;font-weight:700;color:#F59E0B;
+                text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px"></div>
+    <div id="fiq-modal-body"></div>
+    <div style="text-align:center;font-size:0.6rem;color:#475569;margin-top:10px">
+      FRED / Yahoo Finance · Green = uptrend · Red = downtrend · Click outside or press Esc to close
+    </div>
+  </div>
+</div>
+
 <div style="display:none">{_hdiv}</div>
 
 <!-- ═══ HEADER ═══ -->
