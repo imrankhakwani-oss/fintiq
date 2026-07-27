@@ -3771,11 +3771,74 @@ window.fiqEToggle=function(){{
 </div>
 """, unsafe_allow_html=True)
 
-    # EPS tracker rendered inline in main HTML block above — expander removed
+    # ── JS INJECTOR via components.html (only reliable way to run JS in Streamlit) ──
+    # Scripts in st.markdown are NOT executed by React; components.v1.html uses a real
+    # iframe where scripts run, and we attach functions to window.parent (the main app).
+    import streamlit.components.v1 as _cv1
+    _cv1.html("""<!DOCTYPE html><html><body><script>
+(function setup(){
+  var p=window.parent;
+  if(!p||!p.document)return;
 
-    # ── v1 stubs below are harmless (define functions / assign vars, no rendering) ──
+  p.fiqTab=function(id){
+    ['spx','ndx','ftse'].forEach(function(k){
+      var panel=p.document.getElementById('fiq-ep-'+k);
+      var btn=p.document.getElementById('fiqt-'+k);
+      if(panel)panel.style.display=(k===id)?'block':'none';
+      if(btn){
+        btn.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
+        btn.style.color=(k===id)?'#F59E0B':'#475569';
+        btn.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
+      }
+    });
+  };
+
+  p.fiqEF=function(q){
+    p.document.querySelectorAll('[id^="fiq-ep-"]').forEach(function(panel){
+      if(panel.style.display==='none')return;
+      panel.querySelectorAll('tbody tr').forEach(function(r){
+        var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
+        r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';
+      });
+    });
+  };
+
+  p.fiqEToggle=function(){
+    var b=p.document.getElementById('fiq-eps-body');
+    var c=p.document.getElementById('fiq-eps-chevron');
+    if(!b)return;
+    var open=b.style.display!=='none';
+    b.style.display=open?'none':'block';
+    if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
+  };
+
+  p.fe=function(e,svgId){
+    e.stopPropagation();e.preventDefault();
+    var s=p.document.getElementById(svgId);
+    if(!s){var all=p.document.querySelectorAll('[id^="fs-"]');for(var i=0;i<all.length;i++){if(all[i].id===svgId){s=all[i];break;}}}
+    var ov=p.document.getElementById('fiq-modal-ov');
+    if(!ov)return;
+    p.document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';
+    p.document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style="color:#64748B">No data</p>';
+    ov.style.display='flex';
+  };
+
+  p.fiqMHide=function(){
+    var ov=p.document.getElementById('fiq-modal-ov');
+    if(ov)ov.style.display='none';
+  };
+
+  p.document.addEventListener('keydown',function(e){if(e.key==='Escape')p.fiqMHide();});
+}
+
+// Run immediately + retry after DOM settles
+setup();
+setTimeout(setup,300);
+setTimeout(setup,1200);
+</script></body></html>""", height=0, scrolling=False)
+
     # ──────────────────────────────────────────────────────
-    # END OF TAB 0 (new code above; v1 stubs below are inert)
+    # END OF TAB 0
     # ──────────────────────────────────────────────────────
 
     @st.cache_data(ttl=3600)
