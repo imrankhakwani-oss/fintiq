@@ -2953,7 +2953,7 @@ with tab0:
         out = {}
         for t in tickers:
             try:
-                df = yf.download(t, period="3mo", interval="1d", progress=False, auto_adjust=True)
+                df = yf.Ticker(t).history(period="3mo", interval="1d", auto_adjust=True)
                 out[t] = df["Close"].dropna().tolist() if not df.empty else []
             except Exception:
                 out[t] = []
@@ -3244,7 +3244,7 @@ with tab0:
             d = data.get(tk, {}); hist = d.get("hist",[]); est = d.get("est",[])
             cells = {}
             for h in hist:
-                q = _qof(h.get("date",""))
+                q = _qof(h.get("fiscalDateEnding", h.get("date","")))
                 if q: cells[q] = {"act": h.get("eps"), "est_v": h.get("epsEstimated"), "done": True}
             for e in est:
                 q = _qof(e.get("date",""))
@@ -3286,65 +3286,70 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
-    with st.spinner("Loading earnings data…"):
-        _edata_spx  = _eps_batch(",".join(_SPX_T))
-        _edata_ndx  = _eps_batch(",".join(_NDX_T))
-        _edata_ftse = _eps_batch(",".join(_FTSE_T))
+    _edata_spx  = _eps_batch(",".join(_SPX_T))
+    _edata_ndx  = _eps_batch(",".join(_NDX_T))
+    _edata_ftse = _eps_batch(",".join(_FTSE_T))
 
     def _eps_section(idx_key):
         tickers = {"spx": _SPX_T, "ndx": _NDX_T, "ftse": _FTSE_T}[idx_key]
         data    = {"spx": _edata_spx, "ndx": _edata_ndx, "ftse": _edata_ftse}[idx_key]
         return _etable(tickers, data)
 
-    # CSS-only tab switcher using hidden radio inputs
-    _eps_tabs_css = """
-<style>
-.fiq-etab input[type=radio]{display:none}
-.fiq-etab label{cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;color:#475569;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);transition:all 0.2s;white-space:nowrap}
-.fiq-etab input:checked+label{background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.5);color:#F59E0B}
-.fiq-epanel{display:none}
-#fiq-e1:checked~.fiq-epanels #fiq-ep1,
-#fiq-e2:checked~.fiq-epanels #fiq-ep2,
-#fiq-e3:checked~.fiq-epanels #fiq-ep3{display:block}
-</style>"""
-
     _eps_spx_html  = _eps_section("spx")
     _eps_ndx_html  = _eps_section("ndx")
     _eps_ftse_html = _eps_section("ftse")
 
-    _eps_inline_html = f"""{_eps_tabs_css}
+    _eps_inline_html = f"""
 <div style="background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px;margin-bottom:18px">
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
     <div>
       <div style="font-size:0.92rem;font-weight:800;color:#F59E0B">📋 EPS Earnings Tracker — 2026</div>
-      <div style="font-size:0.65rem;color:#475569;margin-top:2px">Actual vs Estimate · Beat/Miss · ✅ Beat &gt;+2% · ❌ Miss &lt;-2% · ≈ In-line · Grey = future</div>
+      <div style="font-size:0.65rem;color:#475569;margin-top:2px">Actual vs Estimate · Beat/Miss · ✅ Beat &gt;+2% · ❌ Miss &lt;-2% · ≈ In-line · Grey = future estimate</div>
     </div>
     <input type="text" id="fiq-eticker" oninput="fiqEF(this.value)" placeholder="🔍 Filter ticker…"
       style="background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;
              padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:160px;outline:none">
   </div>
-  <div class="fiq-etab">
-    <input type="radio" name="fiq-et" id="fiq-e1" checked>
-    <label for="fiq-e1">S&amp;P 500 Top 15</label>
-    <input type="radio" name="fiq-et" id="fiq-e2">
-    <label for="fiq-e2">NASDAQ 100 Top 15</label>
-    <input type="radio" name="fiq-et" id="fiq-e3">
-    <label for="fiq-e3">FTSE 100 Top 10</label>
-    <div class="fiq-epanels" style="margin-top:12px">
-      <div class="fiq-epanel" id="fiq-ep1">{_eps_spx_html}</div>
-      <div class="fiq-epanel" id="fiq-ep2">{_eps_ndx_html}</div>
-      <div class="fiq-epanel" id="fiq-ep3">{_eps_ftse_html}</div>
-    </div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button id="fiqt-spx" onclick="fiqTab('spx')"
+      style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
+             border:1px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.15);color:#F59E0B">S&amp;P 500 Top 15</button>
+    <button id="fiqt-ndx" onclick="fiqTab('ndx')"
+      style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
+             border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">NASDAQ 100 Top 15</button>
+    <button id="fiqt-ftse" onclick="fiqTab('ftse')"
+      style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
+             border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">FTSE 100 Top 10</button>
   </div>
+  <div id="fiq-ep-spx" style="display:block">{_eps_spx_html}</div>
+  <div id="fiq-ep-ndx" style="display:none">{_eps_ndx_html}</div>
+  <div id="fiq-ep-ftse" style="display:none">{_eps_ftse_html}</div>
 </div>
 <script>
-function fiqEF(q){{
-  var rows=document.querySelectorAll('.fiq-epanel:not([style*="display: none"]) tbody tr');
-  rows.forEach(function(r){{
-    var tk=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
-    r.style.display=!q||tk.includes(q.toLowerCase())?'':'none';
+window.fiqTab=function(id){{
+  var keys=['spx','ndx','ftse'];
+  keys.forEach(function(k){{
+    var panel=document.getElementById('fiq-ep-'+k);
+    var btn=document.getElementById('fiqt-'+k);
+    if(panel) panel.style.display=(k===id)?'block':'none';
+    if(btn){{
+      btn.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
+      btn.style.color=(k===id)?'#F59E0B':'#475569';
+      btn.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
+    }}
   }});
-}}
+}};
+window.fiqEF=function(q){{
+  var panels=document.querySelectorAll('[id^="fiq-ep-"]');
+  panels.forEach(function(panel){{
+    if(panel.style.display==='none') return;
+    var rows=panel.querySelectorAll('tbody tr');
+    rows.forEach(function(r){{
+      var tk=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
+      r.style.display=!q||tk.includes(q.toLowerCase())?'':'none';
+    }});
+  }});
+}};
 </script>"""
 
     # ─────────────────────────────────────────────────────────────
@@ -3446,10 +3451,11 @@ function fiqEF(q){{
 @keyframes fiq-tip{{0%{{opacity:0}}10%{{opacity:1}}75%{{opacity:1}}100%{{opacity:0}}}}
 </style>
 <script>
-function fe(e,svgId){{
+window.fe=function(e,svgId){{
   e.stopPropagation();
   e.preventDefault();
   var s=document.getElementById(svgId);
+  if(!s){{var all=document.querySelectorAll('[id^="fs-"]');for(var i=0;i<all.length;i++){{if(all[i].id===svgId){{s=all[i];break;}}}}}}
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.88);z-index:2147483647;display:flex;align-items:center;justify-content:center;cursor:pointer';
   var lbl=s?s.dataset.lbl:'';
@@ -3656,14 +3662,8 @@ document.addEventListener('keydown',function(e){{if(e.key==='Escape'){{var o=doc
     _nfp_col  = "#22C55E" if (_nfp_chg or 0) > 150000 else "#F59E0B" if (_nfp_chg or 0) > 0 else "#EF4444"
     _nfp_str  = f"+{_nfp_chg:,}" if _nfp_chg and _nfp_chg > 0 else (f"{_nfp_chg:,}" if _nfp_chg else "—")
 
-    # [v1 dashboard rendering removed — replaced by new flip-card implementation above]
-
-    if False:  # dead block — old marketing content preserved below but never executes
-      st.markdown("""<div style="padding:32px 40px 36px;
-                  background:linear-gradient(135deg,rgba(10,22,40,0.95) 0%,rgba(8,18,32,0.99) 100%);
-                  border-radius:20px;border:1px solid rgba(245,158,11,0.25);
-                  box-shadow:0 8px 50px rgba(0,0,0,0.7);margin-bottom:28px;text-align:center">
-        <div class="fintiq-hero-title">Invest like an institution</div>
+    # ── v1 dead block removed ──
+_OLD_HOMEPAGE_REMOVED_START = """placeholder
         <div style="font-size:1rem;color:#94A3B8;max-width:680px;margin:12px auto 0;line-height:1.7">
           Fintiq doesn't just screen stocks — it guides your entire investment decision.
           Find quality businesses · Value them with <strong style="color:#F1F5F9">DCF, Graham &amp; Industry models</strong> ·
@@ -3949,10 +3949,7 @@ document.addEventListener('keydown',function(e){{if(e.key==='Escape'){{var o=doc
           <span>💡 <a href="mailto:contactfintiq@gmail.com?subject=Feature%20Suggestion" style="color:#64748B;text-decoration:none">Suggest a feature</a></span>
           <a href="https://fintiq.uk" style="color:#64748B;text-decoration:none">fintiq.uk</a>
         </div>
-      </div>
-
-    </div>
-    """, unsafe_allow_html=True)
+  """  # end of removed old-homepage block — content stored in _OLD_HOMEPAGE_REMOVED_START (never rendered)
 
 # ═══════════════════════════════════════════════════════════════
 # TAB — MORNING BRIEF
