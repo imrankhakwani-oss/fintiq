@@ -2979,61 +2979,94 @@ with tab0:
             try:
                 obj = yf.Ticker(tk)
 
-                # ── PRIMARY: earnings_dates (yfinance 0.2.18+) ──
+                # ── STEP 1: earningsHistory via Yahoo Finance quoteSummary ──
+                # Provides epsActual, epsEstimate, surprisePercent for last 4 quarters
+                yh_map = {}  # date_str → {eps, epsEstimated, surprise_pct}
+                try:
+                    HDR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                    url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
+                           f"?modules=earningsHistory")
+                    r = requests.get(url, headers=HDR, timeout=8)
+                    if r.status_code == 200:
+                        res = r.json().get("quoteSummary", {}).get("result", [])
+                        if res:
+                            for h in res[0].get("earningsHistory", {}).get("history", []):
+                                qt = h.get("quarter", {})
+                                # fmt is like "2024-12-31"
+                                ds = qt.get("fmt", "")
+                                if not ds:
+                                    raw_ts = qt.get("raw")
+                                    if raw_ts:
+                                        from datetime import datetime as _dt2
+                                        ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
+                                act  = _safe_float((h.get("epsActual") or {}).get("raw"))
+                                estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
+                                sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
+                                if sp is not None: sp = sp * 100  # convert 0.043 → 4.3%
+                                if ds and act is not None:
+                                    yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
+                except Exception:
+                    pass
+
+                # ── STEP 2: earnings_dates — actuals + upcoming estimates ──
                 try:
                     ed = obj.earnings_dates
                     if ed is not None and not ed.empty:
-                        # Strip timezone so strftime works cleanly
                         if hasattr(ed.index, "tz") and ed.index.tz is not None:
                             ed.index = ed.index.tz_convert(None)
-                        ed = ed.sort_index()  # oldest → newest
+                        ed = ed.sort_index()
                         hist, est = [], []
                         for dt, row in ed.iterrows():
-                            rep      = _safe_float(row.get("Reported EPS"))
-                            est_v    = _safe_float(row.get("EPS Estimate"))
-                            surprise = _safe_float(row.get("Surprise(%)"))
+                            rep   = _safe_float(row.get("Reported EPS"))
+                            est_v = _safe_float(row.get("EPS Estimate"))
                             date_str = dt.strftime("%Y-%m-%d")
                             if rep is not None:
+                                # Merge with earningsHistory data for beat/miss
+                                yh = yh_map.get(date_str, {})
+                                sp = yh.get("surprise_pct")
+                                if sp is None:
+                                    sp_raw = _safe_float(row.get("Surprise(%)"))
+                                    if sp_raw is not None: sp = sp_raw
                                 hist.append({
                                     "fiscalDateEnding": date_str,
                                     "date": date_str,
                                     "eps": rep,
-                                    "epsEstimated": est_v,
-                                    "surprise_pct": surprise,
+                                    "epsEstimated": yh.get("epsEstimated") or est_v,
+                                    "surprise_pct": sp,
                                 })
                             elif est_v is not None:
-                                est.append({
-                                    "date": date_str,
-                                    "estimatedEpsAvg": est_v,
-                                })
+                                est.append({"date": date_str, "estimatedEpsAvg": est_v})
                         if hist:
                             return tk, {"hist": hist[-4:], "est": est[:2]}
                 except Exception:
                     pass
 
-                # ── FALLBACK: quarterly_income_stmt (actuals only) ──
+                # ── FALLBACK: use earningsHistory data directly ──
+                if yh_map:
+                    hist = sorted([
+                        {"fiscalDateEnding": ds, "date": ds,
+                         "eps": v["eps"], "epsEstimated": v["epsEstimated"],
+                         "surprise_pct": v["surprise_pct"]}
+                        for ds, v in yh_map.items()
+                    ], key=lambda x: x["date"])
+                    return tk, {"hist": hist[-4:], "est": []}
+
+                # ── FINAL FALLBACK: quarterly_income_stmt ──
                 try:
                     qs = obj.quarterly_income_stmt
                     if qs is not None and not qs.empty:
-                        eps_row = None
                         for lbl in ("Basic EPS", "Diluted EPS", "EPS"):
                             if lbl in qs.index:
-                                eps_row = qs.loc[lbl]; break
-                        if eps_row is not None:
-                            cols = sorted(eps_row.index)[-4:]
-                            hist = []
-                            for col in cols:
-                                val = _safe_float(eps_row[col])
-                                if val is not None:
-                                    date_str = pd.Timestamp(col).strftime("%Y-%m-%d")
-                                    hist.append({
-                                        "fiscalDateEnding": date_str,
-                                        "date": date_str,
-                                        "eps": val,
-                                        "epsEstimated": None,
-                                    })
-                            if hist:
-                                return tk, {"hist": hist, "est": []}
+                                eps_row = qs.loc[lbl]
+                                hist = []
+                                for col in sorted(eps_row.index)[-4:]:
+                                    val = _safe_float(eps_row[col])
+                                    if val is not None:
+                                        hist.append({"fiscalDateEnding": pd.Timestamp(col).strftime("%Y-%m-%d"),
+                                                     "date": pd.Timestamp(col).strftime("%Y-%m-%d"),
+                                                     "eps": val, "epsEstimated": None, "surprise_pct": None})
+                                if hist: return tk, {"hist": hist, "est": []}
+                                break
                 except Exception:
                     pass
 
@@ -3444,41 +3477,7 @@ with tab0:
     <div id="fiq-ep-ndx" style="display:none">{_eps_ndx_html}</div>
     <div id="fiq-ep-ftse" style="display:none">{_eps_ftse_html}</div>
   </div>
-</div>
-<script>
-window.fiqTab=function(id){{
-  var keys=['spx','ndx','ftse'];
-  keys.forEach(function(k){{
-    var panel=document.getElementById('fiq-ep-'+k);
-    var btn=document.getElementById('fiqt-'+k);
-    if(panel) panel.style.display=(k===id)?'block':'none';
-    if(btn){{
-      btn.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
-      btn.style.color=(k===id)?'#F59E0B':'#475569';
-      btn.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
-    }}
-  }});
-}};
-window.fiqEF=function(q){{
-  var panels=document.querySelectorAll('[id^="fiq-ep-"]');
-  panels.forEach(function(panel){{
-    if(panel.style.display==='none') return;
-    var rows=panel.querySelectorAll('tbody tr');
-    rows.forEach(function(r){{
-      var tk=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
-      r.style.display=!q||tk.includes(q.toLowerCase())?'':'none';
-    }});
-  }});
-}};
-window.fiqEToggle=function(){{
-  var body=document.getElementById('fiq-eps-body');
-  var chev=document.getElementById('fiq-eps-chevron');
-  if(!body)return;
-  var open=body.style.display!=='none';
-  body.style.display=open?'none':'block';
-  if(chev)chev.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
-}};
-</script>"""
+</div>"""
 
     # ─────────────────────────────────────────────────────────────
     # PERSONAL DASHBOARD
@@ -3643,6 +3642,36 @@ window.fiqMHide=function(){{
   if(ov)ov.style.display='none';
 }};
 document.addEventListener('keydown',function(e){{if(e.key==='Escape')window.fiqMHide();}});
+/* ── EPS Tracker tabs / filter / collapse ── */
+window.fiqTab=function(id){{
+  ['spx','ndx','ftse'].forEach(function(k){{
+    var p=document.getElementById('fiq-ep-'+k);
+    var b=document.getElementById('fiqt-'+k);
+    if(p)p.style.display=(k===id)?'block':'none';
+    if(b){{
+      b.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
+      b.style.color=(k===id)?'#F59E0B':'#475569';
+      b.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
+    }}
+  }});
+}};
+window.fiqEF=function(q){{
+  document.querySelectorAll('[id^="fiq-ep-"]').forEach(function(panel){{
+    if(panel.style.display==='none')return;
+    panel.querySelectorAll('tbody tr').forEach(function(r){{
+      var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
+      r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';
+    }});
+  }});
+}};
+window.fiqEToggle=function(){{
+  var b=document.getElementById('fiq-eps-body');
+  var c=document.getElementById('fiq-eps-chevron');
+  if(!b)return;
+  var open=b.style.display!=='none';
+  b.style.display=open?'none':'block';
+  if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
+}};
 </script>
 
 <!-- ═══ PRE-RENDERED MODAL (show/hide, avoids React DOM conflicts) ═══ -->
