@@ -2961,26 +2961,48 @@ with tab0:
 
     @st.cache_data(ttl=86400, show_spinner=False)
     def _eps_batch(tickers_key: str) -> dict:
-        result = {}
-        for tk in tickers_key.split(","):
+        """Fetch last 4 fiscal quarters EPS via yfinance (free, no rate limits).
+        earnings_dates gives: EPS Estimate, Reported EPS, Surprise(%) per quarter.
+        """
+        import concurrent.futures
+        tickers = tickers_key.split(",")
+
+        def _fetch_one(tk):
             try:
-                r1 = requests.get(f"{FMP_BASE}/v3/historical/earning_calendar/{tk}?limit=8&apikey={FMP_KEY}", timeout=8)
-                r2 = requests.get(f"{FMP_BASE}/v3/analyst-estimates/{tk}?period=quarter&limit=4&apikey={FMP_KEY}", timeout=8)
-                # earning_calendar may return list or {"historical":[...]}
-                if r1.status_code == 200:
-                    j1 = r1.json()
-                    if isinstance(j1, dict): j1 = j1.get("historical", j1.get("earningsCalendar", []))
-                    if not isinstance(j1, list): j1 = []
-                else: j1 = []
-                # analyst-estimates returns list
-                if r2.status_code == 200:
-                    j2 = r2.json()
-                    if isinstance(j2, dict): j2 = j2.get("quarterly", [])
-                    if not isinstance(j2, list): j2 = []
-                else: j2 = []
-                result[tk] = {"hist": j1, "est": j2}
+                obj = yf.Ticker(tk)
+                ed = obj.earnings_dates  # DataFrame, index=datetime, newest first
+                if ed is None or ed.empty:
+                    return tk, {"hist": [], "est": []}
+                ed = ed.sort_index()  # oldest first
+                hist, est = [], []
+                for dt, row in ed.iterrows():
+                    rep = row.get("Reported EPS")
+                    est_v = row.get("EPS Estimate")
+                    date_str = dt.strftime("%Y-%m-%d")
+                    import math
+                    is_reported = rep is not None and not (isinstance(rep, float) and math.isnan(rep))
+                    is_est = est_v is not None and not (isinstance(est_v, float) and math.isnan(est_v))
+                    if is_reported:
+                        hist.append({
+                            "fiscalDateEnding": date_str,
+                            "date": date_str,
+                            "eps": float(rep),
+                            "epsEstimated": float(est_v) if is_est else None,
+                        })
+                    elif is_est:
+                        est.append({
+                            "date": date_str,
+                            "estimatedEpsAvg": float(est_v),
+                        })
+                # Keep last 4 reported + up to 2 upcoming estimates
+                return tk, {"hist": hist[-4:], "est": est[:2]}
             except Exception:
-                result[tk] = {"hist": [], "est": []}
+                return tk, {"hist": [], "est": []}
+
+        result = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            for tk, data in pool.map(_fetch_one, tickers):
+                result[tk] = data
         return result
 
     def _mini_svg(prices, w=110, h=46):
@@ -3308,9 +3330,24 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
-    _edata_spx  = _eps_batch(",".join(_SPX_T))
-    _edata_ndx  = _eps_batch(",".join(_NDX_T))
-    _edata_ftse = _eps_batch(",".join(_FTSE_T))
+    # One combined cache call for all tickers (parallelised inside) — avoids 3 separate blocking loads
+    _ALL_EPS_T  = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T))  # deduplicated, preserving order
+    _eps_key    = ",".join(_ALL_EPS_T)
+    _eps_loaded = st.session_state.get("_eps_loaded_key") == _eps_key
+    if not _eps_loaded:
+        # Warm the cache in a background thread so page renders immediately
+        import threading as _thr
+        def _warm():
+            _eps_batch(_eps_key)
+            st.session_state["_eps_loaded_key"] = _eps_key
+        _t = _thr.Thread(target=_warm, daemon=True)
+        _t.start()
+        _t.join(timeout=12)   # wait up to 12s (yfinance is fast; if done → show data, else skeleton)
+    _edata_all  = _eps_batch(_eps_key)   # hits cache if warm, else fast second attempt
+    # All three indices share the same dict; _etable filters by their ticker list
+    _edata_spx  = _edata_all
+    _edata_ndx  = _edata_all
+    _edata_ftse = _edata_all
 
     def _eps_section(idx_key):
         tickers = {"spx": _SPX_T, "ndx": _NDX_T, "ftse": _FTSE_T}[idx_key]
