@@ -2989,8 +2989,9 @@ with tab0:
                         ed = ed.sort_index()  # oldest → newest
                         hist, est = [], []
                         for dt, row in ed.iterrows():
-                            rep   = _safe_float(row.get("Reported EPS"))
-                            est_v = _safe_float(row.get("EPS Estimate"))
+                            rep      = _safe_float(row.get("Reported EPS"))
+                            est_v    = _safe_float(row.get("EPS Estimate"))
+                            surprise = _safe_float(row.get("Surprise(%)"))
                             date_str = dt.strftime("%Y-%m-%d")
                             if rep is not None:
                                 hist.append({
@@ -2998,6 +2999,7 @@ with tab0:
                                     "date": date_str,
                                     "eps": rep,
                                     "epsEstimated": est_v,
+                                    "surprise_pct": surprise,
                                 })
                             elif est_v is not None:
                                 est.append({
@@ -3227,7 +3229,7 @@ with tab0:
                 f'<div class="ffv" style="color:{col}">{val}</div>'
                 f'<div class="ffs">{sub}</div>{nr}'
                 f'</div>'
-                f'<div class="ffb" onclick="fe(event,\'fs-{cid}\')">'
+                f'<div class="ffb" onclick="window.fe&&window.fe(event,\'fs-{cid}\')">'
                 f'{back}'
                 f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
@@ -3249,7 +3251,7 @@ with tab0:
                 f'<div style="font-size:1.0rem;font-weight:800;color:#F1F5F9;margin-top:1px">{ps}</div>'
                 f'<div style="font-size:0.8rem;font-weight:700;color:{tc}">{pc}</div>'
                 f'</div>'
-                f'<div class="ffb" onclick="fe(event,\'fs-{sid}\')">'
+                f'<div class="ffb" onclick="window.fe&&window.fe(event,\'fs-{sid}\')">'
                 f'{back_content}'
                 f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
@@ -3301,71 +3303,92 @@ with tab0:
         """Short label like 'Jun 26' from a date string."""
         try:
             from datetime import datetime as _dtp
-            return _dtp.strptime(ds[:10],"%Y-%m-%d").strftime("%b %y")
+            return _dtp.strptime(ds[:10],"%Y-%m-%d").strftime("%b '%y")
         except: return ds[:7] if ds else "?"
 
     def _etable(tickers, data):
-        hdr = '<thead><tr style="background:rgba(13,31,53,0.9)">'
-        hdr += '<th style="text-align:left;padding:6px 10px;color:#64748B;font-size:0.66rem;font-weight:600;white-space:nowrap">Ticker</th>'
-        for col in ["Oldest Q","Q-2","Q-1","Latest Q"]:
-            hdr += (f'<th style="text-align:center;padding:6px 8px;color:#64748B;font-size:0.64rem;font-weight:600">'
-                    f'{col}<br><span style="font-weight:400;font-size:0.57rem;color:#334155">EPS · Est · Beat%</span></th>')
+        # Column header: just "Ticker" + 4 relative-time labels
+        hdr = ('<thead><tr style="background:rgba(13,31,53,0.95)">'
+               '<th style="text-align:left;padding:7px 12px;color:#475569;font-size:0.63rem;'
+               'font-weight:700;letter-spacing:0.04em;white-space:nowrap">TICKER</th>')
+        for lbl in ["Q (oldest)","Q","Q","Q (latest)"]:
+            hdr += (f'<th style="text-align:center;padding:7px 8px;color:#475569;font-size:0.63rem;'
+                    f'font-weight:700;letter-spacing:0.04em">{lbl}</th>')
         hdr += '</tr></thead>'
+
         rows = ""
         for tk in tickers:
             d = data.get(tk, {}); hist = d.get("hist",[]); est = d.get("est",[])
             quarters = []; seen = set()
-            # Historical actuals — use fiscalDateEnding as the key date
             for h in hist:
                 fde = (h.get("fiscalDateEnding") or h.get("date",""))[:10]
                 if fde and fde not in seen:
                     seen.add(fde)
-                    quarters.append({"date":fde,"act":h.get("eps"),
-                                     "est_v":h.get("epsEstimated"),"done":True})
-            # Future estimates — use date field (which is fiscal period end for analyst-estimates)
+                    quarters.append({
+                        "date": fde,
+                        "act": h.get("eps"),
+                        "est_v": h.get("epsEstimated"),
+                        "surprise": h.get("surprise_pct"),  # from yfinance Surprise(%)
+                        "done": True,
+                    })
             for e in est:
                 fde = (e.get("date",""))[:10]
                 if fde and fde not in seen:
                     seen.add(fde)
-                    quarters.append({"date":fde,"act":None,
-                                     "est_v":e.get("estimatedEpsAvg"),"done":False})
-            # Sort oldest→newest, take last 4
+                    quarters.append({"date":fde,"act":None,"est_v":e.get("estimatedEpsAvg"),"surprise":None,"done":False})
             quarters.sort(key=lambda x: x.get("date",""))
             quarters = quarters[-4:]
             while len(quarters) < 4: quarters.insert(0, None)
-            rows += '<tr style="border-bottom:1px solid rgba(255,255,255,0.06)">'
-            rows += f'<td style="padding:5px 10px;font-weight:700;color:#F1F5F9;font-size:0.8rem;white-space:nowrap">{tk}</td>'
+
+            rows += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">'
+            rows += (f'<td style="padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem;'
+                     f'white-space:nowrap">{tk}</td>')
+
             for q in quarters:
                 if q is None:
-                    rows += '<td style="text-align:center;padding:5px;color:#1E3A5F">—</td>'; continue
+                    rows += '<td style="text-align:center;color:#1E3A5F;font-size:0.9rem">·</td>'; continue
+
                 dlbl = _qlbl(q["date"])
+
                 if q["done"] and q["act"] is not None:
-                    act, ev = q["act"], q["est_v"]
-                    if ev and ev != 0:
-                        bp = (act-ev)/abs(ev)*100
-                        bg = "rgba(34,197,94,0.12)" if bp>2 else "rgba(239,68,68,0.1)" if bp<-2 else "rgba(245,158,11,0.08)"
-                        bc = "#22C55E" if bp>2 else "#EF4444" if bp<-2 else "#F59E0B"
-                        bico = "✅" if bp>2 else "❌" if bp<-2 else "≈"
-                        bstr = f'<div style="font-size:0.57rem;color:{bc}">{bico} {bp:+.1f}%</div>'
-                        estr = f'{ev:.2f}'
-                    else: bg="rgba(100,116,139,0.06)"; bstr=""; estr="—"
-                    rows += (f'<td style="text-align:center;padding:3px 4px">'
-                             f'<div style="background:{bg};border-radius:5px;padding:3px 5px">'
-                             f'<div style="font-size:0.54rem;color:#475569">{dlbl}</div>'
-                             f'<div style="font-weight:700;color:#F1F5F9;font-size:0.78rem">{act:.2f}</div>'
-                             f'<div style="font-size:0.57rem;color:#475569">vs {estr}</div>'
-                             f'{bstr}</div></td>')
+                    act = q["act"]
+                    ev  = q["est_v"]
+                    # Use yfinance surprise_pct if available, else calculate
+                    sp  = q.get("surprise")
+                    if sp is None and ev is not None and ev != 0:
+                        sp = (act - ev) / abs(ev) * 100
+                    # Colour based on beat/miss
+                    if sp is not None:
+                        bg  = "rgba(34,197,94,0.13)"  if sp > 2  else "rgba(239,68,68,0.11)"  if sp < -2  else "rgba(245,158,11,0.08)"
+                        bc  = "#22C55E"               if sp > 2  else "#EF4444"               if sp < -2  else "#F59E0B"
+                        ico = "▲ Beat"                if sp > 2  else "▼ Miss"                if sp < -2  else "≈ In-line"
+                        beat_row = f'<div style="font-size:0.56rem;color:{bc};font-weight:700;margin-top:2px">{ico} {sp:+.1f}%</div>'
+                    else:
+                        bg = "rgba(100,116,139,0.07)"; beat_row = ""
+                    # Estimate row — only show if we have a value
+                    est_row = (f'<div style="font-size:0.58rem;color:#475569">est {ev:.2f}</div>' if ev is not None else "")
+                    rows += (f'<td style="padding:3px 5px">'
+                             f'<div style="background:{bg};border-radius:6px;padding:5px 6px;text-align:center">'
+                             f'<div style="font-size:0.62rem;color:#64748B;font-weight:600;margin-bottom:1px">{dlbl}</div>'
+                             f'<div style="font-weight:800;color:#F1F5F9;font-size:0.9rem;line-height:1.1">{act:.2f}</div>'
+                             f'{est_row}{beat_row}'
+                             f'</div></td>')
                 else:
+                    # Future estimate
                     ev = q.get("est_v")
-                    rows += (f'<td style="text-align:center;padding:3px 4px">'
-                             f'<div style="background:rgba(100,116,139,0.05);border-radius:5px;padding:3px 5px">'
-                             f'<div style="font-size:0.54rem;color:#475569">{dlbl}</div>'
-                             f'<div style="font-size:0.6rem;color:#334155">est</div>'
-                             f'<div style="font-weight:600;color:#64748B;font-size:0.78rem">{"—" if ev is None else f"{ev:.2f}"}</div>'
+                    ev_str = f"{ev:.2f}" if ev is not None else "—"
+                    rows += (f'<td style="padding:3px 5px">'
+                             f'<div style="background:rgba(100,116,139,0.04);border:1px dashed rgba(100,116,139,0.2);'
+                             f'border-radius:6px;padding:5px 6px;text-align:center">'
+                             f'<div style="font-size:0.62rem;color:#64748B;font-weight:600;margin-bottom:1px">{dlbl}</div>'
+                             f'<div style="font-size:0.6rem;color:#475569;margin-bottom:1px">FORECAST</div>'
+                             f'<div style="font-weight:700;color:#94A3B8;font-size:0.85rem">{ev_str}</div>'
                              f'</div></td>')
             rows += '</tr>'
+
         return (f'<div style="overflow-x:auto">'
-                f'<table style="width:100%;border-collapse:collapse">{hdr}<tbody>{rows}</tbody></table></div>')
+                f'<table style="width:100%;border-collapse:collapse;font-family:inherit">'
+                f'{hdr}<tbody>{rows}</tbody></table></div>')
 
     # ─────────────────────────────────────────────────────────────
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
@@ -3387,7 +3410,7 @@ with tab0:
     _eps_inline_html = f"""
 <div style="background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px;margin-bottom:18px">
   <!-- Header row — click anywhere to collapse/expand -->
-  <div onclick="fiqEToggle()" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:0">
+  <div onclick="window.fiqEToggle&&window.fiqEToggle()" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:0">
     <div>
       <div style="font-size:0.92rem;font-weight:800;color:#F59E0B">
         📋 EPS Earnings Tracker
@@ -3402,17 +3425,17 @@ with tab0:
   <div id="fiq-eps-body">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button id="fiqt-spx" onclick="event.stopPropagation();fiqTab('spx')"
+        <button id="fiqt-spx" onclick="event.stopPropagation();window.fiqTab&&window.fiqTab('spx')"
           style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
                  border:1px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.15);color:#F59E0B">S&amp;P 500 Top 15</button>
-        <button id="fiqt-ndx" onclick="event.stopPropagation();fiqTab('ndx')"
+        <button id="fiqt-ndx" onclick="event.stopPropagation();window.fiqTab&&window.fiqTab('ndx')"
           style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
                  border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">NASDAQ 100 Top 15</button>
-        <button id="fiqt-ftse" onclick="event.stopPropagation();fiqTab('ftse')"
+        <button id="fiqt-ftse" onclick="event.stopPropagation();window.fiqTab&&window.fiqTab('ftse')"
           style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
                  border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">FTSE 100 Top 10</button>
       </div>
-      <input type="text" id="fiq-eticker" oninput="fiqEF(this.value)" placeholder="🔍 Filter ticker…"
+      <input type="text" id="fiq-eticker" oninput="window.fiqEF&&window.fiqEF(this.value)" placeholder="🔍 Filter ticker…"
         onclick="event.stopPropagation()"
         style="background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;
                padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:150px;outline:none">
