@@ -2959,17 +2959,26 @@ with tab0:
                 out[t] = []
         return out
 
-    @st.cache_data(ttl=86400)
+    @st.cache_data(ttl=86400, show_spinner=False)
     def _eps_batch(tickers_key: str) -> dict:
         result = {}
         for tk in tickers_key.split(","):
             try:
-                r1 = requests.get(f"{FMP_BASE}/v3/historical/earning_calendar/{tk}?limit=8&apikey={FMP_KEY}", timeout=6)
-                r2 = requests.get(f"{FMP_BASE}/v3/analyst-estimates/{tk}?period=quarter&limit=4&apikey={FMP_KEY}", timeout=6)
-                result[tk] = {
-                    "hist": r1.json() if r1.status_code == 200 and isinstance(r1.json(), list) else [],
-                    "est":  r2.json() if r2.status_code == 200 and isinstance(r2.json(), list) else [],
-                }
+                r1 = requests.get(f"{FMP_BASE}/v3/historical/earning_calendar/{tk}?limit=8&apikey={FMP_KEY}", timeout=8)
+                r2 = requests.get(f"{FMP_BASE}/v3/analyst-estimates/{tk}?period=quarter&limit=4&apikey={FMP_KEY}", timeout=8)
+                # earning_calendar may return list or {"historical":[...]}
+                if r1.status_code == 200:
+                    j1 = r1.json()
+                    if isinstance(j1, dict): j1 = j1.get("historical", j1.get("earningsCalendar", []))
+                    if not isinstance(j1, list): j1 = []
+                else: j1 = []
+                # analyst-estimates returns list
+                if r2.status_code == 200:
+                    j2 = r2.json()
+                    if isinstance(j2, dict): j2 = j2.get("quarterly", [])
+                    if not isinstance(j2, list): j2 = []
+                else: j2 = []
+                result[tk] = {"hist": j1, "est": j2}
             except Exception:
                 result[tk] = {"hist": [], "est": []}
         return result
@@ -3314,29 +3323,41 @@ with tab0:
 
     _eps_inline_html = f"""
 <div style="background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px;margin-bottom:18px">
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+  <!-- Header row — click anywhere to collapse/expand -->
+  <div onclick="fiqEToggle()" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:0">
     <div>
-      <div style="font-size:0.92rem;font-weight:800;color:#F59E0B">📋 EPS Earnings Tracker — 2026</div>
-      <div style="font-size:0.65rem;color:#475569;margin-top:2px">Actual vs Estimate · Beat/Miss · ✅ Beat &gt;+2% · ❌ Miss &lt;-2% · ≈ In-line · Grey = future estimate</div>
+      <div style="font-size:0.92rem;font-weight:800;color:#F59E0B">
+        📋 EPS Earnings Tracker
+        <span style="font-size:0.65rem;font-weight:400;color:#475569;margin-left:8px">Actual vs Estimate · Beat/Miss · ✅ &gt;+2% · ❌ &lt;-2% · ≈ In-line · Grey = future est</span>
+      </div>
     </div>
-    <input type="text" id="fiq-eticker" oninput="fiqEF(this.value)" placeholder="🔍 Filter ticker…"
-      style="background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;
-             padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:160px;outline:none">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span id="fiq-eps-chevron" style="color:#F59E0B;font-size:1rem;transition:transform 0.25s">▼</span>
+    </div>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-    <button id="fiqt-spx" onclick="fiqTab('spx')"
-      style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
-             border:1px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.15);color:#F59E0B">S&amp;P 500 Top 15</button>
-    <button id="fiqt-ndx" onclick="fiqTab('ndx')"
-      style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
-             border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">NASDAQ 100 Top 15</button>
-    <button id="fiqt-ftse" onclick="fiqTab('ftse')"
-      style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
-             border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">FTSE 100 Top 10</button>
+  <!-- Collapsible body -->
+  <div id="fiq-eps-body">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="fiqt-spx" onclick="event.stopPropagation();fiqTab('spx')"
+          style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
+                 border:1px solid rgba(245,158,11,0.5);background:rgba(245,158,11,0.15);color:#F59E0B">S&amp;P 500 Top 15</button>
+        <button id="fiqt-ndx" onclick="event.stopPropagation();fiqTab('ndx')"
+          style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
+                 border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">NASDAQ 100 Top 15</button>
+        <button id="fiqt-ftse" onclick="event.stopPropagation();fiqTab('ftse')"
+          style="cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;
+                 border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569">FTSE 100 Top 10</button>
+      </div>
+      <input type="text" id="fiq-eticker" oninput="fiqEF(this.value)" placeholder="🔍 Filter ticker…"
+        onclick="event.stopPropagation()"
+        style="background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;
+               padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:150px;outline:none">
+    </div>
+    <div id="fiq-ep-spx" style="display:block">{_eps_spx_html}</div>
+    <div id="fiq-ep-ndx" style="display:none">{_eps_ndx_html}</div>
+    <div id="fiq-ep-ftse" style="display:none">{_eps_ftse_html}</div>
   </div>
-  <div id="fiq-ep-spx" style="display:block">{_eps_spx_html}</div>
-  <div id="fiq-ep-ndx" style="display:none">{_eps_ndx_html}</div>
-  <div id="fiq-ep-ftse" style="display:none">{_eps_ftse_html}</div>
 </div>
 <script>
 window.fiqTab=function(id){{
@@ -3362,6 +3383,14 @@ window.fiqEF=function(q){{
       r.style.display=!q||tk.includes(q.toLowerCase())?'':'none';
     }});
   }});
+}};
+window.fiqEToggle=function(){{
+  var body=document.getElementById('fiq-eps-body');
+  var chev=document.getElementById('fiq-eps-chevron');
+  if(!body)return;
+  var open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  if(chev)chev.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
 }};
 </script>"""
 
