@@ -3436,6 +3436,13 @@ with tab0:
         data    = {"spx": _edata_spx, "ndx": _edata_ndx, "ftse": _edata_ftse}[idx_key]
         return _etable(tickers, data)
 
+    # Count how many tickers have surprise data (for debug badge)
+    _n_with_beat = sum(
+        1 for tk in _ALL_EPS_T
+        if any(h.get("surprise_pct") is not None for h in _edata_all.get(tk, {}).get("hist", []))
+    )
+    _n_with_data = sum(1 for tk in _ALL_EPS_T if _edata_all.get(tk, {}).get("hist"))
+
     _eps_spx_html  = _eps_section("spx")
     _eps_ndx_html  = _eps_section("ndx")
     _eps_ftse_html = _eps_section("ftse")
@@ -3448,6 +3455,7 @@ with tab0:
       <div style="font-size:0.92rem;font-weight:800;color:#F59E0B">
         📋 EPS Earnings Tracker
         <span style="font-size:0.65rem;font-weight:400;color:#475569;margin-left:8px">Actual vs Estimate · Beat/Miss · ✅ &gt;+2% · ❌ &lt;-2% · ≈ In-line · Grey = future est</span>
+        <span style="font-size:0.58rem;color:#334155;margin-left:10px">{_n_with_data} tickers loaded · {_n_with_beat} with beat data</span>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
@@ -3776,66 +3784,76 @@ window.fiqEToggle=function(){{
     # iframe where scripts run, and we attach functions to window.parent (the main app).
     import streamlit.components.v1 as _cv1
     _cv1.html("""<!DOCTYPE html><html><body><script>
-(function setup(){
-  var p=window.parent;
-  if(!p||!p.document)return;
+(function(){
+  // var fn — not a named function expression, so accessible in outer scope
+  var run=function(){
+    var p=window.parent;
+    if(!p||!p.document)return;
 
-  p.fiqTab=function(id){
-    ['spx','ndx','ftse'].forEach(function(k){
-      var panel=p.document.getElementById('fiq-ep-'+k);
-      var btn=p.document.getElementById('fiqt-'+k);
-      if(panel)panel.style.display=(k===id)?'block':'none';
-      if(btn){
-        btn.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
-        btn.style.color=(k===id)?'#F59E0B':'#475569';
-        btn.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
-      }
-    });
-  };
-
-  p.fiqEF=function(q){
-    p.document.querySelectorAll('[id^="fiq-ep-"]').forEach(function(panel){
-      if(panel.style.display==='none')return;
-      panel.querySelectorAll('tbody tr').forEach(function(r){
-        var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
-        r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';
+    p.fiqTab=function(id){
+      ['spx','ndx','ftse'].forEach(function(k){
+        var panel=p.document.getElementById('fiq-ep-'+k);
+        var btn=p.document.getElementById('fiqt-'+k);
+        if(panel)panel.style.display=(k===id)?'block':'none';
+        if(btn){
+          btn.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
+          btn.style.color=(k===id)?'#F59E0B':'#475569';
+          btn.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
+        }
       });
-    });
+    };
+
+    p.fiqEF=function(q){
+      p.document.querySelectorAll('[id^="fiq-ep-"]').forEach(function(panel){
+        if(panel.style.display==='none')return;
+        panel.querySelectorAll('tbody tr').forEach(function(r){
+          var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
+          r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';
+        });
+      });
+    };
+
+    p.fiqEToggle=function(){
+      var b=p.document.getElementById('fiq-eps-body');
+      var c=p.document.getElementById('fiq-eps-chevron');
+      if(!b)return;
+      var open=b.style.display!=='none';
+      b.style.display=open?'none':'block';
+      if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
+    };
+
+    p.fe=function(e,svgId){
+      e.stopPropagation();e.preventDefault();
+      var s=p.document.getElementById(svgId);
+      if(!s){var all=p.document.querySelectorAll('[id^="fs-"]');for(var i=0;i<all.length;i++){if(all[i].id===svgId){s=all[i];break;}}}
+      var ov=p.document.getElementById('fiq-modal-ov');
+      if(!ov)return;
+      p.document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';
+      p.document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style="color:#64748B">No data</p>';
+      ov.style.display='flex';
+    };
+
+    p.fiqMHide=function(){
+      var ov=p.document.getElementById('fiq-modal-ov');
+      if(ov)ov.style.display='none';
+    };
+
+    // ESC to close modal
+    if(!p._fiqKeyBound){
+      p.document.addEventListener('keydown',function(e){if(e.key==='Escape'&&p.fiqMHide)p.fiqMHide();});
+      p._fiqKeyBound=true;
+    }
   };
 
-  p.fiqEToggle=function(){
-    var b=p.document.getElementById('fiq-eps-body');
-    var c=p.document.getElementById('fiq-eps-chevron');
-    if(!b)return;
-    var open=b.style.display!=='none';
-    b.style.display=open?'none':'block';
-    if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
-  };
+  run();
+  setTimeout(run,400);
+  setTimeout(run,1500);
 
-  p.fe=function(e,svgId){
-    e.stopPropagation();e.preventDefault();
-    var s=p.document.getElementById(svgId);
-    if(!s){var all=p.document.querySelectorAll('[id^="fs-"]');for(var i=0;i<all.length;i++){if(all[i].id===svgId){s=all[i];break;}}}
-    var ov=p.document.getElementById('fiq-modal-ov');
-    if(!ov)return;
-    p.document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';
-    p.document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style="color:#64748B">No data</p>';
-    ov.style.display='flex';
-  };
-
-  p.fiqMHide=function(){
-    var ov=p.document.getElementById('fiq-modal-ov');
-    if(ov)ov.style.display='none';
-  };
-
-  p.document.addEventListener('keydown',function(e){if(e.key==='Escape')p.fiqMHide();});
-}
-
-// Run immediately + retry after DOM settles
-setup();
-setTimeout(setup,300);
-setTimeout(setup,1200);
-</script></body></html>""", height=0, scrolling=False)
+  // Re-run whenever Streamlit re-renders
+  var obs=new MutationObserver(function(){run();});
+  obs.observe(window.parent.document.body,{childList:true,subtree:false});
+})();
+</script></body></html>""", height=1, scrolling=False)
 
     # ──────────────────────────────────────────────────────
     # END OF TAB 0
