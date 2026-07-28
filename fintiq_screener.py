@@ -2990,41 +2990,57 @@ with tab0:
                 except Exception:
                     ed = None
 
-                # ── STEP 2: earningsHistory via Yahoo Finance quoteSummary ──
-                # Use a real browser UA + Referer; Yahoo rate-limits yfinance's own UA string.
+                # ── STEP 2: earningsHistory via yfinance internal session (handles auth/crumb) ──
+                # yfinance's _data object holds a session with Yahoo cookies+crumb already set.
+                # After earnings_dates is called, that session is initialised.
                 yh_map = {}
+                def _parse_earnings_history(raw):
+                    res = (raw or {}).get("quoteSummary", {}).get("result") or []
+                    if not res: return
+                    for h in res[0].get("earningsHistory", {}).get("history", []):
+                        qt  = h.get("quarter", {})
+                        ds  = qt.get("fmt", "")
+                        if not ds:
+                            raw_ts = qt.get("raw")
+                            if raw_ts:
+                                from datetime import datetime as _dt2
+                                ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
+                        act  = _safe_float((h.get("epsActual") or {}).get("raw"))
+                        estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
+                        sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
+                        if sp is not None: sp = sp * 100  # 0.043 → 4.3%
+                        if ds and act is not None:
+                            yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
+
+                _eh_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
+                _eh_params = {"modules": "earningsHistory"}
+
+                # Try 1: yfinance internal authenticated session
                 try:
-                    _HDR = {
-                        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                       "Chrome/125.0.0.0 Safari/537.36"),
-                        "Accept": "application/json,text/plain,*/*",
-                        "Accept-Language": "en-US,en;q=0.9",
-                        "Referer": f"https://finance.yahoo.com/quote/{tk}/analysis",
-                        "Origin": "https://finance.yahoo.com",
-                    }
-                    url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
-                           f"?modules=earningsHistory")
-                    r = requests.get(url, headers=_HDR, timeout=8)
-                    if r.status_code == 200:
-                        res = r.json().get("quoteSummary", {}).get("result") or []
-                        if res:
-                            for h in res[0].get("earningsHistory", {}).get("history", []):
-                                qt  = h.get("quarter", {})
-                                ds  = qt.get("fmt", "")
-                                if not ds:
-                                    raw_ts = qt.get("raw")
-                                    if raw_ts:
-                                        from datetime import datetime as _dt2
-                                        ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
-                                act  = _safe_float((h.get("epsActual") or {}).get("raw"))
-                                estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
-                                sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
-                                if sp is not None: sp = sp * 100  # 0.043 → 4.3%
-                                if ds and act is not None:
-                                    yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
-                except Exception:
-                    pass
+                    _yfd = getattr(obj, '_data', None)
+                    for _method in ('get_raw_json', 'cache_get', 'get'):
+                        _fn = getattr(_yfd, _method, None)
+                        if _fn:
+                            _raw = _fn(url=_eh_url, params=_eh_params)
+                            if isinstance(_raw, requests.Response): _raw = _raw.json()
+                            _parse_earnings_history(_raw)
+                            if yh_map: break
+                except Exception: pass
+
+                # Try 2: browser UA + Referer (bypasses yfinance UA blocking)
+                if not yh_map:
+                    try:
+                        _HDR = {
+                            "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                           "Chrome/125.0.0.0 Safari/537.36"),
+                            "Accept": "application/json,text/plain,*/*",
+                            "Referer": f"https://finance.yahoo.com/quote/{tk}/analysis",
+                        }
+                        r = requests.get(_eh_url, params=_eh_params, headers=_HDR, timeout=8)
+                        if r.status_code == 200:
+                            _parse_earnings_history(r.json())
+                    except Exception: pass
 
                 # ── STEP 3: merge earnings_dates rows with earningsHistory beat data ──
                 if ed is not None and not ed.empty:
@@ -3090,7 +3106,7 @@ with tab0:
                 return tk, {"hist": [], "est": []}
 
         result = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
             for tk, data in pool.map(_fetch_one, tickers):
                 result[tk] = data
         return result
@@ -3343,9 +3359,56 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # EPS HEATMAP BUILDER
     # ─────────────────────────────────────────────────────────────
-    _SPX_T = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","BRK-B","AVGO","JPM","LLY","UNH","V","XOM","MA"]
-    _NDX_T = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","ASML","ADBE","COST","AMD","QCOM","NFLX","INTC"]
-    _FTSE_T= ["SHEL.L","AZN.L","HSBA.L","ULVR.L","RIO.L","BP.L","GSK.L","LSEG.L","DGE.L","LLOY.L","BATS.L","NG.L","RR.L","BARC.L","PRU.L"]
+    # ── Full index ticker lists ──────────────────────────────────────────────────
+    _SPX_T = [
+        # S&P 500 — top 100 by market cap
+        "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","BRK-B","AVGO","JPM",
+        "LLY","UNH","V","XOM","MA","COST","HD","PG","JNJ","WMT",
+        "NFLX","CRM","BAC","ABBV","KO","MRK","CVX","TMO","ACN","MCD",
+        "ADBE","CSCO","ABT","ORCL","WFC","AMD","GE","CAT","GS","RTX",
+        "SPGI","BLK","AXP","ISRG","BKNG","SYK","NOW","AMAT","AMGN","INTU",
+        "TXN","HON","GILD","VRTX","LIN","IBM","CB","CMCSA","PLD","DHR",
+        "DE","MDT","SO","MO","BSX","SCHW","DUK","CL","BDX","MMM",
+        "EOG","SBUX","HCA","ZTS","ADI","PGR","NSC","REGN","FDX","KLAC",
+        "EMR","PAYX","CME","LRCX","CDNS","SNPS","WM","APD","SHW","ITW",
+        "MCO","WELL","PSA","EQT","ICE","TRV","AFL","AJG","CBRE","ELV",
+    ]
+    _NDX_T = [
+        # NASDAQ 100 — full composition
+        "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","ASML","ADBE",
+        "COST","AMD","QCOM","NFLX","INTC","INTU","CSCO","AMAT","TXN","AMGN",
+        "SBUX","GILD","LRCX","ADI","REGN","MDLZ","MELI","KLAC","SNPS","CDNS",
+        "PANW","MRVL","PYPL","ADP","MNST","KDP","FTNT","ODFL","ROST","DXCM",
+        "CTAS","IDXX","EXC","PCAR","ORLY","FAST","CTSH","BIIB","DLTR","VRSK",
+        "ON","FANG","GEHC","ILMN","MDB","ZS","CRWD","ABNB","TEAM","TTD",
+        "DDOG","ANSS","WDAY","PAYX","CPRT","TTWO","EA","LULU","XEL","SWKS",
+        "FISV","MCHP","WDC","NTAP","ZBRA","FOXA","FOX","ULTA","MAR","NXPI",
+        "CHKP","CSGP","ALGN","VRTX","NTES","JD","EBAY","ENPH","MRNA","WBA",
+        "COIN","RIVN","LCID","OKTA","ZM","DOCU","SIRI","TMUS","SPLK","PDD",
+    ]
+    _FTSE_T = [
+        # FTSE 100 — full composition
+        "SHEL.L","AZN.L","HSBA.L","ULVR.L","RIO.L","BP.L","GSK.L","LSEG.L","DGE.L","LLOY.L",
+        "BATS.L","NG.L","RR.L","BARC.L","PRU.L","NWG.L","REL.L","EXPN.L","WPP.L","VOD.L",
+        "IMB.L","HLMA.L","SGE.L","AUTO.L","TSCO.L","JD.L","IHG.L","SN.L","PSON.L","ABF.L",
+        "CPG.L","FLTR.L","CRDA.L","BKG.L","SBRY.L","MKS.L","RKT.L","STAN.L","AAL.L","KGF.L",
+        "WEIR.L","LAND.L","SGRO.L","BLND.L","AHT.L","BA.L","CCH.L","EDV.L","HLN.L","IMI.L",
+        "SSE.L","SVT.L","UU.L","WTB.L","BME.L","FRES.L","SDR.L","III.L","MNG.L","OCDO.L",
+        "SPX.L","STJ.L","PFC.L","RS1.L","SMDS.L","SMIN.L","MRO.L","DCC.L","FCIT.L","GFS.L",
+        "INF.L","HWDN.L","JUST.L","MNDI.L","NXT.L","PSH.L","QQ.L","SAFE.L","SKG.L","SMT.L",
+        "TW.L","ULVR.L","VTY.L","WDS.L","XP.L","BNZL.L","GKN.L","LGEN.L","AV.L","RSA.L",
+        "GLEN.L","ANTM.L","CNA.L","ENT.L","EVR.L","HARL.L","HIK.L","IPO.L","JUP.L","LSE.L",
+    ]
+    _STOXX_T = [
+        # Euro Stoxx 50 — full composition (Yahoo Finance symbols)
+        "ASML.AS","SAP.DE","MC.PA","TTE.PA","SIE.DE","RMS.PA","SAN.PA","AIR.PA",
+        "SU.PA","OR.PA","AI.PA","ALV.DE","MUV2.DE","BNP.PA","DTE.DE","INGA.AS",
+        "IBE.MC","ITX.MC","CS.PA","IFX.DE","ENEL.MI","ADYEN.AS","BAS.DE","ISP.MI",
+        "UCG.MI","ENI.MI","RACE","RI.PA","KER.PA","BN.PA","SAF.PA","DG.PA",
+        "DHL.DE","VOW3.DE","BMW.DE","DB1.DE","PRX.AS","REP.MC","ABI.BR","AD.AS",
+        "PHIA.AS","STLA","NDA-FI.HE","NOKIA.HE","EL.PA","LR.PA","SHL.DE","RNO.PA",
+        "VIV.PA","CRH",
+    ]
 
     def _qlbl(ds):
         """Short label like 'Jun 26' from a date string."""
@@ -3441,15 +3504,14 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
-    # One combined parallelised cache call — 40 tickers fetched concurrently (~3s vs 40s sequential)
-    _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T))  # deduplicated
-    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v3")  # v3 = browser UA headers
-    _edata_spx = _edata_ndx = _edata_ftse = _edata_all
+    # One combined parallelised cache call — all tickers fetched concurrently
+    _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T + _STOXX_T))  # deduplicated
+    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v5")  # v5 = full indices + stoxx
+    # All indices share the same data dict (keyed by ticker)
 
     def _eps_section(idx_key):
-        tickers = {"spx": _SPX_T, "ndx": _NDX_T, "ftse": _FTSE_T}[idx_key]
-        data    = {"spx": _edata_spx, "ndx": _edata_ndx, "ftse": _edata_ftse}[idx_key]
-        return _etable(tickers, data)
+        tickers = {"spx": _SPX_T, "ndx": _NDX_T, "ftse": _FTSE_T, "stoxx": _STOXX_T}[idx_key]
+        return _etable(tickers, _edata_all)
 
     # Count how many tickers have surprise data (for debug badge)
     _n_with_beat = sum(
@@ -3458,9 +3520,10 @@ with tab0:
     )
     _n_with_data = sum(1 for tk in _ALL_EPS_T if _edata_all.get(tk, {}).get("hist"))
 
-    _eps_spx_html  = _eps_section("spx")
-    _eps_ndx_html  = _eps_section("ndx")
-    _eps_ftse_html = _eps_section("ftse")
+    _eps_spx_html   = _eps_section("spx")
+    _eps_ndx_html   = _eps_section("ndx")
+    _eps_ftse_html  = _eps_section("ftse")
+    _eps_stoxx_html = _eps_section("stoxx")
 
     _eps_inline_html = f"""
 <div style="background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px;margin-bottom:18px">
@@ -3740,24 +3803,29 @@ window.fiqEToggle=function(){{
 """, unsafe_allow_html=True)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
-    # JS functions are defined INSIDE the iframe so no cross-frame script injection needed.
-    # That's the only approach that works: script tags in st.markdown are never executed by React,
-    # and script injection into parent head is blocked by Streamlit's CSP on Railway.
     import streamlit.components.v1 as _cv1
+    # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
+    _eps_h = 880
     _cv1.html(f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8">
 <style>
-*{{box-sizing:border-box}}
-body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:transparent;color:#F1F5F9}}
-.wrap{{background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px 18px}}
-.hdr{{cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}}
+*{{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#1E3A5F transparent}}
+*::-webkit-scrollbar{{width:5px;height:5px}}
+*::-webkit-scrollbar-track{{background:transparent}}
+*::-webkit-scrollbar-thumb{{background:#1E3A5F;border-radius:3px}}
+body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:transparent;color:#F1F5F9;overflow:hidden}}
+.wrap{{background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px 18px;height:100vh;display:flex;flex-direction:column}}
+.hdr{{cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex-shrink:0}}
 .chevron{{color:#F59E0B;font-size:1rem;transition:transform 0.25s;display:inline-block}}
-.tab-btn{{cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569;transition:all 0.15s;outline:none}}
+.eps-body{{display:flex;flex-direction:column;flex:1;min-height:0;margin-top:10px}}
+.tab-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;flex-shrink:0}}
+.tab-btn{{cursor:pointer;padding:5px 12px;border-radius:20px;font-size:0.7rem;font-weight:600;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569;transition:all 0.15s;outline:none;white-space:nowrap}}
 .tab-btn.active{{border-color:rgba(245,158,11,0.5)!important;background:rgba(245,158,11,0.15)!important;color:#F59E0B!important}}
 .filter{{background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:150px;outline:none}}
+.panel{{flex:1;overflow-y:auto;min-height:0}}
 table{{width:100%;border-collapse:collapse;font-family:inherit}}
-thead tr{{background:rgba(13,31,53,0.95)}}
+thead tr{{background:rgba(13,31,53,0.98);position:sticky;top:0;z-index:2}}
 th{{text-align:left;padding:7px 12px;color:#475569;font-size:0.63rem;font-weight:700;letter-spacing:0.04em;white-space:nowrap}}
 th:not(:first-child){{text-align:center;padding:7px 8px}}
 tbody tr{{border-bottom:1px solid rgba(255,255,255,0.05)}}
@@ -3769,83 +3837,72 @@ td:first-child{{padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem
 <div class="wrap">
   <div class="hdr" onclick="fiqEToggle()">
     <div>
-      <span style="font-size:0.92rem;font-weight:800;color:#F59E0B">📋 EPS Earnings Tracker</span>
-      <span style="font-size:0.65rem;font-weight:400;color:#475569;margin-left:8px">Actual vs Estimate · Beat/Miss · ✅ &gt;+2% · ❌ &lt;-2% · ≈ In-line · Grey = future est</span>
-      <span style="font-size:0.58rem;color:#334155;margin-left:10px">{_n_with_data} tickers loaded · {_n_with_beat} with beat data</span>
+      <span style="font-size:0.9rem;font-weight:800;color:#F59E0B">📋 EPS Earnings Tracker</span>
+      <span style="font-size:0.62rem;font-weight:400;color:#475569;margin-left:8px">Actual vs Estimate · Beat/Miss · ✅ &gt;+2% · ❌ &lt;-2% · ≈ In-line</span>
+      <span style="font-size:0.56rem;color:#334155;margin-left:8px">{_n_with_data} loaded · {_n_with_beat} with beat data</span>
     </div>
     <span id="chev" class="chevron">▼</span>
   </div>
-  <div id="eps-body">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="tab-btn active" id="btn-spx" onclick="event.stopPropagation();fiqTab('spx')">S&amp;P 500 Top 15</button>
-        <button class="tab-btn" id="btn-ndx" onclick="event.stopPropagation();fiqTab('ndx')">NASDAQ 100 Top 15</button>
-        <button class="tab-btn" id="btn-ftse" onclick="event.stopPropagation();fiqTab('ftse')">FTSE 100 Top 15</button>
+  <div id="eps-body" class="eps-body">
+    <div class="tab-row">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="tab-btn active" id="btn-spx"  onclick="event.stopPropagation();fiqTab('spx')">🇺🇸 S&amp;P 500 ({len(_SPX_T)})</button>
+        <button class="tab-btn"        id="btn-ndx"  onclick="event.stopPropagation();fiqTab('ndx')">🇺🇸 NASDAQ 100 ({len(_NDX_T)})</button>
+        <button class="tab-btn"        id="btn-ftse" onclick="event.stopPropagation();fiqTab('ftse')">🇬🇧 FTSE 100 ({len(_FTSE_T)})</button>
+        <button class="tab-btn"        id="btn-stoxx" onclick="event.stopPropagation();fiqTab('stoxx')">🇪🇺 Euro Stoxx 50 ({len(_STOXX_T)})</button>
       </div>
-      <input class="filter" type="text" oninput="fiqEF(this.value)" onclick="event.stopPropagation()" placeholder="🔍 Filter ticker…">
+      <input class="filter" type="text" id="eps-filter" oninput="fiqEF(this.value)" onclick="event.stopPropagation()" placeholder="🔍 Search all tickers…">
     </div>
-    <div id="panel-spx">{_eps_spx_html}</div>
-    <div id="panel-ndx" style="display:none">{_eps_ndx_html}</div>
-    <div id="panel-ftse" style="display:none">{_eps_ftse_html}</div>
+    <div id="panel-spx"   class="panel">{_eps_spx_html}</div>
+    <div id="panel-ndx"   class="panel" style="display:none">{_eps_ndx_html}</div>
+    <div id="panel-ftse"  class="panel" style="display:none">{_eps_ftse_html}</div>
+    <div id="panel-stoxx" class="panel" style="display:none">{_eps_stoxx_html}</div>
   </div>
 </div>
 <script>
+var _TABS = ['spx','ndx','ftse','stoxx'];
 var _activeTab = 'spx';
-
-function autoResize() {{
-  try {{
-    var h = document.documentElement.scrollHeight;
-    window.frameElement.style.height = (h + 4) + 'px';
-  }} catch(e) {{}}
-}}
 
 function fiqTab(id) {{
   _activeTab = id;
-  // Restore all rows, then show only this tab
+  var fi = document.getElementById('eps-filter');
+  if (fi) fi.value = '';
   document.querySelectorAll('tbody tr').forEach(function(r) {{ r.style.display = ''; }});
-  ['spx','ndx','ftse'].forEach(function(k) {{
+  _TABS.forEach(function(k) {{
     var panel = document.getElementById('panel-' + k);
     var btn   = document.getElementById('btn-' + k);
     if (panel) panel.style.display = (k === id) ? '' : 'none';
     if (btn)   btn.className = 'tab-btn' + (k === id ? ' active' : '');
   }});
-  // Re-apply any active filter
-  var fi = document.querySelector('.filter');
-  if (fi && fi.value) fiqEF(fi.value);
-  autoResize();
 }}
 
 function fiqEF(q) {{
-  q = (q || '').toLowerCase();
+  q = (q || '').toLowerCase().trim();
   if (!q) {{
-    // No query — restore normal tab view
-    ['spx','ndx','ftse'].forEach(function(k) {{
-      var panel = document.getElementById('panel-' + k);
-      if (panel) panel.style.display = (k === _activeTab) ? '' : 'none';
+    _TABS.forEach(function(k) {{
+      var p = document.getElementById('panel-' + k);
+      if (p) p.style.display = (k === _activeTab) ? '' : 'none';
     }});
     document.querySelectorAll('tbody tr').forEach(function(r) {{ r.style.display = ''; }});
-  }} else {{
-    // Show all panels, filter rows across all tabs
-    ['spx','ndx','ftse'].forEach(function(k) {{
-      var panel = document.getElementById('panel-' + k);
-      if (panel) panel.style.display = '';
-    }});
-    document.querySelectorAll('tbody tr').forEach(function(r) {{
-      var txt = (r.querySelector('td') && r.querySelector('td').textContent || '').toLowerCase();
-      r.style.display = txt.includes(q) ? '' : 'none';
-    }});
-    // Hide panels with no visible rows
-    ['spx','ndx','ftse'].forEach(function(k) {{
-      var panel = document.getElementById('panel-' + k);
-      if (!panel) return;
-      var anyVisible = false;
-      panel.querySelectorAll('tbody tr').forEach(function(r) {{
-        if (r.style.display !== 'none') anyVisible = true;
-      }});
-      panel.style.display = anyVisible ? '' : 'none';
-    }});
+    return;
   }}
-  autoResize();
+  // Show ALL panels, filter rows across all 4 indices
+  _TABS.forEach(function(k) {{
+    var p = document.getElementById('panel-' + k);
+    if (p) p.style.display = '';
+  }});
+  document.querySelectorAll('tbody tr').forEach(function(r) {{
+    var txt = (r.querySelector('td') ? r.querySelector('td').textContent : '').toLowerCase();
+    r.style.display = txt.includes(q) ? '' : 'none';
+  }});
+  // Hide empty panels
+  _TABS.forEach(function(k) {{
+    var p = document.getElementById('panel-' + k);
+    if (!p) return;
+    var any = false;
+    p.querySelectorAll('tbody tr').forEach(function(r) {{ if (r.style.display !== 'none') any = true; }});
+    p.style.display = any ? '' : 'none';
+  }});
 }}
 
 function fiqEToggle() {{
@@ -3854,17 +3911,11 @@ function fiqEToggle() {{
   if (!b) return;
   var open = b.style.display !== 'none';
   b.style.display = open ? 'none' : '';
+  try {{ window.frameElement.style.height = open ? '54px' : '{_eps_h}px'; }} catch(e) {{}}
   if (c) c.style.transform = open ? 'rotate(-90deg)' : '';
-  autoResize();
 }}
-
-// Auto-resize on load and whenever content height changes
-window.addEventListener('load', autoResize);
-try {{
-  new ResizeObserver(autoResize).observe(document.body);
-}} catch(e) {{}}
 </script>
-</body></html>""", height=1050, scrolling=False)
+</body></html>""", height=_eps_h, scrolling=False)
 
     st.markdown(f"""
 <!-- ═══ MAJOR MARKETS ═══ -->
