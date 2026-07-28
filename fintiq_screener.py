@@ -3677,16 +3677,6 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # RENDER COMPLETE DASHBOARD
     # ─────────────────────────────────────────────────────────────
-    st.markdown(f"""
-<div style="display:flex;align-items:center;justify-content:space-between;
-            padding:4px 0 10px;border-bottom:1px solid rgba(245,158,11,0.15);margin-bottom:12px">
-  <div>
-    <div style="font-size:1.3rem;font-weight:900;color:#F1F5F9">📊 Fintiq Dashboard</div>
-    <div style="font-size:0.72rem;color:#64748B;margin-top:1px">Macro intelligence · Global markets · Personal positions</div>
-  </div>
-  <div style="font-size:0.65rem;color:#475569;text-align:right">Refreshes every 5 min<br><span style="color:#22C55E">● Live</span></div>
-</div>
-""", unsafe_allow_html=True)
 
     # ── Build chart data JSON for Chart.js modal ──
     import json as _json
@@ -3760,7 +3750,7 @@ body{{margin:0;padding:0 2px 4px;background:transparent;
 .cmf{{text-align:center;font-size:0.58rem;color:#475569;margin-top:10px}}
 </style>
 </head><body>
-<div class="sh">🌐 Macro Indicators <span class="ssub">· hover → trend · click → expand chart</span></div>
+<div class="sh">🌐 Macro Indicators <span class="ssub">· hover → trend · click → expand chart</span><span style="float:right;font-size:0.58rem;font-weight:400;color:#475569">● <span style="color:#22C55E">Live</span> · refreshes 5 min</span></div>
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">{_mr2}</div>
 
