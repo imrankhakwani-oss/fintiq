@@ -3361,7 +3361,7 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # ── Full index ticker lists ──────────────────────────────────────────────────
     _SPX_T = [
-        # S&P 500 — top 100 by market cap
+        # S&P 500 — comprehensive 250 by market cap (covers >90% of index weight)
         "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","BRK-B","AVGO","JPM",
         "LLY","UNH","V","XOM","MA","COST","HD","PG","JNJ","WMT",
         "NFLX","CRM","BAC","ABBV","KO","MRK","CVX","TMO","ACN","MCD",
@@ -3371,7 +3371,21 @@ with tab0:
         "DE","MDT","SO","MO","BSX","SCHW","DUK","CL","BDX","MMM",
         "EOG","SBUX","HCA","ZTS","ADI","PGR","NSC","REGN","FDX","KLAC",
         "EMR","PAYX","CME","LRCX","CDNS","SNPS","WM","APD","SHW","ITW",
-        "MCO","WELL","PSA","EQT","ICE","TRV","AFL","AJG","CBRE","ELV",
+        "MCO","WELL","PSA","ICE","TRV","AFL","AJG","CBRE","ELV","LOW",
+        "UPS","ETN","ADP","TGT","AMT","CCI","NEE","AEP","D","XEL",
+        "SRE","EXC","WEC","ES","DTE","ED","EIX","AON","MMC","WTW",
+        "HIG","MET","PRU","AIG","ALL","USB","TFC","CFG","KEY","MTB",
+        "HBAN","RF","FITB","BAX","EW","HOLX","IDXX","IQV","MTD","RMD",
+        "DG","DLTR","KR","TJX","ROST","F","GM","BWA","BA","LMT",
+        "NOC","GD","TDG","HAL","SLB","BKR","OKE","KMI","WMB","MPC",
+        "VLO","PSX","DVN","FANG","HES","COG","APA","MRO","OXY","COP",
+        "PXD","CTRA","EQT","AR","RRC","CNX","SWN","CHK","SM","MTDR",
+        "CARR","OTIS","GEHC","HWM","SPG","O","VICI","AVB","EQR","MAA",
+        "UDR","CPT","ESS","AIV","BXP","SLG","VNO","KIM","REG","FRT",
+        "NNN","ADC","STOR","NETW","GLPI","PINE","EPRT","GTY","NXRT","IRT",
+        "TRNO","REXR","EGP","FR","PLD","DRE","STAG","COLD","CUBE","LSI",
+        "NSA","EXR","SBAC","AMT","CCI","SBA","UNIT","INSP","IHS","LUMN",
+        "T","VZ","TMUS","DISH","SIRI","WBD","PARA","FOX","FOXA","DIS",
     ]
     _NDX_T = [
         # NASDAQ 100 — full composition
@@ -3418,11 +3432,11 @@ with tab0:
         except: return ds[:7] if ds else "?"
 
     def _etable(tickers, data):
-        # Column header: just "Ticker" + 4 relative-time labels
+        # 6 columns: 4 reported + 2 upcoming forecast
         hdr = ('<thead><tr style="background:rgba(13,31,53,0.95)">'
                '<th style="text-align:left;padding:7px 12px;color:#475569;font-size:0.63rem;'
                'font-weight:700;letter-spacing:0.04em;white-space:nowrap">TICKER</th>')
-        for lbl in ["Q (oldest)","Q","Q","Q (latest)"]:
+        for lbl in ["Q-3","Q-2","Q-1","Q (latest)","Q+1 forecast","Q+2 forecast"]:
             hdr += (f'<th style="text-align:center;padding:7px 8px;color:#475569;font-size:0.63rem;'
                     f'font-weight:700;letter-spacing:0.04em">{lbl}</th>')
         hdr += '</tr></thead>'
@@ -3430,26 +3444,27 @@ with tab0:
         rows = ""
         for tk in tickers:
             d = data.get(tk, {}); hist = d.get("hist",[]); est = d.get("est",[])
-            quarters = []; seen = set()
+            seen = set()
+            done_q, future_q = [], []
             for h in hist:
                 fde = (h.get("fiscalDateEnding") or h.get("date",""))[:10]
                 if fde and fde not in seen:
                     seen.add(fde)
-                    quarters.append({
-                        "date": fde,
-                        "act": h.get("eps"),
+                    done_q.append({
+                        "date": fde, "act": h.get("eps"),
                         "est_v": h.get("epsEstimated"),
-                        "surprise": h.get("surprise_pct"),  # from yfinance Surprise(%)
-                        "done": True,
+                        "surprise": h.get("surprise_pct"), "done": True,
                     })
             for e in est:
                 fde = (e.get("date",""))[:10]
                 if fde and fde not in seen:
                     seen.add(fde)
-                    quarters.append({"date":fde,"act":None,"est_v":e.get("estimatedEpsAvg"),"surprise":None,"done":False})
-            quarters.sort(key=lambda x: x.get("date",""))
-            quarters = quarters[-4:]
-            while len(quarters) < 4: quarters.insert(0, None)
+                    future_q.append({"date":fde,"act":None,"est_v":e.get("estimatedEpsAvg"),"surprise":None,"done":False})
+            done_q.sort(key=lambda x: x["date"])
+            future_q.sort(key=lambda x: x["date"])
+            # 4 most recent reported + 2 soonest upcoming
+            quarters = done_q[-4:] + future_q[:2]
+            while len(quarters) < 6: quarters.insert(0, None)
 
             rows += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">'
             rows += (f'<td style="padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem;'
@@ -3506,7 +3521,7 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # One combined parallelised cache call — all tickers fetched concurrently
     _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T + _STOXX_T))  # deduplicated
-    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v5")  # v5 = full indices + stoxx
+    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v6")  # v6 = 250 SPX, 6 cols, no collapse
     # All indices share the same data dict (keyed by ticker)
 
     def _eps_section(idx_key):
@@ -3816,8 +3831,7 @@ window.fiqEToggle=function(){{
 *::-webkit-scrollbar-thumb{{background:#1E3A5F;border-radius:3px}}
 body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:transparent;color:#F1F5F9;overflow:hidden}}
 .wrap{{background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px 18px;height:100vh;display:flex;flex-direction:column}}
-.hdr{{cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex-shrink:0}}
-.chevron{{color:#F59E0B;font-size:1rem;transition:transform 0.25s;display:inline-block}}
+.hdr{{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex-shrink:0}}
 .eps-body{{display:flex;flex-direction:column;flex:1;min-height:0;margin-top:10px}}
 .tab-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;flex-shrink:0}}
 .tab-btn{{cursor:pointer;padding:5px 12px;border-radius:20px;font-size:0.7rem;font-weight:600;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569;transition:all 0.15s;outline:none;white-space:nowrap}}
@@ -3835,13 +3849,12 @@ td:first-child{{padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem
 </head>
 <body>
 <div class="wrap">
-  <div class="hdr" onclick="fiqEToggle()">
+  <div class="hdr">
     <div>
       <span style="font-size:0.9rem;font-weight:800;color:#F59E0B">📋 EPS Earnings Tracker</span>
-      <span style="font-size:0.62rem;font-weight:400;color:#475569;margin-left:8px">Actual vs Estimate · Beat/Miss · ✅ &gt;+2% · ❌ &lt;-2% · ≈ In-line</span>
+      <span style="font-size:0.62rem;font-weight:400;color:#475569;margin-left:8px">Actual vs Estimate · Beat/Miss · ✅ &gt;+2% · ❌ &lt;-2% · ≈ In-line · Grey = forecast</span>
       <span style="font-size:0.56rem;color:#334155;margin-left:8px">{_n_with_data} loaded · {_n_with_beat} with beat data</span>
     </div>
-    <span id="chev" class="chevron">▼</span>
   </div>
   <div id="eps-body" class="eps-body">
     <div class="tab-row">
@@ -3905,15 +3918,6 @@ function fiqEF(q) {{
   }});
 }}
 
-function fiqEToggle() {{
-  var b = document.getElementById('eps-body');
-  var c = document.getElementById('chev');
-  if (!b) return;
-  var open = b.style.display !== 'none';
-  b.style.display = open ? 'none' : '';
-  try {{ window.frameElement.style.height = open ? '54px' : '{_eps_h}px'; }} catch(e) {{}}
-  if (c) c.style.transform = open ? 'rotate(-90deg)' : '';
-}}
 </script>
 </body></html>""", height=_eps_h, scrolling=False)
 
