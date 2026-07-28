@@ -2990,33 +2990,39 @@ with tab0:
                 except Exception:
                     ed = None
 
-                # ── STEP 2: earningsHistory via yfinance's authenticated session ──
-                # After earnings_dates, obj._data.session has Yahoo cookies + crumb
+                # ── STEP 2: earningsHistory via Yahoo Finance quoteSummary ──
+                # Use a real browser UA + Referer; Yahoo rate-limits yfinance's own UA string.
                 yh_map = {}
                 try:
-                    _yf_data = getattr(obj, '_data', None)
-                    _session = getattr(_yf_data, 'session', None)
-                    if _session:
-                        url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
-                               f"?modules=earningsHistory")
-                        r = _session.get(url, timeout=8)
-                        if r.status_code == 200:
-                            res = r.json().get("quoteSummary", {}).get("result") or []
-                            if res:
-                                for h in res[0].get("earningsHistory", {}).get("history", []):
-                                    qt  = h.get("quarter", {})
-                                    ds  = qt.get("fmt", "")
-                                    if not ds:
-                                        raw_ts = qt.get("raw")
-                                        if raw_ts:
-                                            from datetime import datetime as _dt2
-                                            ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
-                                    act  = _safe_float((h.get("epsActual") or {}).get("raw"))
-                                    estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
-                                    sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
-                                    if sp is not None: sp = sp * 100  # 0.043 → 4.3%
-                                    if ds and act is not None:
-                                        yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
+                    _HDR = {
+                        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                       "Chrome/125.0.0.0 Safari/537.36"),
+                        "Accept": "application/json,text/plain,*/*",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Referer": f"https://finance.yahoo.com/quote/{tk}/analysis",
+                        "Origin": "https://finance.yahoo.com",
+                    }
+                    url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
+                           f"?modules=earningsHistory")
+                    r = requests.get(url, headers=_HDR, timeout=8)
+                    if r.status_code == 200:
+                        res = r.json().get("quoteSummary", {}).get("result") or []
+                        if res:
+                            for h in res[0].get("earningsHistory", {}).get("history", []):
+                                qt  = h.get("quarter", {})
+                                ds  = qt.get("fmt", "")
+                                if not ds:
+                                    raw_ts = qt.get("raw")
+                                    if raw_ts:
+                                        from datetime import datetime as _dt2
+                                        ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
+                                act  = _safe_float((h.get("epsActual") or {}).get("raw"))
+                                estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
+                                sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
+                                if sp is not None: sp = sp * 100  # 0.043 → 4.3%
+                                if ds and act is not None:
+                                    yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
                 except Exception:
                     pass
 
@@ -3731,9 +3737,89 @@ window.fiqEToggle=function(){{
 </div>
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:18px">{_mr2}</div>
+""", unsafe_allow_html=True)
 
-{_eps_inline_html}
+    # ── EPS Earnings Tracker — self-contained cv1.html ──
+    # JS functions are defined INSIDE the iframe so no cross-frame script injection needed.
+    # That's the only approach that works: script tags in st.markdown are never executed by React,
+    # and script injection into parent head is blocked by Streamlit's CSP on Railway.
+    import streamlit.components.v1 as _cv1
+    _cv1.html(f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8">
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:transparent;color:#F1F5F9}}
+.wrap{{background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px 18px}}
+.hdr{{cursor:pointer;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}}
+.chevron{{color:#F59E0B;font-size:1rem;transition:transform 0.25s;display:inline-block}}
+.tab-btn{{cursor:pointer;padding:5px 14px;border-radius:20px;font-size:0.72rem;font-weight:600;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569;transition:all 0.15s;outline:none}}
+.tab-btn.active{{border-color:rgba(245,158,11,0.5)!important;background:rgba(245,158,11,0.15)!important;color:#F59E0B!important}}
+.filter{{background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:150px;outline:none}}
+table{{width:100%;border-collapse:collapse;font-family:inherit}}
+thead tr{{background:rgba(13,31,53,0.95)}}
+th{{text-align:left;padding:7px 12px;color:#475569;font-size:0.63rem;font-weight:700;letter-spacing:0.04em;white-space:nowrap}}
+th:not(:first-child){{text-align:center;padding:7px 8px}}
+tbody tr{{border-bottom:1px solid rgba(255,255,255,0.05)}}
+td{{padding:3px 5px}}
+td:first-child{{padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem;white-space:nowrap}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr" onclick="fiqEToggle()">
+    <div>
+      <span style="font-size:0.92rem;font-weight:800;color:#F59E0B">📋 EPS Earnings Tracker</span>
+      <span style="font-size:0.65rem;font-weight:400;color:#475569;margin-left:8px">Actual vs Estimate · Beat/Miss · ✅ &gt;+2% · ❌ &lt;-2% · ≈ In-line · Grey = future est</span>
+      <span style="font-size:0.58rem;color:#334155;margin-left:10px">{_n_with_data} tickers loaded · {_n_with_beat} with beat data</span>
+    </div>
+    <span id="chev" class="chevron">▼</span>
+  </div>
+  <div id="eps-body">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="tab-btn active" id="btn-spx" onclick="event.stopPropagation();fiqTab('spx')">S&amp;P 500 Top 15</button>
+        <button class="tab-btn" id="btn-ndx" onclick="event.stopPropagation();fiqTab('ndx')">NASDAQ 100 Top 15</button>
+        <button class="tab-btn" id="btn-ftse" onclick="event.stopPropagation();fiqTab('ftse')">FTSE 100 Top 10</button>
+      </div>
+      <input class="filter" type="text" oninput="fiqEF(this.value)" onclick="event.stopPropagation()" placeholder="🔍 Filter ticker…">
+    </div>
+    <div id="panel-spx">{_eps_spx_html}</div>
+    <div id="panel-ndx" style="display:none">{_eps_ndx_html}</div>
+    <div id="panel-ftse" style="display:none">{_eps_ftse_html}</div>
+  </div>
+</div>
+<script>
+function fiqTab(id) {{
+  ['spx','ndx','ftse'].forEach(function(k) {{
+    var panel = document.getElementById('panel-' + k);
+    var btn   = document.getElementById('btn-' + k);
+    if (panel) panel.style.display = (k === id) ? '' : 'none';
+    if (btn)   btn.className = 'tab-btn' + (k === id ? ' active' : '');
+  }});
+}}
+function fiqEF(q) {{
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('[id^="panel-"]').forEach(function(panel) {{
+    if (panel.style.display === 'none') return;
+    panel.querySelectorAll('tbody tr').forEach(function(r) {{
+      var txt = (r.querySelector('td') && r.querySelector('td').textContent || '').toLowerCase();
+      r.style.display = (!q || txt.includes(q)) ? '' : 'none';
+    }});
+  }});
+}}
+function fiqEToggle() {{
+  var b = document.getElementById('eps-body');
+  var c = document.getElementById('chev');
+  if (!b) return;
+  var open = b.style.display !== 'none';
+  b.style.display = open ? 'none' : '';
+  if (c) c.style.transform = open ? 'rotate(-90deg)' : '';
+}}
+</script>
+</body></html>""", height=1050, scrolling=False)
 
+    st.markdown(f"""
 <!-- ═══ MAJOR MARKETS ═══ -->
 <div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:7px">
   📈 Major Markets — 3 Month
@@ -3788,83 +3874,7 @@ window.fiqEToggle=function(){{
 </div>
 """, unsafe_allow_html=True)
 
-    # ── JS INJECTOR via components.html (only reliable way to run JS in Streamlit) ──
-    # Scripts in st.markdown are NOT executed by React; components.v1.html uses a real
-    # iframe where scripts run, and we attach functions to window.parent (the main app).
-    import streamlit.components.v1 as _cv1
-    # Inject JS into parent document HEAD (same technique as CSS injection at line ~1963).
-    # This is the only reliable pattern: createElement('script') + head.appendChild
-    # runs the code IN the parent window context, so window === parent window.
-    _cv1.html("""<!DOCTYPE html><html><body><script>
-(function(){
-  var JS=[
-    "window.fiqTab=function(id){",
-    "  ['spx','ndx','ftse'].forEach(function(k){",
-    "    var p=document.getElementById('fiq-ep-'+k);",
-    "    var b=document.getElementById('fiqt-'+k);",
-    "    if(p)p.style.display=(k===id)?'block':'none';",
-    "    if(b){",
-    "      b.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';",
-    "      b.style.color=(k===id)?'#F59E0B':'#475569';",
-    "      b.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';",
-    "    }",
-    "  });",
-    "};",
-    "window.fiqEF=function(q){",
-    "  document.querySelectorAll('[id^=\"fiq-ep-\"]').forEach(function(panel){",
-    "    if(panel.style.display==='none')return;",
-    "    panel.querySelectorAll('tbody tr').forEach(function(r){",
-    "      var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();",
-    "      r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';",
-    "    });",
-    "  });",
-    "};",
-    "window.fiqEToggle=function(){",
-    "  var b=document.getElementById('fiq-eps-body');",
-    "  var c=document.getElementById('fiq-eps-chevron');",
-    "  if(!b)return;",
-    "  var open=b.style.display!=='none';",
-    "  b.style.display=open?'none':'block';",
-    "  if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';",
-    "};",
-    "window.fe=function(e,svgId){",
-    "  e.stopPropagation();e.preventDefault();",
-    "  var s=document.getElementById(svgId);",
-    "  if(!s){var all=document.querySelectorAll('[id^=\"fs-\"]');for(var i=0;i<all.length;i++){if(all[i].id===svgId){s=all[i];break;}}}",
-    "  var ov=document.getElementById('fiq-modal-ov');",
-    "  if(!ov)return;",
-    "  document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';",
-    "  document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style=\"color:#64748B\">No data</p>';",
-    "  ov.style.display='flex';",
-    "};",
-    "window.fiqMHide=function(){",
-    "  var ov=document.getElementById('fiq-modal-ov');",
-    "  if(ov)ov.style.display='none';",
-    "};",
-    "if(!window._fiqKeyBound){",
-    "  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&window.fiqMHide)window.fiqMHide();});",
-    "  window._fiqKeyBound=true;",
-    "}"
-  ].join('\\n');
-
-  function inject(doc){
-    if(!doc||!doc.head)return;
-    var old=doc.getElementById('fiq-js-inject');
-    if(old)old.remove();
-    var s=doc.createElement('script');
-    s.id='fiq-js-inject';
-    s.textContent=JS;
-    doc.head.appendChild(s);
-  }
-
-  inject(window.parent.document);
-  setTimeout(function(){inject(window.parent.document);},500);
-  setTimeout(function(){inject(window.parent.document);},1500);
-
-  var obs=new MutationObserver(function(){inject(window.parent.document);});
-  obs.observe(window.parent.document.body,{childList:true,subtree:false});
-})();
-</script></body></html>""", height=1, scrolling=False)
+    # EPS section is now rendered as a self-contained cv1.html above (between the two st.markdown calls)
 
     # ──────────────────────────────────────────────────────
     # END OF TAB 0
