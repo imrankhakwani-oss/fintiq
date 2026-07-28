@@ -2979,6 +2979,16 @@ with tab0:
             try:
                 obj = yf.Ticker(tk)
 
+                # ── Fetch company name (lightweight) ──
+                _nm = ""
+                try:
+                    _nm = obj.fast_info.company_name or ""
+                except Exception:
+                    try:
+                        _nm = obj.info.get("shortName", "") or ""
+                    except Exception:
+                        pass
+
                 # ── STEP 1: earnings_dates (this also initialises yfinance's auth session) ──
                 hist, est, ed = [], [], None
                 try:
@@ -3069,7 +3079,7 @@ with tab0:
                         elif est_v is not None:
                             est.append({"date": date_str, "estimatedEpsAvg": est_v})
                     if hist:
-                        return tk, {"hist": hist[-4:], "est": est[:2]}
+                        return tk, {"hist": hist[-4:], "est": est[:2], "name": _nm}
 
                 # ── FALLBACK A: use earningsHistory data directly ──
                 if yh_map:
@@ -3079,7 +3089,7 @@ with tab0:
                          "surprise_pct": v["surprise_pct"]}
                         for ds, v in yh_map.items()
                     ], key=lambda x: x["date"])
-                    return tk, {"hist": hist[-4:], "est": []}
+                    return tk, {"hist": hist[-4:], "est": [], "name": _nm}
 
                 # ── FALLBACK B: quarterly_income_stmt (actuals only) ──
                 try:
@@ -3096,14 +3106,14 @@ with tab0:
                                             "fiscalDateEnding": pd.Timestamp(col).strftime("%Y-%m-%d"),
                                             "date": pd.Timestamp(col).strftime("%Y-%m-%d"),
                                             "eps": val, "epsEstimated": None, "surprise_pct": None})
-                                if fb_hist: return tk, {"hist": fb_hist, "est": []}
+                                if fb_hist: return tk, {"hist": fb_hist, "est": [], "name": _nm}
                                 break
                 except Exception:
                     pass
 
-                return tk, {"hist": [], "est": []}
+                return tk, {"hist": [], "est": [], "name": _nm}
             except Exception:
-                return tk, {"hist": [], "est": []}
+                return tk, {"hist": [], "est": [], "name": ""}
 
         result = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
@@ -3436,7 +3446,7 @@ with tab0:
         hdr = ('<thead><tr style="background:rgba(13,31,53,0.95)">'
                '<th style="text-align:left;padding:7px 12px;color:#475569;font-size:0.63rem;'
                'font-weight:700;letter-spacing:0.04em;white-space:nowrap">TICKER</th>')
-        for lbl in ["Q-3","Q-2","Q-1","Q (latest)","Q+1 forecast","Q+2 forecast"]:
+        for lbl in ["Q-3","Q-2","Q-1","Q (latest)","Next Q est","Q+2 est"]:
             hdr += (f'<th style="text-align:center;padding:7px 8px;color:#475569;font-size:0.63rem;'
                     f'font-weight:700;letter-spacing:0.04em">{lbl}</th>')
         hdr += '</tr></thead>'
@@ -3462,13 +3472,20 @@ with tab0:
                     future_q.append({"date":fde,"act":None,"est_v":e.get("estimatedEpsAvg"),"surprise":None,"done":False})
             done_q.sort(key=lambda x: x["date"])
             future_q.sort(key=lambda x: x["date"])
-            # 4 most recent reported + 2 soonest upcoming
-            quarters = done_q[-4:] + future_q[:2]
-            while len(quarters) < 6: quarters.insert(0, None)
+            # 4 most recent reported + 2 soonest upcoming — pad each section independently
+            _dq = done_q[-4:]; _fq = future_q[:2]
+            done_padded   = [None] * (4 - len(_dq))  + _dq   # older quarters pad left
+            future_padded = _fq + [None] * (2 - len(_fq))    # future quarters pad right
+            quarters = done_padded + future_padded             # always exactly 6
 
+            _name = data.get(tk, {}).get("name", "")
+            _name_div = (f'<div style="font-size:0.6rem;color:#475569;font-weight:400;'
+                         f'margin-top:1px;max-width:90px;overflow:hidden;text-overflow:ellipsis;'
+                         f'white-space:nowrap">{_name}</div>') if _name else ""
             rows += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">'
-            rows += (f'<td style="padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem;'
-                     f'white-space:nowrap">{tk}</td>')
+            rows += (f'<td style="padding:6px 12px;white-space:nowrap">'
+                     f'<div style="font-weight:700;color:#F1F5F9;font-size:0.82rem">{tk}</div>'
+                     f'{_name_div}</td>')
 
             for q in quarters:
                 if q is None:
@@ -3521,7 +3538,7 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # One combined parallelised cache call — all tickers fetched concurrently
     _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T + _STOXX_T))  # deduplicated
-    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v6")  # v6 = 250 SPX, 6 cols, no collapse
+    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v7")  # v7 = fix column padding + company names
     # All indices share the same data dict (keyed by ticker)
 
     def _eps_section(idx_key):
