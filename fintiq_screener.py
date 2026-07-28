@@ -3714,7 +3714,7 @@ with tab0:
 *{{box-sizing:border-box}}
 body{{margin:0;padding:0 2px 4px;background:transparent;
      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
-.ffc{{perspective:900px;height:92px;position:relative}}
+.ffc{{perspective:900px;height:92px;position:relative;width:100%}}
 .ffi{{position:relative;width:100%;height:100%;transition:transform 0.5s ease;transform-style:preserve-3d}}
 .ffc:hover .ffi{{transform:rotateY(180deg)}}
 .fff,.ffb{{position:absolute;width:100%;height:100%;backface-visibility:hidden;
@@ -3852,7 +3852,7 @@ setTimeout(resizeMe, 200);
 setTimeout(resizeMe, 600);
 setTimeout(resizeMe, 1500);
 </script>
-</body></html>""", height=1100, scrolling=False)
+</body></html>""", height=600, scrolling=False)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
