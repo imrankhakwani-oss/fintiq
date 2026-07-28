@@ -3254,7 +3254,7 @@ with tab0:
                 f'<div class="ffv" style="color:{col}">{val}</div>'
                 f'<div class="ffs">{sub}</div>{nr}'
                 f'</div>'
-                f'<div class="ffb" onclick="window.fe&&window.fe(event,\'fs-{cid}\')">'
+                f'<div class="ffb" onclick="event.stopPropagation();openChart(\'{cid}\')">'
                 f'{back}'
                 f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
@@ -3276,7 +3276,7 @@ with tab0:
                 f'<div style="font-size:1.0rem;font-weight:800;color:#F1F5F9;margin-top:1px">{ps}</div>'
                 f'<div style="font-size:0.8rem;font-weight:700;color:{tc}">{pc}</div>'
                 f'</div>'
-                f'<div class="ffb" onclick="window.fe&&window.fe(event,\'fs-{sid}\')">'
+                f'<div class="ffb" onclick="event.stopPropagation();openChart(\'{sid}\')">'
                 f'{back_content}'
                 f'<div class="fiq-tip">click to expand ↗</div>'
                 f'</div>'
@@ -3678,95 +3678,6 @@ with tab0:
     # RENDER COMPLETE DASHBOARD
     # ─────────────────────────────────────────────────────────────
     st.markdown(f"""
-<style>
-.ffc{{perspective:900px;height:92px;position:relative;}}
-.ffi{{position:relative;width:100%;height:100%;transition:transform 0.5s ease;transform-style:preserve-3d;}}
-.ffc:hover .ffi{{transform:rotateY(180deg);}}
-.fff,.ffb{{position:absolute;width:100%;height:100%;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:10px;overflow:hidden;box-sizing:border-box;}}
-.fff{{background:#0D1F33;border:1px solid rgba(100,116,139,0.18);padding:10px 13px;}}
-.ffb{{background:#081828;border:1px solid rgba(100,116,139,0.28);transform:rotateY(180deg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;cursor:pointer;position:relative;}}
-.ffl{{font-size:0.57rem;text-transform:uppercase;letter-spacing:0.07em;color:#475569;font-weight:600;margin-bottom:1px;}}
-.ffv{{font-size:1.25rem;font-weight:900;line-height:1;margin-bottom:2px;}}
-.ffs{{font-size:0.63rem;color:#64748B;}}
-.fiq-tip{{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
-  background:rgba(245,158,11,0.92);color:#000;font-size:0.54rem;font-weight:700;
-  padding:2px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;
-  opacity:0;}}
-.ffc:hover .fiq-tip{{animation:fiq-tip 2.2s forwards 0.55s;}}
-@keyframes fiq-tip{{0%{{opacity:0}}10%{{opacity:1}}75%{{opacity:1}}100%{{opacity:0}}}}
-</style>
-<script>
-window.fe=function(e,svgId){{
-  e.stopPropagation(); e.preventDefault();
-  var s=document.getElementById(svgId);
-  if(!s){{var all=document.querySelectorAll('[id^="fs-"]');for(var i=0;i<all.length;i++){{if(all[i].id===svgId){{s=all[i];break;}}}}}}
-  var ov=document.getElementById('fiq-modal-ov');
-  if(!ov)return;
-  document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';
-  document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style="color:#64748B">No data available</p>';
-  ov.style.display='flex';
-}};
-window.fiqMHide=function(){{
-  var ov=document.getElementById('fiq-modal-ov');
-  if(ov)ov.style.display='none';
-}};
-document.addEventListener('keydown',function(e){{if(e.key==='Escape')window.fiqMHide();}});
-/* ── EPS Tracker tabs / filter / collapse ── */
-window.fiqTab=function(id){{
-  ['spx','ndx','ftse'].forEach(function(k){{
-    var p=document.getElementById('fiq-ep-'+k);
-    var b=document.getElementById('fiqt-'+k);
-    if(p)p.style.display=(k===id)?'block':'none';
-    if(b){{
-      b.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
-      b.style.color=(k===id)?'#F59E0B':'#475569';
-      b.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
-    }}
-  }});
-}};
-window.fiqEF=function(q){{
-  document.querySelectorAll('[id^="fiq-ep-"]').forEach(function(panel){{
-    if(panel.style.display==='none')return;
-    panel.querySelectorAll('tbody tr').forEach(function(r){{
-      var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
-      r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';
-    }});
-  }});
-}};
-window.fiqEToggle=function(){{
-  var b=document.getElementById('fiq-eps-body');
-  var c=document.getElementById('fiq-eps-chevron');
-  if(!b)return;
-  var open=b.style.display!=='none';
-  b.style.display=open?'none':'block';
-  if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
-}};
-</script>
-
-<!-- ═══ PRE-RENDERED MODAL (show/hide, avoids React DOM conflicts) ═══ -->
-<div id="fiq-modal-ov" onclick="if(event.target===this)window.fiqMHide()"
-     style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
-            background:rgba(0,0,0,0.88);z-index:2147483647;
-            align-items:center;justify-content:center">
-  <div style="background:#0D1F33;border:1px solid rgba(245,158,11,0.35);
-              border-radius:14px;padding:20px 22px;max-width:580px;width:94%;
-              position:relative;cursor:default">
-    <button onclick="window.fiqMHide()"
-            style="position:absolute;top:8px;right:12px;background:none;
-                   border:none;color:#94A3B8;font-size:1.2rem;cursor:pointer">✕</button>
-    <div id="fiq-modal-lbl"
-         style="font-size:0.66rem;font-weight:700;color:#F59E0B;
-                text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px"></div>
-    <div id="fiq-modal-body"></div>
-    <div style="text-align:center;font-size:0.6rem;color:#475569;margin-top:10px">
-      FRED / Yahoo Finance · Green = uptrend · Red = downtrend · Click outside or press Esc to close
-    </div>
-  </div>
-</div>
-
-<div style="display:none">{_hdiv}</div>
-
-<!-- ═══ HEADER ═══ -->
 <div style="display:flex;align-items:center;justify-content:space-between;
             padding:4px 0 10px;border-bottom:1px solid rgba(245,158,11,0.15);margin-bottom:12px">
   <div>
@@ -3775,18 +3686,164 @@ window.fiqEToggle=function(){{
   </div>
   <div style="font-size:0.65rem;color:#475569;text-align:right">Refreshes every 5 min<br><span style="color:#22C55E">● Live</span></div>
 </div>
-
-<!-- ═══ MACRO INDICATORS ═══ -->
-<div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:7px">
-  🌐 Macro Indicators
-  <span style="font-size:0.6rem;font-weight:400;color:#475569">· click card → see trend · click chart → expand</span>
-</div>
-<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
-<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:18px">{_mr2}</div>
 """, unsafe_allow_html=True)
 
-    # ── EPS Earnings Tracker — self-contained cv1.html ──
+    # ── Build chart data JSON for Chart.js modal ──
+    import json as _json
+    def _sl(lst): return [float(v) if v is not None else None for v in (lst or [])]
+    _cj = _json.dumps({
+        "fomc": {"values":_sl(_fp(_fo)),  "label":"Fed Funds Rate %",        "color":_cf,
+                 "dates":[d[:7] for d,_ in reversed(_fo)]},
+        "t10y": {"values":_sl(_fp(_t10)), "label":"10Y Treasury Yield %",    "color":"#A78BFA",
+                 "dates":[d[:7] for d,_ in reversed(_t10)]},
+        "cpi":  {"values":_sl(_cpi_s),   "label":"CPI Inflation YoY %",     "color":_cc},
+        "pmi":  {"values":_sl(_fp(_pmi)), "label":"ISM Manufacturing PMI",   "color":_cp,
+                 "dates":[d[:7] for d,_ in reversed(_pmi)]},
+        "yc":   {"values":_sl(_fp(_yc)),  "label":"Yield Curve 10Y−2Y %",   "color":_cy,
+                 "dates":[d[:7] for d,_ in reversed(_yc)]},
+        "nfp":  {"values":_sl(_nfp_s),   "label":"Non-Farm Payrolls MoM",   "color":_cn},
+        "vix":  {"values":_sl(_sparks.get("^VIX",[])),     "label":"VIX Fear Index",       "color":_cv},
+        "dxy":  {"values":_sl(_sparks.get("DX-Y.NYB",[])), "label":"Dollar Index DXY",     "color":"#64748B"},
+        "oil":  {"values":_sl(_sparks.get("BZ=F",[])),     "label":"Brent Crude $/bbl",    "color":"#F59E0B"},
+        "gold": {"values":_sl(_sparks.get("GC=F",[])),     "label":"Gold $/oz",            "color":"#F59E0B"},
+        "GSPC":     {"values":_sl(_sparks.get("^GSPC",[])),     "label":"S&P 500 — 3 Month",        "color":"#22C55E"},
+        "NDX":      {"values":_sl(_sparks.get("^NDX",[])),      "label":"NASDAQ 100 — 3 Month",     "color":"#60A5FA"},
+        "DJI":      {"values":_sl(_sparks.get("^DJI",[])),      "label":"Dow Jones — 3 Month",      "color":"#A78BFA"},
+        "FTSE":     {"values":_sl(_sparks.get("^FTSE",[])),     "label":"FTSE 100 — 3 Month",       "color":"#F59E0B"},
+        "STOXX50E": {"values":_sl(_sparks.get("^STOXX50E",[])), "label":"Euro Stoxx 50 — 3 Month",  "color":"#F59E0B"},
+        "000001_SS":{"values":_sl(_sparks.get("000001.SS",[])), "label":"Shanghai — 3 Month",       "color":"#EF4444"},
+        "EEM":      {"values":_sl(_sparks.get("EEM",[])),       "label":"MSCI Emerging Markets",    "color":"#22C55E"},
+        "N225":     {"values":_sl(_sparks.get("^N225",[])),     "label":"Nikkei 225 — 3 Month",     "color":"#60A5FA"},
+    })
+
+    # ── Macro & Markets cards — cv1.html so JS runs inside real iframe ──
     import streamlit.components.v1 as _cv1
+    _cv1.html(f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;padding:0 2px 4px;background:transparent;
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+.ffc{{perspective:900px;height:92px;position:relative}}
+.ffi{{position:relative;width:100%;height:100%;transition:transform 0.5s ease;transform-style:preserve-3d}}
+.ffc:hover .ffi{{transform:rotateY(180deg)}}
+.fff,.ffb{{position:absolute;width:100%;height:100%;backface-visibility:hidden;
+           -webkit-backface-visibility:hidden;border-radius:10px;overflow:hidden;box-sizing:border-box}}
+.fff{{background:#0D1F33;border:1px solid rgba(100,116,139,0.18);padding:10px 13px}}
+.ffb{{background:#081828;border:1px solid rgba(100,116,139,0.28);transform:rotateY(180deg);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      padding:4px;cursor:pointer;position:relative}}
+.ffl{{font-size:0.57rem;text-transform:uppercase;letter-spacing:0.07em;color:#475569;
+      font-weight:600;margin-bottom:1px}}
+.ffv{{font-size:1.25rem;font-weight:900;line-height:1;margin-bottom:2px}}
+.ffs{{font-size:0.63rem;color:#64748B}}
+.fiq-tip{{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
+  background:rgba(245,158,11,0.92);color:#000;font-size:0.54rem;font-weight:700;
+  padding:2px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;opacity:0}}
+.ffc:hover .fiq-tip{{animation:ftip 2.2s forwards 0.55s}}
+@keyframes ftip{{0%{{opacity:0}}10%{{opacity:1}}75%{{opacity:1}}100%{{opacity:0}}}}
+.sh{{font-size:0.88rem;font-weight:800;color:#F59E0B;margin:4px 0 7px}}
+.ssub{{font-size:0.58rem;font-weight:400;color:#475569}}
+/* Modal */
+#fiq-cm{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;
+  cursor:pointer}}
+#fiq-cm.open{{display:flex}}
+.cmb{{background:#0D1F35;border:1px solid rgba(245,158,11,0.35);border-radius:14px;
+  padding:22px 24px 18px;width:92%;max-width:700px;position:relative;cursor:default;
+  box-shadow:0 20px 60px rgba(0,0,0,0.6)}}
+.cmc{{position:absolute;top:10px;right:14px;background:none;border:none;
+  color:#94A3B8;font-size:1.3rem;cursor:pointer;line-height:1}}
+.cmt{{font-size:0.7rem;font-weight:700;color:#F59E0B;text-transform:uppercase;
+  letter-spacing:0.05em;margin-bottom:14px}}
+.cmc-wrap{{position:relative;height:300px}}
+.cmf{{text-align:center;font-size:0.58rem;color:#475569;margin-top:10px}}
+</style>
+</head><body>
+<div class="sh">🌐 Macro Indicators <span class="ssub">· hover → trend · click → expand chart</span></div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">{_mr2}</div>
+
+<div class="sh">📈 Major Markets — 3 Month <span class="ssub">· hover → chart · click → expand</span></div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px">{_ic}</div>
+
+<!-- Professional Chart Modal -->
+<div id="fiq-cm" onclick="if(event.target===this)closeChart()">
+  <div class="cmb" onclick="event.stopPropagation()">
+    <button class="cmc" onclick="closeChart()">✕</button>
+    <div class="cmt" id="fiq-cmt"></div>
+    <div class="cmc-wrap"><canvas id="fiq-cv"></canvas></div>
+    <div class="cmf">Source: FRED / Yahoo Finance &nbsp;·&nbsp; Press Esc to close</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+var CD = {_cj};
+var _ch = null;
+function openChart(k) {{
+  var d = CD[k]; if (!d || !d.values || !d.values.length) return;
+  document.getElementById('fiq-cmt').textContent = d.label || k;
+  document.getElementById('fiq-cm').classList.add('open');
+  if (_ch) {{ _ch.destroy(); _ch = null; }}
+  var canvas = document.getElementById('fiq-cv');
+  canvas.width = canvas.parentElement.offsetWidth;
+  canvas.height = 300;
+  var ctx = canvas.getContext('2d');
+  var vals = d.values.filter(function(v) {{ return v !== null && v !== undefined; }});
+  var n = vals.length;
+  var labels = d.dates ? d.dates.slice(-n) : vals.map(function(_,i) {{
+    var da = Math.round((n-1-i)*90/(n>1?n-1:1));
+    return da===0?'Today':da+'d ago';
+  }});
+  var col = d.color || '#F59E0B';
+  var trend = vals[vals.length-1] >= vals[0];
+  var lineCol = trend ? (col==='#EF4444'?'#EF4444':col) : '#EF4444';
+  var grad = ctx.createLinearGradient(0,0,0,300);
+  grad.addColorStop(0, lineCol+'35'); grad.addColorStop(1, lineCol+'05');
+  _ch = new Chart(ctx, {{
+    type:'line',
+    data:{{
+      labels:labels,
+      datasets:[{{
+        label:d.label, data:vals,
+        borderColor:lineCol, backgroundColor:grad,
+        fill:true, tension:0.35,
+        pointRadius:0, pointHoverRadius:5, borderWidth:2.5,
+        pointHoverBackgroundColor:lineCol,
+      }}]
+    }},
+    options:{{
+      responsive:true, maintainAspectRatio:false,
+      animation:{{duration:380}},
+      interaction:{{mode:'index',intersect:false}},
+      plugins:{{
+        legend:{{display:false}},
+        tooltip:{{
+          backgroundColor:'#0D1F35', borderColor:lineCol, borderWidth:1,
+          titleColor:'#94A3B8', bodyColor:'#F1F5F9',
+          bodyFont:{{size:13,weight:'700'}}, titleFont:{{size:11}}, padding:10,
+          callbacks:{{ label:function(c){{ return '  '+( c.raw!==null?c.raw.toFixed(2):'—' ); }} }}
+        }}
+      }},
+      scales:{{
+        x:{{ ticks:{{color:'#475569',maxTicksLimit:7,maxRotation:0,font:{{size:10}}}},
+             grid:{{color:'rgba(100,116,139,0.1)'}}, border:{{color:'rgba(100,116,139,0.15)'}} }},
+        y:{{ ticks:{{color:'#475569',font:{{size:10}}}},
+             grid:{{color:'rgba(100,116,139,0.1)'}}, border:{{color:'rgba(100,116,139,0.15)'}} }}
+      }}
+    }}
+  }});
+}}
+function closeChart() {{
+  document.getElementById('fiq-cm').classList.remove('open');
+  if (_ch) {{ _ch.destroy(); _ch = null; }}
+}}
+document.addEventListener('keydown', function(e) {{ if (e.key==='Escape') closeChart(); }});
+</script>
+</body></html>""", height=480, scrolling=False)
+
+    # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
     _eps_h = 880
     _cv1.html(f"""<!DOCTYPE html>
@@ -3890,13 +3947,6 @@ function fiqEF(q) {{
 </body></html>""", height=_eps_h, scrolling=False)
 
     st.markdown(f"""
-<!-- ═══ MAJOR MARKETS ═══ -->
-<div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:7px">
-  📈 Major Markets — 3 Month
-  <span style="font-size:0.6rem;font-weight:400;color:#475569">· hover card → see chart · click chart → expand</span>
-</div>
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px">{_ic}</div>
-
 <!-- ═══ MY DASHBOARD ═══ -->
 <div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:8px">👤 My Dashboard</div>
 {_demo_banner}
