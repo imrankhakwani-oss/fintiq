@@ -2975,7 +2975,16 @@ with tab0:
                 return float(v)
             except Exception: return None
 
-        # Single browser UA header reused for all requests (avoids yfinance UA blocking)
+        # ── Init yfinance auth ONCE (fetches crumb+cookie for all requests) ──
+        # yfinance._data is a shared singleton — one init covers all tickers
+        _yf_session = None
+        try:
+            _init_obj = yf.Ticker("SPY")
+            _ = _init_obj.fast_info  # lightweight call that triggers crumb/cookie init
+            _yf_session = getattr(_init_obj, '_data', None)
+        except Exception:
+            pass
+
         _BROWSER_HDR = {
             "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                            "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -2983,58 +2992,79 @@ with tab0:
             "Accept": "application/json,text/plain,*/*",
         }
 
+        def _parse_result(raw):
+            """Parse earningsHistory + earningsTrend + price from quoteSummary response."""
+            hist, trend_est, _nm = [], [], ""
+            res = (raw or {}).get("quoteSummary", {}).get("result") or []
+            if not res: return hist, trend_est, _nm
+            r0 = res[0]
+
+            # earningsHistory → past actuals + surprise
+            for h in r0.get("earningsHistory", {}).get("history", []):
+                qt  = h.get("quarter", {})
+                ds  = qt.get("fmt", "")
+                if not ds:
+                    raw_ts = qt.get("raw")
+                    if raw_ts:
+                        from datetime import datetime as _dt2
+                        ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
+                act  = _safe_float((h.get("epsActual")       or {}).get("raw"))
+                estv = _safe_float((h.get("epsEstimate")      or {}).get("raw"))
+                sp   = _safe_float((h.get("surprisePercent")  or {}).get("raw"))
+                if sp is not None: sp = sp * 100
+                if ds and act is not None:
+                    hist.append({"fiscalDateEnding": ds, "date": ds,
+                                 "eps": act, "epsEstimated": estv, "surprise_pct": sp})
+
+            # earningsTrend → upcoming quarterly estimates (0q = current, +1q = next)
+            for t in r0.get("earningsTrend", {}).get("trend", []):
+                if t.get("period", "") not in ("0q", "+1q"): continue
+                end_raw = t.get("endDate") or {}
+                ed_str  = end_raw.get("fmt", "") if isinstance(end_raw, dict) else str(end_raw or "")
+                ee      = t.get("earningsEstimate") or {}
+                avg_obj = ee.get("avg") or {}
+                avg_v   = _safe_float(avg_obj.get("raw") if isinstance(avg_obj, dict) else avg_obj)
+                if ed_str and avg_v is not None:
+                    trend_est.append({"date": ed_str, "estimatedEpsAvg": avg_v})
+
+            # price → company name
+            pr  = r0.get("price") or {}
+            _nm = pr.get("longName") or pr.get("shortName") or ""
+            return hist, trend_est, _nm
+
         def _fetch_one(tk):
-            """One HTTP call per ticker: earningsHistory + earningsTrend + price."""
-            _nm, hist, trend_est = "", [], []
+            """1 HTTP call per ticker via shared yfinance auth session."""
             try:
                 url    = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
                 params = {"modules": "earningsHistory,earningsTrend,price"}
-                hdrs   = {**_BROWSER_HDR, "Referer": f"https://finance.yahoo.com/quote/{tk}/analysis"}
-                r = requests.get(url, params=params, headers=hdrs, timeout=5)
-                if r.status_code != 200:
+                raw    = None
+
+                # Try 1: shared yfinance session (has crumb+cookie from SPY init)
+                if _yf_session:
+                    for _method in ('get_raw_json', 'cache_get', 'get'):
+                        _fn = getattr(_yf_session, _method, None)
+                        if _fn:
+                            try:
+                                _r = _fn(url=url, params=params)
+                                if isinstance(_r, requests.Response): _r = _r.json()
+                                raw = _r; break
+                            except Exception: pass
+
+                # Try 2: browser UA fallback
+                if not raw:
+                    hdrs = {**_BROWSER_HDR,
+                            "Referer": f"https://finance.yahoo.com/quote/{tk}/analysis"}
+                    r = requests.get(url, params=params, headers=hdrs, timeout=6)
+                    if r.status_code == 200: raw = r.json()
+
+                if not raw:
                     return tk, {"hist": [], "est": [], "name": ""}
-                raw = r.json()
-                res = (raw or {}).get("quoteSummary", {}).get("result") or []
-                if not res:
-                    return tk, {"hist": [], "est": [], "name": ""}
-                r0 = res[0]
 
-                # ── earningsHistory → past actuals ──
-                for h in r0.get("earningsHistory", {}).get("history", []):
-                    qt  = h.get("quarter", {})
-                    ds  = qt.get("fmt", "")
-                    if not ds:
-                        raw_ts = qt.get("raw")
-                        if raw_ts:
-                            from datetime import datetime as _dt2
-                            ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
-                    act  = _safe_float((h.get("epsActual")       or {}).get("raw"))
-                    estv = _safe_float((h.get("epsEstimate")      or {}).get("raw"))
-                    sp   = _safe_float((h.get("surprisePercent")  or {}).get("raw"))
-                    if sp is not None: sp = sp * 100   # 0.043 → 4.3 %
-                    if ds and act is not None:
-                        hist.append({"fiscalDateEnding": ds, "date": ds,
-                                     "eps": act, "epsEstimated": estv, "surprise_pct": sp})
-
-                # ── earningsTrend → upcoming Q est (0q = this Q, +1q = next Q) ──
-                for t in r0.get("earningsTrend", {}).get("trend", []):
-                    if t.get("period", "") not in ("0q", "+1q"): continue
-                    end_raw = t.get("endDate") or {}
-                    ed_str  = end_raw.get("fmt", "") if isinstance(end_raw, dict) else str(end_raw or "")
-                    ee      = t.get("earningsEstimate") or {}
-                    avg_obj = ee.get("avg") or {}
-                    avg_v   = _safe_float(avg_obj.get("raw") if isinstance(avg_obj, dict) else avg_obj)
-                    if ed_str and avg_v is not None:
-                        trend_est.append({"date": ed_str, "estimatedEpsAvg": avg_v})
-
-                # ── price → company name ──
-                pr  = r0.get("price") or {}
-                _nm = pr.get("longName") or pr.get("shortName") or ""
-
+                hist, trend_est, _nm = _parse_result(raw)
                 hist.sort(key=lambda x: x["date"])
                 return tk, {"hist": hist[-4:], "est": trend_est[:2], "name": _nm}
             except Exception:
-                return tk, {"hist": [], "est": [], "name": _nm}
+                return tk, {"hist": [], "est": [], "name": ""}
 
         result = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=50) as pool:
@@ -3459,7 +3489,7 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # One combined parallelised cache call — all tickers fetched concurrently
     _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T + _STOXX_T))  # deduplicated
-    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v9")  # v9 = 1 HTTP call/ticker, 50 workers, skip empty rows
+    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v10")  # v10 = shared yfinance session, 50 workers
     # All indices share the same data dict (keyed by ticker)
 
     def _eps_section(idx_key):
