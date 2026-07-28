@@ -3848,9 +3848,12 @@ function resizeMe() {{
 }}
 window.addEventListener('load', resizeMe);
 window.addEventListener('resize', resizeMe);
-setTimeout(resizeMe, 400);
+window.addEventListener('orientationchange', function() {{ setTimeout(resizeMe, 300); }});
+setTimeout(resizeMe, 200);
+setTimeout(resizeMe, 600);
+setTimeout(resizeMe, 1500);
 </script>
-</body></html>""", height=520, scrolling=False)
+</body></html>""", height=900, scrolling=False)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
