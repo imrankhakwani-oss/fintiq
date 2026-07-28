@@ -3706,18 +3706,6 @@ with tab0:
         "N225":     {"values":_sl(_sparks.get("^N225",[])),     "label":"Nikkei 225 — 3 Month",     "color":"#60A5FA"},
     })
 
-    # ── Inject parent-page CSS to override macro iframe height on mobile ──
-    # iOS Safari blocks window.frameElement for srcdoc iframes, so JS resize doesn't work.
-    # CSS in the parent Streamlit page can resize the iframe element directly via media query.
-    import streamlit as _st_home
-    _st_home.markdown("""
-<style>
-@media (max-width: 640px) {
-  iframe[height="491"] { height: 1060px !important; min-height: 1060px !important; }
-}
-</style>
-""", unsafe_allow_html=True)
-
     # ── Macro & Markets cards — cv1.html so JS runs inside real iframe ──
     import streamlit.components.v1 as _cv1
     _cv1.html(f"""<!DOCTYPE html>
@@ -3867,7 +3855,7 @@ window.addEventListener('orientationchange', function() {{ setTimeout(setH, 300)
 setTimeout(setH, 100);
 setTimeout(setH, 600);
 </script>
-</body></html>""", height=491, scrolling=False)
+</body></html>""", height=1060, scrolling=False)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
