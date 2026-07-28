@@ -3004,10 +3004,17 @@ with tab0:
                 # yfinance's _data object holds a session with Yahoo cookies+crumb already set.
                 # After earnings_dates is called, that session is initialised.
                 yh_map = {}
-                def _parse_earnings_history(raw):
+                trend_est = []  # upcoming quarterly estimates from earningsTrend
+
+                def _parse_combined(raw):
+                    """Parse earningsHistory + earningsTrend + price from one quoteSummary call."""
+                    nonlocal _nm
                     res = (raw or {}).get("quoteSummary", {}).get("result") or []
                     if not res: return
-                    for h in res[0].get("earningsHistory", {}).get("history", []):
+                    r0 = res[0]
+
+                    # earningsHistory → past actuals + surprise
+                    for h in r0.get("earningsHistory", {}).get("history", []):
                         qt  = h.get("quarter", {})
                         ds  = qt.get("fmt", "")
                         if not ds:
@@ -3018,12 +3025,28 @@ with tab0:
                         act  = _safe_float((h.get("epsActual") or {}).get("raw"))
                         estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
                         sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
-                        if sp is not None: sp = sp * 100  # 0.043 → 4.3%
+                        if sp is not None: sp = sp * 100
                         if ds and act is not None:
                             yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
 
-                _eh_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
-                _eh_params = {"modules": "earningsHistory"}
+                    # earningsTrend → upcoming Q+1 / Q+2 estimates
+                    for t in r0.get("earningsTrend", {}).get("trend", []):
+                        period = t.get("period", "")
+                        if period not in ("0q", "+1q"): continue
+                        end_raw = t.get("endDate") or {}
+                        ed_str  = end_raw.get("fmt", "") if isinstance(end_raw, dict) else str(end_raw or "")
+                        ee      = t.get("earningsEstimate") or {}
+                        avg_v   = _safe_float((ee.get("avg") or {}).get("raw") if isinstance(ee.get("avg"), dict) else ee.get("avg"))
+                        if ed_str and avg_v is not None:
+                            trend_est.append({"date": ed_str, "estimatedEpsAvg": avg_v})
+
+                    # price module → company name
+                    pd_obj = r0.get("price") or {}
+                    cname = pd_obj.get("longName") or pd_obj.get("shortName") or ""
+                    if cname: _nm = cname
+
+                _eh_url    = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
+                _eh_params = {"modules": "earningsHistory,earningsTrend,price"}
 
                 # Try 1: yfinance internal authenticated session
                 try:
@@ -3033,12 +3056,12 @@ with tab0:
                         if _fn:
                             _raw = _fn(url=_eh_url, params=_eh_params)
                             if isinstance(_raw, requests.Response): _raw = _raw.json()
-                            _parse_earnings_history(_raw)
-                            if yh_map: break
+                            _parse_combined(_raw)
+                            if yh_map or trend_est: break
                 except Exception: pass
 
                 # Try 2: browser UA + Referer (bypasses yfinance UA blocking)
-                if not yh_map:
+                if not yh_map and not trend_est:
                     try:
                         _HDR = {
                             "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -3049,7 +3072,7 @@ with tab0:
                         }
                         r = requests.get(_eh_url, params=_eh_params, headers=_HDR, timeout=8)
                         if r.status_code == 200:
-                            _parse_earnings_history(r.json())
+                            _parse_combined(r.json())
                     except Exception: pass
 
                 # ── STEP 3: merge earnings_dates rows with earningsHistory beat data ──
@@ -3078,6 +3101,12 @@ with tab0:
                             })
                         elif est_v is not None:
                             est.append({"date": date_str, "estimatedEpsAvg": est_v})
+                    # Supplement est with earningsTrend data (better coverage for European stocks)
+                    if trend_est:
+                        seen_est = {e["date"][:7] for e in est}  # YYYY-MM dedup
+                        for te in sorted(trend_est, key=lambda x: x["date"]):
+                            if te["date"][:7] not in seen_est:
+                                est.append(te); seen_est.add(te["date"][:7])
                     if hist:
                         return tk, {"hist": hist[-4:], "est": est[:2], "name": _nm}
 
@@ -3089,7 +3118,7 @@ with tab0:
                          "surprise_pct": v["surprise_pct"]}
                         for ds, v in yh_map.items()
                     ], key=lambda x: x["date"])
-                    return tk, {"hist": hist[-4:], "est": [], "name": _nm}
+                    return tk, {"hist": hist[-4:], "est": trend_est[:2], "name": _nm}
 
                 # ── FALLBACK B: quarterly_income_stmt (actuals only) ──
                 try:
@@ -3529,16 +3558,15 @@ with tab0:
                              f'</div></td>')
             rows += '</tr>'
 
-        return (f'<div style="overflow-x:auto">'
-                f'<table style="width:100%;border-collapse:collapse;font-family:inherit">'
-                f'{hdr}<tbody>{rows}</tbody></table></div>')
+        return (f'<table style="width:100%;border-collapse:collapse;font-family:inherit">'
+                f'{hdr}<tbody>{rows}</tbody></table>')
 
     # ─────────────────────────────────────────────────────────────
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
     # One combined parallelised cache call — all tickers fetched concurrently
     _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T + _STOXX_T))  # deduplicated
-    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v7")  # v7 = fix column padding + company names
+    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v8")  # v8 = earningsTrend forecasts + price name + sticky fix
     # All indices share the same data dict (keyed by ticker)
 
     def _eps_section(idx_key):
@@ -3854,7 +3882,7 @@ body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI'
 .tab-btn{{cursor:pointer;padding:5px 12px;border-radius:20px;font-size:0.7rem;font-weight:600;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569;transition:all 0.15s;outline:none;white-space:nowrap}}
 .tab-btn.active{{border-color:rgba(245,158,11,0.5)!important;background:rgba(245,158,11,0.15)!important;color:#F59E0B!important}}
 .filter{{background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:150px;outline:none}}
-.panel{{flex:1;overflow-y:auto;min-height:0}}
+.panel{{flex:1;overflow:auto;min-height:0}}
 table{{width:100%;border-collapse:collapse;font-family:inherit}}
 thead tr{{background:rgba(13,31,53,0.98);position:sticky;top:0;z-index:2}}
 th{{text-align:left;padding:7px 12px;color:#475569;font-size:0.63rem;font-weight:700;letter-spacing:0.04em;white-space:nowrap}}
