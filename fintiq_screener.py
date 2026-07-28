@@ -2975,177 +2975,69 @@ with tab0:
                 return float(v)
             except Exception: return None
 
+        # Single browser UA header reused for all requests (avoids yfinance UA blocking)
+        _BROWSER_HDR = {
+            "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/125.0.0.0 Safari/537.36"),
+            "Accept": "application/json,text/plain,*/*",
+        }
+
         def _fetch_one(tk):
+            """One HTTP call per ticker: earningsHistory + earningsTrend + price."""
+            _nm, hist, trend_est = "", [], []
             try:
-                obj = yf.Ticker(tk)
+                url    = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
+                params = {"modules": "earningsHistory,earningsTrend,price"}
+                hdrs   = {**_BROWSER_HDR, "Referer": f"https://finance.yahoo.com/quote/{tk}/analysis"}
+                r = requests.get(url, params=params, headers=hdrs, timeout=5)
+                if r.status_code != 200:
+                    return tk, {"hist": [], "est": [], "name": ""}
+                raw = r.json()
+                res = (raw or {}).get("quoteSummary", {}).get("result") or []
+                if not res:
+                    return tk, {"hist": [], "est": [], "name": ""}
+                r0 = res[0]
 
-                # ── Fetch company name (lightweight) ──
-                _nm = ""
-                try:
-                    _nm = obj.fast_info.company_name or ""
-                except Exception:
-                    try:
-                        _nm = obj.info.get("shortName", "") or ""
-                    except Exception:
-                        pass
+                # ── earningsHistory → past actuals ──
+                for h in r0.get("earningsHistory", {}).get("history", []):
+                    qt  = h.get("quarter", {})
+                    ds  = qt.get("fmt", "")
+                    if not ds:
+                        raw_ts = qt.get("raw")
+                        if raw_ts:
+                            from datetime import datetime as _dt2
+                            ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
+                    act  = _safe_float((h.get("epsActual")       or {}).get("raw"))
+                    estv = _safe_float((h.get("epsEstimate")      or {}).get("raw"))
+                    sp   = _safe_float((h.get("surprisePercent")  or {}).get("raw"))
+                    if sp is not None: sp = sp * 100   # 0.043 → 4.3 %
+                    if ds and act is not None:
+                        hist.append({"fiscalDateEnding": ds, "date": ds,
+                                     "eps": act, "epsEstimated": estv, "surprise_pct": sp})
 
-                # ── STEP 1: earnings_dates (this also initialises yfinance's auth session) ──
-                hist, est, ed = [], [], None
-                try:
-                    ed = obj.earnings_dates
-                    if ed is not None and not ed.empty:
-                        if hasattr(ed.index, "tz") and ed.index.tz is not None:
-                            ed.index = ed.index.tz_convert(None)
-                        ed = ed.sort_index()
-                except Exception:
-                    ed = None
+                # ── earningsTrend → upcoming Q est (0q = this Q, +1q = next Q) ──
+                for t in r0.get("earningsTrend", {}).get("trend", []):
+                    if t.get("period", "") not in ("0q", "+1q"): continue
+                    end_raw = t.get("endDate") or {}
+                    ed_str  = end_raw.get("fmt", "") if isinstance(end_raw, dict) else str(end_raw or "")
+                    ee      = t.get("earningsEstimate") or {}
+                    avg_obj = ee.get("avg") or {}
+                    avg_v   = _safe_float(avg_obj.get("raw") if isinstance(avg_obj, dict) else avg_obj)
+                    if ed_str and avg_v is not None:
+                        trend_est.append({"date": ed_str, "estimatedEpsAvg": avg_v})
 
-                # ── STEP 2: earningsHistory via yfinance internal session (handles auth/crumb) ──
-                # yfinance's _data object holds a session with Yahoo cookies+crumb already set.
-                # After earnings_dates is called, that session is initialised.
-                yh_map = {}
-                trend_est = []  # upcoming quarterly estimates from earningsTrend
+                # ── price → company name ──
+                pr  = r0.get("price") or {}
+                _nm = pr.get("longName") or pr.get("shortName") or ""
 
-                def _parse_combined(raw):
-                    """Parse earningsHistory + earningsTrend + price from one quoteSummary call."""
-                    nonlocal _nm
-                    res = (raw or {}).get("quoteSummary", {}).get("result") or []
-                    if not res: return
-                    r0 = res[0]
-
-                    # earningsHistory → past actuals + surprise
-                    for h in r0.get("earningsHistory", {}).get("history", []):
-                        qt  = h.get("quarter", {})
-                        ds  = qt.get("fmt", "")
-                        if not ds:
-                            raw_ts = qt.get("raw")
-                            if raw_ts:
-                                from datetime import datetime as _dt2
-                                ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
-                        act  = _safe_float((h.get("epsActual") or {}).get("raw"))
-                        estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
-                        sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
-                        if sp is not None: sp = sp * 100
-                        if ds and act is not None:
-                            yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
-
-                    # earningsTrend → upcoming Q+1 / Q+2 estimates
-                    for t in r0.get("earningsTrend", {}).get("trend", []):
-                        period = t.get("period", "")
-                        if period not in ("0q", "+1q"): continue
-                        end_raw = t.get("endDate") or {}
-                        ed_str  = end_raw.get("fmt", "") if isinstance(end_raw, dict) else str(end_raw or "")
-                        ee      = t.get("earningsEstimate") or {}
-                        avg_v   = _safe_float((ee.get("avg") or {}).get("raw") if isinstance(ee.get("avg"), dict) else ee.get("avg"))
-                        if ed_str and avg_v is not None:
-                            trend_est.append({"date": ed_str, "estimatedEpsAvg": avg_v})
-
-                    # price module → company name
-                    pd_obj = r0.get("price") or {}
-                    cname = pd_obj.get("longName") or pd_obj.get("shortName") or ""
-                    if cname: _nm = cname
-
-                _eh_url    = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
-                _eh_params = {"modules": "earningsHistory,earningsTrend,price"}
-
-                # Try 1: yfinance internal authenticated session
-                try:
-                    _yfd = getattr(obj, '_data', None)
-                    for _method in ('get_raw_json', 'cache_get', 'get'):
-                        _fn = getattr(_yfd, _method, None)
-                        if _fn:
-                            _raw = _fn(url=_eh_url, params=_eh_params)
-                            if isinstance(_raw, requests.Response): _raw = _raw.json()
-                            _parse_combined(_raw)
-                            if yh_map or trend_est: break
-                except Exception: pass
-
-                # Try 2: browser UA + Referer (bypasses yfinance UA blocking)
-                if not yh_map and not trend_est:
-                    try:
-                        _HDR = {
-                            "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                                           "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                           "Chrome/125.0.0.0 Safari/537.36"),
-                            "Accept": "application/json,text/plain,*/*",
-                            "Referer": f"https://finance.yahoo.com/quote/{tk}/analysis",
-                        }
-                        r = requests.get(_eh_url, params=_eh_params, headers=_HDR, timeout=8)
-                        if r.status_code == 200:
-                            _parse_combined(r.json())
-                    except Exception: pass
-
-                # ── STEP 3: merge earnings_dates rows with earningsHistory beat data ──
-                if ed is not None and not ed.empty:
-                    for dt, row in ed.iterrows():
-                        rep   = _safe_float(row.get("Reported EPS"))
-                        est_v = _safe_float(row.get("EPS Estimate"))
-                        date_str = dt.strftime("%Y-%m-%d")
-                        if rep is not None:
-                            yh = yh_map.get(date_str, {})
-                            sp = yh.get("surprise_pct")
-                            # fallback 1: Surprise(%) col from earnings_dates
-                            if sp is None:
-                                sp_raw = _safe_float(row.get("Surprise(%)"))
-                                if sp_raw is not None: sp = sp_raw
-                            # fallback 2: compute from actual vs estimate
-                            eff_est = yh.get("epsEstimated") or est_v
-                            if sp is None and eff_est is not None and eff_est != 0:
-                                sp = (rep - eff_est) / abs(eff_est) * 100
-                            hist.append({
-                                "fiscalDateEnding": date_str,
-                                "date": date_str,
-                                "eps": rep,
-                                "epsEstimated": eff_est,
-                                "surprise_pct": sp,
-                            })
-                        elif est_v is not None:
-                            est.append({"date": date_str, "estimatedEpsAvg": est_v})
-                    # Supplement est with earningsTrend data (better coverage for European stocks)
-                    if trend_est:
-                        seen_est = {e["date"][:7] for e in est}  # YYYY-MM dedup
-                        for te in sorted(trend_est, key=lambda x: x["date"]):
-                            if te["date"][:7] not in seen_est:
-                                est.append(te); seen_est.add(te["date"][:7])
-                    if hist:
-                        return tk, {"hist": hist[-4:], "est": est[:2], "name": _nm}
-
-                # ── FALLBACK A: use earningsHistory data directly ──
-                if yh_map:
-                    hist = sorted([
-                        {"fiscalDateEnding": ds, "date": ds,
-                         "eps": v["eps"], "epsEstimated": v["epsEstimated"],
-                         "surprise_pct": v["surprise_pct"]}
-                        for ds, v in yh_map.items()
-                    ], key=lambda x: x["date"])
-                    return tk, {"hist": hist[-4:], "est": trend_est[:2], "name": _nm}
-
-                # ── FALLBACK B: quarterly_income_stmt (actuals only) ──
-                try:
-                    qs = obj.quarterly_income_stmt
-                    if qs is not None and not qs.empty:
-                        for lbl in ("Basic EPS", "Diluted EPS", "EPS"):
-                            if lbl in qs.index:
-                                eps_row = qs.loc[lbl]
-                                fb_hist = []
-                                for col in sorted(eps_row.index)[-4:]:
-                                    val = _safe_float(eps_row[col])
-                                    if val is not None:
-                                        fb_hist.append({
-                                            "fiscalDateEnding": pd.Timestamp(col).strftime("%Y-%m-%d"),
-                                            "date": pd.Timestamp(col).strftime("%Y-%m-%d"),
-                                            "eps": val, "epsEstimated": None, "surprise_pct": None})
-                                if fb_hist: return tk, {"hist": fb_hist, "est": [], "name": _nm}
-                                break
-                except Exception:
-                    pass
-
-                return tk, {"hist": [], "est": [], "name": _nm}
+                hist.sort(key=lambda x: x["date"])
+                return tk, {"hist": hist[-4:], "est": trend_est[:2], "name": _nm}
             except Exception:
-                return tk, {"hist": [], "est": [], "name": ""}
+                return tk, {"hist": [], "est": [], "name": _nm}
 
         result = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as pool:
             for tk, data in pool.map(_fetch_one, tickers):
                 result[tk] = data
         return result
@@ -3483,6 +3375,7 @@ with tab0:
         rows = ""
         for tk in tickers:
             d = data.get(tk, {}); hist = d.get("hist",[]); est = d.get("est",[])
+            if not hist and not est: continue  # skip tickers with no Yahoo Finance data
             seen = set()
             done_q, future_q = [], []
             for h in hist:
@@ -3566,7 +3459,7 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # One combined parallelised cache call — all tickers fetched concurrently
     _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T + _STOXX_T))  # deduplicated
-    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v8")  # v8 = earningsTrend forecasts + price name + sticky fix
+    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v9")  # v9 = 1 HTTP call/ticker, 50 workers, skip empty rows
     # All indices share the same data dict (keyed by ticker)
 
     def _eps_section(idx_key):
