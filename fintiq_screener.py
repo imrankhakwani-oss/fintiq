@@ -3735,7 +3735,7 @@ body{{margin:0;padding:0 2px 4px;background:transparent;
 .sh{{font-size:0.88rem;font-weight:800;color:#F59E0B;margin:4px 0 7px}}
 .ssub{{font-size:0.58rem;font-weight:400;color:#475569}}
 @media(max-width:520px){{
-  .g5,.g4{{grid-template-columns:repeat(2,1fr)!important}}
+  .g10,.g4{{grid-template-columns:repeat(2,1fr)!important}}
   .ffc{{height:82px}}
   .ffv{{font-size:1.05rem}}
   .sh{{font-size:0.78rem}}
@@ -3759,8 +3759,7 @@ body{{margin:0;padding:0 2px 4px;background:transparent;
 </style>
 </head><body>
 <div class="sh">🌐 Macro Indicators <span class="ssub">· hover → trend · click → expand chart</span><span style="float:right;font-size:0.58rem;font-weight:400;color:#475569">● <span style="color:#22C55E">Live</span> · refreshes 5 min</span></div>
-<div class="g5" style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
-<div class="g5" style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">{_mr2}</div>
+<div class="g10" style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">{_mr1}{_mr2}</div>
 
 <div class="sh">📈 Major Markets — 3 Month <span class="ssub">· hover → chart · click → expand</span></div>
 <div class="g4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px">{_ic}</div>
@@ -3853,7 +3852,7 @@ setTimeout(resizeMe, 200);
 setTimeout(resizeMe, 600);
 setTimeout(resizeMe, 1500);
 </script>
-</body></html>""", height=900, scrolling=False)
+</body></html>""", height=1100, scrolling=False)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
