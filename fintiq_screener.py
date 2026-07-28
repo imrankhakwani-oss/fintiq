@@ -2891,16 +2891,16 @@ if _ticker_html_items:
 # TABS
 # ─────────────────────────────────────────────────────────────
 
-tab0, tab_brief, tab1, tab_factor, tab2, tab3, tab_mc, tab5, tab_opt, tab4 = st.tabs([
+tab0, tab1, tab_factor, tab_mc, tab3, tab2, tab_opt, tab_brief, tab5, tab4 = st.tabs([
     "🏠 Home",
-    "🌍 Brief",
     "🔍 Fundamental",
     "🔬 Factor",
-    "⚡ Catalyst",
-    "📈 Technical",
     "🎲 Monte Carlo",
-    "📒 Journal",
+    "📈 Technical",
+    "⚡ Catalyst",
     "📐 Optimiser",
+    "🌍 Brief",
+    "📒 Journal",
     "⚖️ Pairs",
 ])
 
@@ -3657,12 +3657,12 @@ with tab0:
     # DECISION FRAMEWORK — compact horizontal strip
     # ─────────────────────────────────────────────────────────────
     _steps = [
-        ("🔍","Screen","Fundamental tab","#F59E0B"),
-        ("💎","Value","DCF · Graham","#60A5FA"),
-        ("🎲","Simulate","Monte Carlo","#A78BFA"),
+        ("🔍","Screen","Fundamental · Factor","#F59E0B"),
+        ("🎲","Simulate","Monte Carlo tab","#A78BFA"),
         ("📈","Time","Technical + Catalyst","#4ADE80"),
-        ("📐","Size ⭐","MPT Optimiser","#F59E0B"),
-        ("🎯","Decide","Decision Dashboard","#22C55E"),
+        ("📐","Size","MPT Optimiser tab","#60A5FA"),
+        ("🌍","Brief","AI market brief","#F59E0B"),
+        ("🎯","Decide","Conviction trade","#22C55E"),
     ]
     _step_html = ""
     for i,(ico,lbl,sub,col) in enumerate(_steps):
@@ -3672,7 +3672,7 @@ with tab0:
                        f'<div style="font-size:0.56rem;color:#475569;margin-top:1px">{sub}</div>'
                        f'</div>')
         if i < len(_steps)-1:
-            _step_html += '<div style="color:#334155;font-size:0.9rem;display:flex;align-items:center;padding-top:6px">›</div>'
+            _step_html += '<div class="fiq-step-arrow" style="color:#334155;font-size:0.9rem;display:flex;align-items:center;padding-top:6px">›</div>'
 
     # ─────────────────────────────────────────────────────────────
     # RENDER COMPLETE DASHBOARD
@@ -3734,6 +3734,14 @@ body{{margin:0;padding:0 2px 4px;background:transparent;
 @keyframes ftip{{0%{{opacity:0}}10%{{opacity:1}}75%{{opacity:1}}100%{{opacity:0}}}}
 .sh{{font-size:0.88rem;font-weight:800;color:#F59E0B;margin:4px 0 7px}}
 .ssub{{font-size:0.58rem;font-weight:400;color:#475569}}
+@media(max-width:520px){{
+  .g5,.g4{{grid-template-columns:repeat(2,1fr)!important}}
+  .ffc{{height:82px}}
+  .ffv{{font-size:1.05rem}}
+  .sh{{font-size:0.78rem}}
+  .cmb{{padding:16px 14px 14px;width:98%}}
+  .cmc-wrap{{height:240px}}
+}}
 /* Modal */
 #fiq-cm{{display:none;position:fixed;top:0;left:0;width:100%;height:100%;
   background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;
@@ -3751,11 +3759,11 @@ body{{margin:0;padding:0 2px 4px;background:transparent;
 </style>
 </head><body>
 <div class="sh">🌐 Macro Indicators <span class="ssub">· hover → trend · click → expand chart</span><span style="float:right;font-size:0.58rem;font-weight:400;color:#475569">● <span style="color:#22C55E">Live</span> · refreshes 5 min</span></div>
-<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
-<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">{_mr2}</div>
+<div class="g5" style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:7px">{_mr1}</div>
+<div class="g5" style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">{_mr2}</div>
 
 <div class="sh">📈 Major Markets — 3 Month <span class="ssub">· hover → chart · click → expand</span></div>
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px">{_ic}</div>
+<div class="g4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px">{_ic}</div>
 
 <!-- Professional Chart Modal -->
 <div id="fiq-cm" onclick="if(event.target===this)closeChart()">
@@ -3830,8 +3838,19 @@ function closeChart() {{
   if (_ch) {{ _ch.destroy(); _ch = null; }}
 }}
 document.addEventListener('keydown', function(e) {{ if (e.key==='Escape') closeChart(); }});
+
+// Auto-resize iframe to fit content (works when same-origin)
+function resizeMe() {{
+  try {{
+    var h = document.body.scrollHeight;
+    if (window.frameElement) window.frameElement.style.height = (h + 4) + 'px';
+  }} catch(e) {{}}
+}}
+window.addEventListener('load', resizeMe);
+window.addEventListener('resize', resizeMe);
+setTimeout(resizeMe, 400);
 </script>
-</body></html>""", height=480, scrolling=False)
+</body></html>""", height=520, scrolling=False)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
@@ -3848,10 +3867,20 @@ body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI'
 .wrap{{background:rgba(13,25,45,0.9);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:16px 18px 18px;height:100vh;display:flex;flex-direction:column}}
 .hdr{{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex-shrink:0}}
 .eps-body{{display:flex;flex-direction:column;flex:1;min-height:0;margin-top:10px}}
-.tab-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;flex-shrink:0}}
+.tab-row{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;flex-shrink:0}}
 .tab-btn{{cursor:pointer;padding:5px 12px;border-radius:20px;font-size:0.7rem;font-weight:600;border:1px solid rgba(100,116,139,0.2);background:rgba(13,31,53,0.6);color:#475569;transition:all 0.15s;outline:none;white-space:nowrap}}
 .tab-btn.active{{border-color:rgba(245,158,11,0.5)!important;background:rgba(245,158,11,0.15)!important;color:#F59E0B!important}}
 .filter{{background:rgba(15,35,55,0.8);border:1px solid rgba(100,116,139,0.3);border-radius:8px;padding:5px 10px;color:#F1F5F9;font-size:0.75rem;width:150px;outline:none}}
+@media(max-width:520px){{
+  .wrap{{padding:10px 10px 12px;border-radius:10px}}
+  .tab-row{{flex-direction:column;align-items:stretch}}
+  .tab-row>div:first-child{{display:grid;grid-template-columns:1fr 1fr;gap:5px}}
+  .tab-btn{{font-size:0.62rem;padding:4px 8px;text-align:center}}
+  .filter{{width:100%!important;font-size:0.7rem}}
+  th{{font-size:0.55rem;padding:5px 4px}}
+  th:not(:first-child){{padding:5px 3px}}
+  .hdr span:last-child{{display:none}}
+}}
 .panel{{flex:1;overflow:auto;min-height:0}}
 table{{width:100%;border-collapse:collapse;font-family:inherit}}
 thead tr{{background:rgba(13,31,53,0.98);position:sticky;top:0;z-index:2}}
@@ -3937,10 +3966,18 @@ function fiqEF(q) {{
 </body></html>""", height=_eps_h, scrolling=False)
 
     st.markdown(f"""
+<style>
+@media(max-width:640px){{
+  .fiq-dash-grid{{grid-template-columns:1fr!important}}
+  .fiq-step-strip{{flex-wrap:wrap!important;gap:4px!important;padding:8px!important}}
+  .fiq-step-strip>div{{min-width:60px!important;flex:0 0 calc(33% - 4px)!important;padding:6px 2px!important}}
+  .fiq-step-arrow{{display:none!important}}
+}}
+</style>
 <!-- ═══ MY DASHBOARD ═══ -->
 <div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:8px">👤 My Dashboard</div>
 {_demo_banner}
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">
+<div class="fiq-dash-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">
 
   <!-- Open positions -->
   <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);border-radius:10px;padding:14px 16px">
@@ -3964,7 +4001,7 @@ function fiqEF(q) {{
 
 <!-- ═══ DECISION FRAMEWORK ═══ -->
 <div style="font-size:0.92rem;font-weight:800;color:#F59E0B;margin-bottom:8px">🧭 The Fintiq Method — 6 Steps to a Conviction Trade</div>
-<div style="display:flex;align-items:center;background:rgba(13,31,53,0.8);border:1px solid rgba(245,158,11,0.15);border-radius:12px;padding:12px 6px;margin-bottom:20px;overflow-x:auto">
+<div class="fiq-step-strip" style="display:flex;align-items:center;background:rgba(13,31,53,0.8);border:1px solid rgba(245,158,11,0.15);border-radius:12px;padding:12px 6px;margin-bottom:20px;overflow-x:auto">
   {_step_html}
 </div>
 
