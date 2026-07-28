@@ -3247,7 +3247,7 @@ with tab0:
               f'<span style="color:#334155;font-size:0.56rem">Next:</span>{_nb(nd)}</div>') if nd else ""
         back = mini if mini and "<polyline" in mini else (
             f'<div style="color:#334155;font-size:0.65rem;text-align:center">Chart loading…</div>')
-        return (f'<div class="ffc">'
+        return (f'<div class="ffc" style="height:96px">'
                 f'<div class="ffi">'
                 f'<div class="fff" style="border-top:2px solid {col}">'
                 f'<div class="ffl">{lbl}</div>'
@@ -3736,7 +3736,6 @@ body{{margin:0;padding:0 2px 4px;background:transparent;
 .ssub{{font-size:0.58rem;font-weight:400;color:#475569}}
 @media(max-width:520px){{
   .g10,.g4{{grid-template-columns:repeat(2,1fr)!important}}
-  .ffc{{height:82px}}
   .ffv{{font-size:1.05rem}}
   .sh{{font-size:0.78rem}}
   .cmb{{padding:16px 14px 14px;width:98%}}
@@ -3841,18 +3840,27 @@ document.addEventListener('keydown', function(e) {{ if (e.key==='Escape') closeC
 // Auto-resize iframe — collapse to 1px first so scrollHeight isn't inflated by iframe height
 function resizeMe() {{
   try {{
-    if (!window.frameElement) return;
-    window.frameElement.style.height = '1px';
-    var h = document.documentElement.scrollHeight;
-    window.frameElement.style.height = (h + 8) + 'px';
+    // Measure actual content height via bounding rects (not inflated by iframe height)
+    var maxBottom = 0;
+    var children = document.body.children;
+    for (var i = 0; i < children.length; i++) {{
+      var b = children[i].getBoundingClientRect().bottom + (window.pageYOffset || 0);
+      if (b > maxBottom) maxBottom = b;
+    }}
+    var h = Math.ceil(maxBottom) + 12;
+    if (h < 100) return;
+    // Streamlit's official iframe height API (most reliable)
+    window.parent.postMessage({{type:'streamlit:setFrameHeight', height:h}}, '*');
+    // Direct fallback
+    if (window.frameElement) window.frameElement.style.height = h + 'px';
   }} catch(e) {{}}
 }}
 window.addEventListener('load', resizeMe);
 window.addEventListener('resize', resizeMe);
 window.addEventListener('orientationchange', function() {{ setTimeout(resizeMe, 300); }});
-setTimeout(resizeMe, 200);
-setTimeout(resizeMe, 600);
-setTimeout(resizeMe, 1500);
+setTimeout(resizeMe, 100);
+setTimeout(resizeMe, 500);
+setTimeout(resizeMe, 1200);
 </script>
 </body></html>""", height=600, scrolling=False)
 
