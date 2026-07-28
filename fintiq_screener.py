@@ -2979,69 +2979,77 @@ with tab0:
             try:
                 obj = yf.Ticker(tk)
 
-                # ── STEP 1: earningsHistory via Yahoo Finance quoteSummary ──
-                # Provides epsActual, epsEstimate, surprisePercent for last 4 quarters
-                yh_map = {}  # date_str → {eps, epsEstimated, surprise_pct}
-                try:
-                    HDR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                    url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
-                           f"?modules=earningsHistory")
-                    r = requests.get(url, headers=HDR, timeout=8)
-                    if r.status_code == 200:
-                        res = r.json().get("quoteSummary", {}).get("result", [])
-                        if res:
-                            for h in res[0].get("earningsHistory", {}).get("history", []):
-                                qt = h.get("quarter", {})
-                                # fmt is like "2024-12-31"
-                                ds = qt.get("fmt", "")
-                                if not ds:
-                                    raw_ts = qt.get("raw")
-                                    if raw_ts:
-                                        from datetime import datetime as _dt2
-                                        ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
-                                act  = _safe_float((h.get("epsActual") or {}).get("raw"))
-                                estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
-                                sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
-                                if sp is not None: sp = sp * 100  # convert 0.043 → 4.3%
-                                if ds and act is not None:
-                                    yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
-                except Exception:
-                    pass
-
-                # ── STEP 2: earnings_dates — actuals + upcoming estimates ──
+                # ── STEP 1: earnings_dates (this also initialises yfinance's auth session) ──
+                hist, est, ed = [], [], None
                 try:
                     ed = obj.earnings_dates
                     if ed is not None and not ed.empty:
                         if hasattr(ed.index, "tz") and ed.index.tz is not None:
                             ed.index = ed.index.tz_convert(None)
                         ed = ed.sort_index()
-                        hist, est = [], []
-                        for dt, row in ed.iterrows():
-                            rep   = _safe_float(row.get("Reported EPS"))
-                            est_v = _safe_float(row.get("EPS Estimate"))
-                            date_str = dt.strftime("%Y-%m-%d")
-                            if rep is not None:
-                                # Merge with earningsHistory data for beat/miss
-                                yh = yh_map.get(date_str, {})
-                                sp = yh.get("surprise_pct")
-                                if sp is None:
-                                    sp_raw = _safe_float(row.get("Surprise(%)"))
-                                    if sp_raw is not None: sp = sp_raw
-                                hist.append({
-                                    "fiscalDateEnding": date_str,
-                                    "date": date_str,
-                                    "eps": rep,
-                                    "epsEstimated": yh.get("epsEstimated") or est_v,
-                                    "surprise_pct": sp,
-                                })
-                            elif est_v is not None:
-                                est.append({"date": date_str, "estimatedEpsAvg": est_v})
-                        if hist:
-                            return tk, {"hist": hist[-4:], "est": est[:2]}
+                except Exception:
+                    ed = None
+
+                # ── STEP 2: earningsHistory via yfinance's authenticated session ──
+                # After earnings_dates, obj._data.session has Yahoo cookies + crumb
+                yh_map = {}
+                try:
+                    _yf_data = getattr(obj, '_data', None)
+                    _session = getattr(_yf_data, 'session', None)
+                    if _session:
+                        url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{tk}"
+                               f"?modules=earningsHistory")
+                        r = _session.get(url, timeout=8)
+                        if r.status_code == 200:
+                            res = r.json().get("quoteSummary", {}).get("result") or []
+                            if res:
+                                for h in res[0].get("earningsHistory", {}).get("history", []):
+                                    qt  = h.get("quarter", {})
+                                    ds  = qt.get("fmt", "")
+                                    if not ds:
+                                        raw_ts = qt.get("raw")
+                                        if raw_ts:
+                                            from datetime import datetime as _dt2
+                                            ds = _dt2.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d")
+                                    act  = _safe_float((h.get("epsActual") or {}).get("raw"))
+                                    estv = _safe_float((h.get("epsEstimate") or {}).get("raw"))
+                                    sp   = _safe_float((h.get("surprisePercent") or {}).get("raw"))
+                                    if sp is not None: sp = sp * 100  # 0.043 → 4.3%
+                                    if ds and act is not None:
+                                        yh_map[ds] = {"eps": act, "epsEstimated": estv, "surprise_pct": sp}
                 except Exception:
                     pass
 
-                # ── FALLBACK: use earningsHistory data directly ──
+                # ── STEP 3: merge earnings_dates rows with earningsHistory beat data ──
+                if ed is not None and not ed.empty:
+                    for dt, row in ed.iterrows():
+                        rep   = _safe_float(row.get("Reported EPS"))
+                        est_v = _safe_float(row.get("EPS Estimate"))
+                        date_str = dt.strftime("%Y-%m-%d")
+                        if rep is not None:
+                            yh = yh_map.get(date_str, {})
+                            sp = yh.get("surprise_pct")
+                            # fallback 1: Surprise(%) col from earnings_dates
+                            if sp is None:
+                                sp_raw = _safe_float(row.get("Surprise(%)"))
+                                if sp_raw is not None: sp = sp_raw
+                            # fallback 2: compute from actual vs estimate
+                            eff_est = yh.get("epsEstimated") or est_v
+                            if sp is None and eff_est is not None and eff_est != 0:
+                                sp = (rep - eff_est) / abs(eff_est) * 100
+                            hist.append({
+                                "fiscalDateEnding": date_str,
+                                "date": date_str,
+                                "eps": rep,
+                                "epsEstimated": eff_est,
+                                "surprise_pct": sp,
+                            })
+                        elif est_v is not None:
+                            est.append({"date": date_str, "estimatedEpsAvg": est_v})
+                    if hist:
+                        return tk, {"hist": hist[-4:], "est": est[:2]}
+
+                # ── FALLBACK A: use earningsHistory data directly ──
                 if yh_map:
                     hist = sorted([
                         {"fiscalDateEnding": ds, "date": ds,
@@ -3051,21 +3059,22 @@ with tab0:
                     ], key=lambda x: x["date"])
                     return tk, {"hist": hist[-4:], "est": []}
 
-                # ── FINAL FALLBACK: quarterly_income_stmt ──
+                # ── FALLBACK B: quarterly_income_stmt (actuals only) ──
                 try:
                     qs = obj.quarterly_income_stmt
                     if qs is not None and not qs.empty:
                         for lbl in ("Basic EPS", "Diluted EPS", "EPS"):
                             if lbl in qs.index:
                                 eps_row = qs.loc[lbl]
-                                hist = []
+                                fb_hist = []
                                 for col in sorted(eps_row.index)[-4:]:
                                     val = _safe_float(eps_row[col])
                                     if val is not None:
-                                        hist.append({"fiscalDateEnding": pd.Timestamp(col).strftime("%Y-%m-%d"),
-                                                     "date": pd.Timestamp(col).strftime("%Y-%m-%d"),
-                                                     "eps": val, "epsEstimated": None, "surprise_pct": None})
-                                if hist: return tk, {"hist": hist, "est": []}
+                                        fb_hist.append({
+                                            "fiscalDateEnding": pd.Timestamp(col).strftime("%Y-%m-%d"),
+                                            "date": pd.Timestamp(col).strftime("%Y-%m-%d"),
+                                            "eps": val, "epsEstimated": None, "surprise_pct": None})
+                                if fb_hist: return tk, {"hist": fb_hist, "est": []}
                                 break
                 except Exception:
                     pass
@@ -3783,74 +3792,76 @@ window.fiqEToggle=function(){{
     # Scripts in st.markdown are NOT executed by React; components.v1.html uses a real
     # iframe where scripts run, and we attach functions to window.parent (the main app).
     import streamlit.components.v1 as _cv1
+    # Inject JS into parent document HEAD (same technique as CSS injection at line ~1963).
+    # This is the only reliable pattern: createElement('script') + head.appendChild
+    # runs the code IN the parent window context, so window === parent window.
     _cv1.html("""<!DOCTYPE html><html><body><script>
 (function(){
-  // var fn — not a named function expression, so accessible in outer scope
-  var run=function(){
-    var p=window.parent;
-    if(!p||!p.document)return;
+  var JS=[
+    "window.fiqTab=function(id){",
+    "  ['spx','ndx','ftse'].forEach(function(k){",
+    "    var p=document.getElementById('fiq-ep-'+k);",
+    "    var b=document.getElementById('fiqt-'+k);",
+    "    if(p)p.style.display=(k===id)?'block':'none';",
+    "    if(b){",
+    "      b.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';",
+    "      b.style.color=(k===id)?'#F59E0B':'#475569';",
+    "      b.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';",
+    "    }",
+    "  });",
+    "};",
+    "window.fiqEF=function(q){",
+    "  document.querySelectorAll('[id^=\"fiq-ep-\"]').forEach(function(panel){",
+    "    if(panel.style.display==='none')return;",
+    "    panel.querySelectorAll('tbody tr').forEach(function(r){",
+    "      var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();",
+    "      r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';",
+    "    });",
+    "  });",
+    "};",
+    "window.fiqEToggle=function(){",
+    "  var b=document.getElementById('fiq-eps-body');",
+    "  var c=document.getElementById('fiq-eps-chevron');",
+    "  if(!b)return;",
+    "  var open=b.style.display!=='none';",
+    "  b.style.display=open?'none':'block';",
+    "  if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';",
+    "};",
+    "window.fe=function(e,svgId){",
+    "  e.stopPropagation();e.preventDefault();",
+    "  var s=document.getElementById(svgId);",
+    "  if(!s){var all=document.querySelectorAll('[id^=\"fs-\"]');for(var i=0;i<all.length;i++){if(all[i].id===svgId){s=all[i];break;}}}",
+    "  var ov=document.getElementById('fiq-modal-ov');",
+    "  if(!ov)return;",
+    "  document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';",
+    "  document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style=\"color:#64748B\">No data</p>';",
+    "  ov.style.display='flex';",
+    "};",
+    "window.fiqMHide=function(){",
+    "  var ov=document.getElementById('fiq-modal-ov');",
+    "  if(ov)ov.style.display='none';",
+    "};",
+    "if(!window._fiqKeyBound){",
+    "  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&window.fiqMHide)window.fiqMHide();});",
+    "  window._fiqKeyBound=true;",
+    "}"
+  ].join('\\n');
 
-    p.fiqTab=function(id){
-      ['spx','ndx','ftse'].forEach(function(k){
-        var panel=p.document.getElementById('fiq-ep-'+k);
-        var btn=p.document.getElementById('fiqt-'+k);
-        if(panel)panel.style.display=(k===id)?'block':'none';
-        if(btn){
-          btn.style.background=(k===id)?'rgba(245,158,11,0.15)':'rgba(13,31,53,0.6)';
-          btn.style.color=(k===id)?'#F59E0B':'#475569';
-          btn.style.borderColor=(k===id)?'rgba(245,158,11,0.5)':'rgba(100,116,139,0.2)';
-        }
-      });
-    };
+  function inject(doc){
+    if(!doc||!doc.head)return;
+    var old=doc.getElementById('fiq-js-inject');
+    if(old)old.remove();
+    var s=doc.createElement('script');
+    s.id='fiq-js-inject';
+    s.textContent=JS;
+    doc.head.appendChild(s);
+  }
 
-    p.fiqEF=function(q){
-      p.document.querySelectorAll('[id^="fiq-ep-"]').forEach(function(panel){
-        if(panel.style.display==='none')return;
-        panel.querySelectorAll('tbody tr').forEach(function(r){
-          var t=(r.querySelector('td')&&r.querySelector('td').textContent||'').toLowerCase();
-          r.style.display=(!q||t.includes(q.toLowerCase()))?'':'none';
-        });
-      });
-    };
+  inject(window.parent.document);
+  setTimeout(function(){inject(window.parent.document);},500);
+  setTimeout(function(){inject(window.parent.document);},1500);
 
-    p.fiqEToggle=function(){
-      var b=p.document.getElementById('fiq-eps-body');
-      var c=p.document.getElementById('fiq-eps-chevron');
-      if(!b)return;
-      var open=b.style.display!=='none';
-      b.style.display=open?'none':'block';
-      if(c)c.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
-    };
-
-    p.fe=function(e,svgId){
-      e.stopPropagation();e.preventDefault();
-      var s=p.document.getElementById(svgId);
-      if(!s){var all=p.document.querySelectorAll('[id^="fs-"]');for(var i=0;i<all.length;i++){if(all[i].id===svgId){s=all[i];break;}}}
-      var ov=p.document.getElementById('fiq-modal-ov');
-      if(!ov)return;
-      p.document.getElementById('fiq-modal-lbl').textContent=s?s.dataset.lbl:'';
-      p.document.getElementById('fiq-modal-body').innerHTML=s?s.innerHTML:'<p style="color:#64748B">No data</p>';
-      ov.style.display='flex';
-    };
-
-    p.fiqMHide=function(){
-      var ov=p.document.getElementById('fiq-modal-ov');
-      if(ov)ov.style.display='none';
-    };
-
-    // ESC to close modal
-    if(!p._fiqKeyBound){
-      p.document.addEventListener('keydown',function(e){if(e.key==='Escape'&&p.fiqMHide)p.fiqMHide();});
-      p._fiqKeyBound=true;
-    }
-  };
-
-  run();
-  setTimeout(run,400);
-  setTimeout(run,1500);
-
-  // Re-run whenever Streamlit re-renders
-  var obs=new MutationObserver(function(){run();});
+  var obs=new MutationObserver(function(){inject(window.parent.document);});
   obs.observe(window.parent.document.body,{childList:true,subtree:false});
 })();
 </script></body></html>""", height=1, scrolling=False)
