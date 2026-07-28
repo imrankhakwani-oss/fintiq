@@ -3712,6 +3712,7 @@ with tab0:
 <html><head><meta charset="utf-8">
 <style>
 *{{box-sizing:border-box}}
+html,body{{height:auto!important;overflow:visible!important}}
 body{{margin:0;padding:0 2px 4px;background:transparent;
      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
 .ffc{{perspective:900px;height:92px;position:relative;width:100%}}
@@ -3837,32 +3838,24 @@ function closeChart() {{
 }}
 document.addEventListener('keydown', function(e) {{ if (e.key==='Escape') closeChart(); }});
 
-// Auto-resize iframe — collapse to 1px first so scrollHeight isn't inflated by iframe height
-function resizeMe() {{
+// html+body are height:auto so getBoundingClientRect().height = true content, not iframe height
+function setH() {{
   try {{
-    // Measure actual content height via bounding rects (not inflated by iframe height)
-    var maxBottom = 0;
-    var children = document.body.children;
-    for (var i = 0; i < children.length; i++) {{
-      var b = children[i].getBoundingClientRect().bottom + (window.pageYOffset || 0);
-      if (b > maxBottom) maxBottom = b;
-    }}
-    var h = Math.ceil(maxBottom) + 12;
-    if (h < 100) return;
-    // Streamlit's official iframe height API (most reliable)
-    window.parent.postMessage({{type:'streamlit:setFrameHeight', height:h}}, '*');
-    // Direct fallback
+    var h = Math.ceil(document.body.getBoundingClientRect().height) + 20;
+    if (h < 80) return;
     if (window.frameElement) window.frameElement.style.height = h + 'px';
   }} catch(e) {{}}
 }}
-window.addEventListener('load', resizeMe);
-window.addEventListener('resize', resizeMe);
-window.addEventListener('orientationchange', function() {{ setTimeout(resizeMe, 300); }});
-setTimeout(resizeMe, 100);
-setTimeout(resizeMe, 500);
-setTimeout(resizeMe, 1200);
+if (window.ResizeObserver) {{
+  new ResizeObserver(function() {{ setH(); }}).observe(document.body);
+}}
+window.addEventListener('load', setH);
+window.addEventListener('resize', function() {{ setTimeout(setH, 150); }});
+window.addEventListener('orientationchange', function() {{ setTimeout(setH, 300); }});
+setTimeout(setH, 100);
+setTimeout(setH, 600);
 </script>
-</body></html>""", height=600, scrolling=False)
+</body></html>""", height=490, scrolling=False)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
