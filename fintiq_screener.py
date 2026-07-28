@@ -3838,11 +3838,13 @@ function closeChart() {{
 }}
 document.addEventListener('keydown', function(e) {{ if (e.key==='Escape') closeChart(); }});
 
-// Auto-resize iframe to fit content (works when same-origin)
+// Auto-resize iframe — collapse to 1px first so scrollHeight isn't inflated by iframe height
 function resizeMe() {{
   try {{
-    var h = document.body.scrollHeight;
-    if (window.frameElement) window.frameElement.style.height = (h + 4) + 'px';
+    if (!window.frameElement) return;
+    window.frameElement.style.height = '1px';
+    var h = document.documentElement.scrollHeight;
+    window.frameElement.style.height = (h + 8) + 'px';
   }} catch(e) {{}}
 }}
 window.addEventListener('load', resizeMe);
