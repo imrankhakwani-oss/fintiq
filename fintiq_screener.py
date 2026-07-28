@@ -3841,7 +3841,17 @@ document.addEventListener('keydown', function(e) {{ if (e.key==='Escape') closeC
 // html+body are height:auto so getBoundingClientRect().height = true content, not iframe height
 function setH() {{
   try {{
-    var h = Math.ceil(document.body.getBoundingClientRect().height) + 20;
+    // Measure bottom of last VISIBLE child — body itself inflates to fill iframe so skip it
+    var maxY = 0;
+    var els = document.body.children;
+    for (var i = 0; i < els.length; i++) {{
+      var el = els[i];
+      var cs = window.getComputedStyle(el);
+      if (cs.display === 'none' || cs.position === 'fixed' || el.tagName === 'SCRIPT') continue;
+      var b = el.getBoundingClientRect().bottom + (window.pageYOffset || 0);
+      if (b > maxY) maxY = b;
+    }}
+    var h = Math.ceil(maxY) + 20;
     if (h < 80) return;
     if (window.frameElement) window.frameElement.style.height = h + 'px';
   }} catch(e) {{}}
@@ -3852,8 +3862,8 @@ if (window.ResizeObserver) {{
 window.addEventListener('load', setH);
 window.addEventListener('resize', function() {{ setTimeout(setH, 150); }});
 window.addEventListener('orientationchange', function() {{ setTimeout(setH, 300); }});
-setTimeout(setH, 100);
-setTimeout(setH, 600);
+setTimeout(setH, 50);
+setTimeout(setH, 400);
 </script>
 </body></html>""", height=1060, scrolling=False)
 
