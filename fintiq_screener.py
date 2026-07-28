@@ -3345,7 +3345,7 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     _SPX_T = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","BRK-B","AVGO","JPM","LLY","UNH","V","XOM","MA"]
     _NDX_T = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","ASML","ADBE","COST","AMD","QCOM","NFLX","INTC"]
-    _FTSE_T= ["SHEL.L","AZN.L","HSBA.L","ULVR.L","BP.L","RIO.L","GSK.L","LLOY.L","BATS.L","DGE.L"]
+    _FTSE_T= ["SHEL.L","AZN.L","HSBA.L","ULVR.L","RIO.L","BP.L","GSK.L","LSEG.L","DGE.L","LLOY.L","BATS.L","NG.L","RR.L","BARC.L","PRU.L"]
 
     def _qlbl(ds):
         """Short label like 'Jun 26' from a date string."""
@@ -3443,7 +3443,7 @@ with tab0:
     # ─────────────────────────────────────────────────────────────
     # One combined parallelised cache call — 40 tickers fetched concurrently (~3s vs 40s sequential)
     _ALL_EPS_T = list(dict.fromkeys(_SPX_T + _NDX_T + _FTSE_T))  # deduplicated
-    _edata_all = _eps_batch(",".join(_ALL_EPS_T))
+    _edata_all = _eps_batch(",".join(_ALL_EPS_T) + "|v3")  # v3 = browser UA headers
     _edata_spx = _edata_ndx = _edata_ftse = _edata_all
 
     def _eps_section(idx_key):
@@ -3780,7 +3780,7 @@ td:first-child{{padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="tab-btn active" id="btn-spx" onclick="event.stopPropagation();fiqTab('spx')">S&amp;P 500 Top 15</button>
         <button class="tab-btn" id="btn-ndx" onclick="event.stopPropagation();fiqTab('ndx')">NASDAQ 100 Top 15</button>
-        <button class="tab-btn" id="btn-ftse" onclick="event.stopPropagation();fiqTab('ftse')">FTSE 100 Top 10</button>
+        <button class="tab-btn" id="btn-ftse" onclick="event.stopPropagation();fiqTab('ftse')">FTSE 100 Top 15</button>
       </div>
       <input class="filter" type="text" oninput="fiqEF(this.value)" onclick="event.stopPropagation()" placeholder="🔍 Filter ticker…">
     </div>
@@ -3790,24 +3790,64 @@ td:first-child{{padding:6px 12px;font-weight:700;color:#F1F5F9;font-size:0.82rem
   </div>
 </div>
 <script>
+var _activeTab = 'spx';
+
+function autoResize() {{
+  try {{
+    var h = document.documentElement.scrollHeight;
+    window.frameElement.style.height = (h + 4) + 'px';
+  }} catch(e) {{}}
+}}
+
 function fiqTab(id) {{
+  _activeTab = id;
+  // Restore all rows, then show only this tab
+  document.querySelectorAll('tbody tr').forEach(function(r) {{ r.style.display = ''; }});
   ['spx','ndx','ftse'].forEach(function(k) {{
     var panel = document.getElementById('panel-' + k);
     var btn   = document.getElementById('btn-' + k);
     if (panel) panel.style.display = (k === id) ? '' : 'none';
     if (btn)   btn.className = 'tab-btn' + (k === id ? ' active' : '');
   }});
+  // Re-apply any active filter
+  var fi = document.querySelector('.filter');
+  if (fi && fi.value) fiqEF(fi.value);
+  autoResize();
 }}
+
 function fiqEF(q) {{
   q = (q || '').toLowerCase();
-  document.querySelectorAll('[id^="panel-"]').forEach(function(panel) {{
-    if (panel.style.display === 'none') return;
-    panel.querySelectorAll('tbody tr').forEach(function(r) {{
-      var txt = (r.querySelector('td') && r.querySelector('td').textContent || '').toLowerCase();
-      r.style.display = (!q || txt.includes(q)) ? '' : 'none';
+  if (!q) {{
+    // No query — restore normal tab view
+    ['spx','ndx','ftse'].forEach(function(k) {{
+      var panel = document.getElementById('panel-' + k);
+      if (panel) panel.style.display = (k === _activeTab) ? '' : 'none';
     }});
-  }});
+    document.querySelectorAll('tbody tr').forEach(function(r) {{ r.style.display = ''; }});
+  }} else {{
+    // Show all panels, filter rows across all tabs
+    ['spx','ndx','ftse'].forEach(function(k) {{
+      var panel = document.getElementById('panel-' + k);
+      if (panel) panel.style.display = '';
+    }});
+    document.querySelectorAll('tbody tr').forEach(function(r) {{
+      var txt = (r.querySelector('td') && r.querySelector('td').textContent || '').toLowerCase();
+      r.style.display = txt.includes(q) ? '' : 'none';
+    }});
+    // Hide panels with no visible rows
+    ['spx','ndx','ftse'].forEach(function(k) {{
+      var panel = document.getElementById('panel-' + k);
+      if (!panel) return;
+      var anyVisible = false;
+      panel.querySelectorAll('tbody tr').forEach(function(r) {{
+        if (r.style.display !== 'none') anyVisible = true;
+      }});
+      panel.style.display = anyVisible ? '' : 'none';
+    }});
+  }}
+  autoResize();
 }}
+
 function fiqEToggle() {{
   var b = document.getElementById('eps-body');
   var c = document.getElementById('chev');
@@ -3815,7 +3855,14 @@ function fiqEToggle() {{
   var open = b.style.display !== 'none';
   b.style.display = open ? 'none' : '';
   if (c) c.style.transform = open ? 'rotate(-90deg)' : '';
+  autoResize();
 }}
+
+// Auto-resize on load and whenever content height changes
+window.addEventListener('load', autoResize);
+try {{
+  new ResizeObserver(autoResize).observe(document.body);
+}} catch(e) {{}}
 </script>
 </body></html>""", height=1050, scrolling=False)
 
