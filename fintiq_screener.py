@@ -3090,7 +3090,7 @@ def _make_bulletin(_cache_key: str) -> dict:
             _client = _anth_b.Anthropic(api_key=_api_key)
             _resp = _client.messages.create(
                 model="claude-sonnet-5",
-                max_tokens=1800,
+                max_tokens=3000,
                 messages=[{"role": "user", "content": _prompt}]
             )
             _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
