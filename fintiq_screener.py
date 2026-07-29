@@ -3791,9 +3791,18 @@ with tab0:
         _rdr += '</div>'
         st.markdown(_rdr, unsafe_allow_html=True)
 
+    for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
+                          ("📈 Equity Flow","equity_flow"),
+                          ("🌏 Overnight Wires","overnight_wires")]:
+        _b_txt = _bulletin.get(_b_k,"")
+        if _b_txt:
+            with st.expander(_b_lbl):
+                st.markdown(f'<div style="font-size:0.88rem;color:#CBD5E1;line-height:1.75">'
+                            f'{_b_txt}</div>', unsafe_allow_html=True)
+
     _b_ideas = _bulletin.get("trade_ideas", [])
     if _b_ideas:
-        with st.expander("💡 Trade Ideas", expanded=True):
+        with st.expander("💡 Trade Ideas", expanded=False):
             for _idea in _b_ideas:
                 st.markdown(f"""
 <div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);
@@ -3810,15 +3819,6 @@ with tab0:
          <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('risk','')}</div></div>
   </div>
 </div>""", unsafe_allow_html=True)
-
-    for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
-                          ("📈 Equity Flow","equity_flow"),
-                          ("🌏 Overnight Wires","overnight_wires")]:
-        _b_txt = _bulletin.get(_b_k,"")
-        if _b_txt:
-            with st.expander(_b_lbl):
-                st.markdown(f'<div style="font-size:0.88rem;color:#CBD5E1;line-height:1.75">'
-                            f'{_b_txt}</div>', unsafe_allow_html=True)
 
     if _bulletin.get("fallback"):
         st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
