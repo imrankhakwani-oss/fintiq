@@ -3083,6 +3083,7 @@ def _make_bulletin(_cache_key: str) -> dict:
     )
 
     _api_key = _os_b.environ.get("ANTHROPIC_API_KEY", "")
+    _debug_err = ""
     if _api_key:
         try:
             import anthropic as _anth_b
@@ -3102,8 +3103,10 @@ def _make_bulletin(_cache_key: str) -> dict:
             _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
                             "session": _session})
             return _parsed
-        except Exception:
-            pass
+        except Exception as _e:
+            _debug_err = f"API error: {type(_e).__name__}: {str(_e)[:200]}"
+    else:
+        _debug_err = "ANTHROPIC_API_KEY not found in environment"
 
     # ── Rules-based fallback (no API key or on error) ─────────
     _vix_val = _vix.get("price")
@@ -3127,7 +3130,7 @@ def _make_bulletin(_cache_key: str) -> dict:
         "macro_pulse": (f"S&P 500 {_pct(_spx_pct)}. Gold {_pct(_gold.get('chg_pct'))}. "
                         f"DXY {_pct(_dxy.get('chg_pct'))}. 10Y UST {_tnx.get('price','—')}%. "
                         f"Brent {_pct(_brent.get('chg_pct'))}."),
-        "equity_flow": "Set ANTHROPIC_API_KEY on Railway to enable full AI-generated bulletin.",
+        "equity_flow": f"DEBUG: {_debug_err}" if _debug_err else "Set ANTHROPIC_API_KEY on Railway to enable full AI-generated bulletin.",
         "overnight_wires": _region_txt or "Data unavailable.",
         "trade_ideas": [],
         "fallback": True,
