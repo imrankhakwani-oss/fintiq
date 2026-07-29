@@ -3057,9 +3057,8 @@ def _make_bulletin(_cache_key: str) -> dict:
     else:            _session = "After-Hours"
 
     _prompt = (
-        f"You are a Senior Research Analyst at Goldman Sachs Global Markets Division.\n"
-        f"Write the {_session.upper()} BULLETIN for the trading desk.\n"
-        f"Be crisp, direct, authoritative. No hedging. No filler. Brief a senior PM.\n\n"
+        f"You are a Senior Research Analyst writing the {_session.upper()} BULLETIN for a professional trading desk.\n"
+        f"Be crisp, direct, authoritative. No hedging. No filler. Brief a senior portfolio manager.\n\n"
         f"MARKET DATA:\n{_mkt}\n"
         f"ASIA / EUROPE OVERNIGHT:\n{_region_txt}\n\n"
         f"NEWS HEADLINES:\n{_news_txt}\n\n"
@@ -3749,7 +3748,7 @@ with tab0:
             border:1px solid rgba(251,191,36,0.35);border-radius:12px;margin-bottom:10px">
   <div>
     <div style="font-size:0.6rem;font-weight:700;color:#F59E0B;letter-spacing:2px;
-                text-transform:uppercase">Goldman Sachs · Global Markets Division</div>
+                text-transform:uppercase">Fintiq · Global Markets Intelligence</div>
     <div style="font-size:1.1rem;font-weight:800;color:#F1F5F9;margin-top:3px">
       ⏰ {_b_session} Bulletin</div>
   </div>
