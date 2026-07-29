@@ -3087,32 +3087,40 @@ def _make_bulletin(_cache_key: str) -> dict:
     _api_key = _os_b.environ.get("ANTHROPIC_API_KEY", "")
     _debug_err = ""
     if _api_key:
-        try:
-            import anthropic as _anth_b
-            _client = _anth_b.Anthropic(api_key=_api_key)
-            _resp = _client.messages.create(
-                model="claude-sonnet-5",
-                max_tokens=8000,
-                messages=[{"role": "user", "content": _prompt}]
-            )
-            _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
-            # Strip markdown fences
-            if _raw.startswith("```"):
-                _lines = _raw.split("\n")
-                _raw = "\n".join(_lines[1:])
-                if _raw.rstrip().endswith("```"):
-                    _raw = _raw.rstrip()[:-3].rstrip()
-            # Robustly extract the JSON object (ignore any text before/after)
-            _j_start = _raw.find('{')
-            _j_end   = _raw.rfind('}') + 1
-            if _j_start >= 0 and _j_end > _j_start:
-                _raw = _raw[_j_start:_j_end]
-            _parsed = _json.loads(_raw)
-            _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
-                            "session": _session})
-            return _parsed
-        except Exception as _e:
-            _debug_err = f"API error: {type(_e).__name__}: {str(_e)[:200]}"
+        import anthropic as _anth_b, time as _time_b
+        _client = _anth_b.Anthropic(api_key=_api_key)
+        for _attempt in range(3):
+            try:
+                _resp = _client.messages.create(
+                    model="claude-sonnet-5",
+                    max_tokens=8000,
+                    messages=[{"role": "user", "content": _prompt}]
+                )
+                _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
+                # Strip markdown fences
+                if _raw.startswith("```"):
+                    _lines = _raw.split("\n")
+                    _raw = "\n".join(_lines[1:])
+                    if _raw.rstrip().endswith("```"):
+                        _raw = _raw.rstrip()[:-3].rstrip()
+                # Robustly extract the JSON object (ignore any text before/after)
+                _j_start = _raw.find('{')
+                _j_end   = _raw.rfind('}') + 1
+                if _j_start >= 0 and _j_end > _j_start:
+                    _raw = _raw[_j_start:_j_end]
+                _parsed = _json.loads(_raw)
+                _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
+                                "session": _session})
+                return _parsed
+            except _anth_b.APIStatusError as _e:
+                if _e.status_code == 529 and _attempt < 2:
+                    _time_b.sleep(5 * (_attempt + 1))  # 5s, 10s
+                    continue
+                _debug_err = f"API error: {type(_e).__name__}: {str(_e)[:200]}"
+                break
+            except Exception as _e:
+                _debug_err = f"API error: {type(_e).__name__}: {str(_e)[:200]}"
+                break
     else:
         _debug_err = "ANTHROPIC_API_KEY not found in environment"
 
@@ -3138,7 +3146,7 @@ def _make_bulletin(_cache_key: str) -> dict:
         "macro_pulse": (f"S&P 500 {_pct(_spx_pct)}. Gold {_pct(_gold.get('chg_pct'))}. "
                         f"DXY {_pct(_dxy.get('chg_pct'))}. 10Y UST {_tnx.get('price','—')}%. "
                         f"Brent {_pct(_brent.get('chg_pct'))}."),
-        "equity_flow": f"DEBUG: {_debug_err}" if _debug_err else "Set ANTHROPIC_API_KEY on Railway to enable full AI-generated bulletin.",
+        "equity_flow": "",
         "overnight_wires": _region_txt or "Data unavailable.",
         "trade_ideas": [],
         "fallback": True,
