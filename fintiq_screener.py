@@ -3707,7 +3707,13 @@ with tab0:
     })
 
     # ── Macro & Markets cards — cv1.html so JS runs inside real iframe ──
+    # CSS injected into parent page: on mobile override the 491px iframe height to 1060px.
+    # !important in a stylesheet overrides React's inline style on all browsers, including
+    # iOS Safari where window.frameElement is null and JS can't resize.
     import streamlit.components.v1 as _cv1
+    st.markdown("""<style>
+@media(max-width:640px){iframe[style*="491px"]{height:1060px!important;min-height:1060px!important}}
+</style>""", unsafe_allow_html=True)
     _cv1.html(f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
@@ -3865,7 +3871,7 @@ window.addEventListener('orientationchange', function() {{ setTimeout(setH, 300)
 setTimeout(setH, 50);
 setTimeout(setH, 400);
 </script>
-</body></html>""", height=1060, scrolling=False)
+</body></html>""", height=491, scrolling=False)
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
