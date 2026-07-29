@@ -2888,10 +2888,259 @@ if _ticker_html_items:
                 unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
+# MARKET BULLETIN — data sources + AI generation (Home tab)
+# ─────────────────────────────────────────────────────────────
+
+_BRIEF_INDICES = [
+    ("^GSPC",    "S&P 500",        "🇺🇸", "US"),
+    ("^DJI",     "Dow Jones",      "🇺🇸", "US"),
+    ("^IXIC",    "Nasdaq",         "🇺🇸", "US"),
+    ("^RUT",     "Russell 2000",   "🇺🇸", "US"),
+    ("ES=F",     "S&P Futures",    "🇺🇸", "Futures"),
+    ("NQ=F",     "Nasdaq Futures", "🇺🇸", "Futures"),
+    ("YM=F",     "Dow Futures",    "🇺🇸", "Futures"),
+    ("^FTSE",    "FTSE 100",       "🇬🇧", "UK"),
+    ("^FTMC",    "FTSE 250",       "🇬🇧", "UK"),
+    ("^GDAXI",   "DAX",            "🇩🇪", "Europe"),
+    ("^FCHI",    "CAC 40",         "🇫🇷", "Europe"),
+    ("^STOXX50E","Euro Stoxx 50",  "🇪🇺", "Europe"),
+    ("^N225",    "Nikkei 225",     "🇯🇵", "Asia"),
+    ("000001.SS","Shanghai",       "🇨🇳", "Asia"),
+    ("^HSI",     "Hang Seng",      "🇭🇰", "Asia"),
+    ("^AXJO",    "ASX 200",        "🇦🇺", "Asia"),
+    ("^BSESN",   "Sensex",         "🇮🇳", "Asia"),
+]
+
+_BRIEF_INSTRUMENTS = [
+    ("^VIX",     "VIX",            "Fear Index"),
+    ("GC=F",     "Gold",           "$/oz"),
+    ("BZ=F",     "Brent Oil",      "$/bbl"),
+    ("CL=F",     "WTI Oil",        "$/bbl"),
+    ("DX-Y.NYB", "Dollar Index",   "DXY"),
+    ("GBPUSD=X", "GBP/USD",        "FX"),
+    ("EURUSD=X", "EUR/USD",        "FX"),
+    ("USDJPY=X", "USD/JPY",        "FX"),
+    ("^TNX",     "10Y Treasury",   "Yield %"),
+]
+
+@st.cache_data(ttl=300)
+def _fetch_brief_data(tickers: list) -> dict:
+    out = {}
+    for sym in tickers:
+        try:
+            ti = yf.Ticker(sym).fast_info
+            price = getattr(ti, "last_price", None)
+            prev  = getattr(ti, "previous_close", None)
+            chg = chg_pct = None
+            if price and prev and prev != 0:
+                chg = price - prev
+                chg_pct = chg / prev * 100
+            out[sym] = {"price": price, "chg": chg, "chg_pct": chg_pct}
+        except Exception:
+            out[sym] = {"price": None, "chg": None, "chg_pct": None}
+    return out
+
+@st.cache_data(ttl=3600)
+def _fetch_econ_calendar() -> list:
+    today = datetime.now().strftime("%Y-%m-%d")
+    end   = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
+    try:
+        url = f"{FMP_BASE}/v3/economic_calendar?from={today}&to={end}&apikey={FMP_KEY}"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            return [e for e in data if e.get("impact") in ("High", "Medium")] if data else []
+    except Exception:
+        pass
+    return []
+
+@st.cache_data(ttl=600)
+def _fetch_market_news() -> list:
+    try:
+        url = f"{FMP_BASE}/v4/general_news?page=0&apikey={FMP_KEY}"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and data:
+                return data[:10]
+    except Exception:
+        pass
+    try:
+        raw = yf.Ticker("^GSPC").news or []
+        out = []
+        for n in raw[:10]:
+            c = n.get("content", n)
+            title = c.get("title", n.get("title", ""))
+            url_  = (c.get("canonicalUrl", {}).get("url")
+                     or c.get("clickThroughUrl", {}).get("url")
+                     or n.get("link", "#"))
+            pub   = c.get("provider", {}).get("displayName") or n.get("publisher", "")
+            dt    = c.get("pubDate", "") or ""
+            if title:
+                out.append({"title": title, "url": url_, "site": pub, "publishedDate": dt})
+        return out
+    except Exception:
+        return []
+
+def _risk_sentiment(vix, gold_pct, dxy_pct):
+    score = 0
+    if vix is not None:
+        if vix < 15:   score += 2
+        elif vix < 20: score += 1
+        elif vix > 30: score -= 2
+        elif vix > 25: score -= 1
+    if gold_pct is not None:
+        if gold_pct > 0.5:    score -= 1
+        elif gold_pct < -0.5: score += 1
+    if dxy_pct is not None:
+        if dxy_pct > 0.3:    score -= 1
+        elif dxy_pct < -0.3: score += 1
+    if score >= 2:
+        return "🟢 Risk-On", "#22C55E", "Markets in risk-on mode — appetite for equities is strong."
+    elif score >= 0:
+        return "🟡 Neutral", "#F59E0B", "Mixed signals — proceed with selective conviction."
+    else:
+        return "🔴 Risk-Off", "#EF4444", "Risk-off environment — caution warranted, check your stops."
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _make_bulletin(_cache_key: str) -> dict:
+    """Fetch market data and generate Goldman-style trading desk bulletin via Claude.
+    Cached 30 mins. Falls back to rules-based summary if ANTHROPIC_API_KEY not set."""
+    import os as _os_b, json as _json
+    from datetime import datetime as _dt
+
+    _syms = [s for s,_,_,_ in _BRIEF_INDICES] + [s for s,_,_ in _BRIEF_INSTRUMENTS]
+    _bd   = _fetch_brief_data(_syms)
+    _news = _fetch_market_news()
+    _econ = _fetch_econ_calendar()
+
+    def _pct(v): return f"{v:+.2f}%" if v is not None else "n/a"
+    def _pr(sym): return _bd.get(sym, {})
+
+    _spx  = _pr("^GSPC");   _vix  = _pr("^VIX");    _gold = _pr("GC=F")
+    _brent= _pr("BZ=F");    _dxy  = _pr("DX-Y.NYB"); _tnx  = _pr("^TNX")
+    _gbp  = _pr("GBPUSD=X"); _eur = _pr("EURUSD=X"); _jpy  = _pr("USDJPY=X")
+    _spyf = _pr("ES=F");    _nqf  = _pr("NQ=F")
+
+    _mkt = (
+        f"S&P 500: {_spx.get('price','n/a')} ({_pct(_spx.get('chg_pct'))})\n"
+        f"S&P Futures: {_spyf.get('price','n/a')} ({_pct(_spyf.get('chg_pct'))})\n"
+        f"Nasdaq Futures: {_nqf.get('price','n/a')} ({_pct(_nqf.get('chg_pct'))})\n"
+        f"VIX: {_vix.get('price','n/a')}\n"
+        f"Gold: {_gold.get('price','n/a')} ({_pct(_gold.get('chg_pct'))})\n"
+        f"Brent: {_brent.get('price','n/a')} ({_pct(_brent.get('chg_pct'))})\n"
+        f"DXY: {_dxy.get('price','n/a')} ({_pct(_dxy.get('chg_pct'))})\n"
+        f"10Y UST: {_tnx.get('price','n/a')}%\n"
+        f"GBP/USD: {_gbp.get('price','n/a')}\n"
+        f"EUR/USD: {_eur.get('price','n/a')}\n"
+        f"USD/JPY: {_jpy.get('price','n/a')}\n"
+    )
+    _region_txt = "\n".join(
+        f"{lbl}: {_bd.get(sym,{}).get('price','n/a')} ({_pct(_bd.get(sym,{}).get('chg_pct'))})"
+        for sym, lbl, _, region in _BRIEF_INDICES if region in ("Asia", "Europe", "UK")
+    )
+    _news_txt = "\n".join(
+        f"- {n.get('title','')}" for n in (_news or [])[:8] if n.get('title')
+    ) or "No news available"
+    _econ_txt = "\n".join(
+        f"- {e.get('date','')[:16]} [{e.get('country','')}] {e.get('event','')} "
+        f"(est: {e.get('estimate','?')}, prev: {e.get('previous','?')})"
+        for e in (_econ or [])[:8]
+    ) or "No major events scheduled"
+
+    _now  = _dt.now()
+    _hour = _now.hour
+    if _hour < 8:    _session = "Pre-Market"
+    elif _hour < 12: _session = "Morning"
+    elif _hour < 14: _session = "Midday"
+    elif _hour < 16: _session = "Close Watch"
+    else:            _session = "After-Hours"
+
+    _prompt = (
+        f"You are a Senior Research Analyst at Goldman Sachs Global Markets Division.\n"
+        f"Write the {_session.upper()} BULLETIN for the trading desk.\n"
+        f"Be crisp, direct, authoritative. No hedging. No filler. Brief a senior PM.\n\n"
+        f"MARKET DATA:\n{_mkt}\n"
+        f"ASIA / EUROPE OVERNIGHT:\n{_region_txt}\n\n"
+        f"NEWS HEADLINES:\n{_news_txt}\n\n"
+        f"UPCOMING ECONOMIC EVENTS:\n{_econ_txt}\n\n"
+        f"Respond ONLY with valid JSON (no markdown fences, no text outside the JSON):\n"
+        '{{\n'
+        '  "the_call": "ONE sentence. The single most important thing for the desk right now.",\n'
+        '  "risk_radar": [\n'
+        '    {{"flag": "🔴", "title": "4-6 word title", "detail": "2-3 sharp sentences."}},\n'
+        '    {{"flag": "🟡", "title": "...", "detail": "..."}},\n'
+        '    {{"flag": "🟢", "title": "...", "detail": "..."}},\n'
+        '    {{"flag": "🔵", "title": "...", "detail": "..."}}\n'
+        '  ],\n'
+        '  "macro_pulse": "3-4 sentences on rates, FX, commodities. What regime are we in?",\n'
+        '  "equity_flow": "3-4 sentences on sector rotation and where money is moving.",\n'
+        '  "overnight_wires": "2-3 sentences on Asia and Europe overnight and US implications.",\n'
+        '  "trade_ideas": [\n'
+        '    {{"setup": "Ticker or theme", "thesis": "Why now", "entry": "Level or trigger", "risk": "What kills this trade"}},\n'
+        '    {{"setup": "...", "thesis": "...", "entry": "...", "risk": "..."}}\n'
+        '  ]\n'
+        '}}'
+    )
+
+    _api_key = _os_b.environ.get("ANTHROPIC_API_KEY", "")
+    if _api_key:
+        try:
+            import anthropic as _anth_b
+            _client = _anth_b.Anthropic(api_key=_api_key)
+            _resp = _client.messages.create(
+                model="claude-sonnet-5",
+                max_tokens=1800,
+                messages=[{"role": "user", "content": _prompt}]
+            )
+            _raw = _resp.content[0].text.strip()
+            if _raw.startswith("```"):
+                _lines = _raw.split("\n")
+                _raw = "\n".join(_lines[1:])
+                if _raw.rstrip().endswith("```"):
+                    _raw = _raw.rstrip()[:-3].rstrip()
+            _parsed = _json.loads(_raw)
+            _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
+                            "session": _session})
+            return _parsed
+        except Exception:
+            pass
+
+    # ── Rules-based fallback (no API key or on error) ─────────
+    _vix_val = _vix.get("price")
+    _spx_pct = _spx.get("chg_pct")
+    _sent, _, _smsg = _risk_sentiment(_vix_val, _gold.get("chg_pct"), _dxy.get("chg_pct"))
+    _vix_s = f"{_vix_val:.1f}" if _vix_val else "—"
+    if "Risk-On" in _sent:
+        _call = f"Risk-on tape: S&P {_pct(_spx_pct)}, VIX {_vix_s} — stay long quality, trim defensives."
+    elif "Risk-Off" in _sent:
+        _call = f"Risk-off: VIX {_vix_s}, S&P {_pct(_spx_pct)} — protect downside, tighten stops."
+    else:
+        _call = f"Mixed signals: VIX {_vix_s}, S&P {_pct(_spx_pct)} — wait for directional clarity."
+    return {
+        "the_call": _call,
+        "risk_radar": [
+            {"flag": "🔴" if (_vix_val or 0) > 25 else "🟡" if (_vix_val or 0) > 18 else "🟢",
+             "title": f"VIX at {_vix_s}",
+             "detail": _smsg},
+            {"flag": "🔵", "title": "Economic Events", "detail": _econ_txt[:300]},
+        ],
+        "macro_pulse": (f"S&P 500 {_pct(_spx_pct)}. Gold {_pct(_gold.get('chg_pct'))}. "
+                        f"DXY {_pct(_dxy.get('chg_pct'))}. 10Y UST {_tnx.get('price','—')}%. "
+                        f"Brent {_pct(_brent.get('chg_pct'))}."),
+        "equity_flow": "Set ANTHROPIC_API_KEY on Railway to enable full AI-generated bulletin.",
+        "overnight_wires": _region_txt or "Data unavailable.",
+        "trade_ideas": [],
+        "fallback": True,
+        "timestamp": _now.strftime("%H:%M GMT"),
+        "session": _session,
+    }
+
+# ─────────────────────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────────────────────
 
-tab0, tab1, tab_factor, tab_mc, tab3, tab2, tab_opt, tab_brief, tab5, tab4 = st.tabs([
+tab0, tab1, tab_factor, tab_mc, tab3, tab2, tab_opt, tab5, tab4 = st.tabs([
     "🏠 Home",
     "🔍 Fundamental",
     "🔬 Factor",
@@ -2899,7 +3148,6 @@ tab0, tab1, tab_factor, tab_mc, tab3, tab2, tab_opt, tab_brief, tab5, tab4 = st.
     "📈 Technical",
     "⚡ Catalyst",
     "📐 Optimiser",
-    "🌍 Brief",
     "📒 Journal",
     "⚖️ Pairs",
 ])
@@ -3485,6 +3733,92 @@ with tab0:
                 f'{hdr}<tbody>{rows}</tbody></table>')
 
     # ─────────────────────────────────────────────────────────────
+    # ── Market Bulletin (top of Home tab) ────────────────────────
+    _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d%H') + \
+             str(__import__('datetime').datetime.now().minute // 30)
+    with st.spinner("Generating bulletin…"):
+        _bulletin = _make_bulletin(_b_key)
+
+    _b_session  = _bulletin.get("session", "Morning")
+    _b_ts       = _bulletin.get("timestamp", "")
+    _b_the_call = _bulletin.get("the_call", "")
+
+    st.markdown(f"""
+<div style="display:flex;align-items:center;justify-content:space-between;
+            padding:10px 16px;background:linear-gradient(90deg,#050D18,#0F1E35);
+            border:1px solid rgba(251,191,36,0.35);border-radius:12px;margin-bottom:10px">
+  <div>
+    <div style="font-size:0.6rem;font-weight:700;color:#F59E0B;letter-spacing:2px;
+                text-transform:uppercase">Goldman Sachs · Global Markets Division</div>
+    <div style="font-size:1.1rem;font-weight:800;color:#F1F5F9;margin-top:3px">
+      ⏰ {_b_session} Bulletin</div>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:0.62rem;color:#475569;text-transform:uppercase">Updated</div>
+    <div style="font-size:0.88rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown(f"""
+<div style="background:linear-gradient(135deg,#080F1C,#0D1B2E);
+            border-left:4px solid #F59E0B;border-radius:0 10px 10px 0;
+            padding:12px 18px;margin-bottom:12px">
+  <div style="font-size:0.6rem;font-weight:700;color:#F59E0B;letter-spacing:1.5px;
+              text-transform:uppercase;margin-bottom:5px">📢 The Call</div>
+  <div style="font-size:0.97rem;font-weight:600;color:#F1F5F9;line-height:1.55">
+    {_b_the_call}</div>
+</div>""", unsafe_allow_html=True)
+
+    _b_radar = _bulletin.get("risk_radar", [])
+    if _b_radar:
+        _fc_map = {{"🔴":"#EF4444","🟡":"#F59E0B","🟢":"#22C55E","🔵":"#3B82F6"}}
+        _rdr = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:8px;margin-bottom:14px">'
+        for _r in _b_radar:
+            _fc = _fc_map.get(_r.get("flag","🔵"),"#3B82F6")
+            _rdr += (f'<div style="background:#0D1F33;border:1px solid {_fc}44;'
+                     f'border-radius:10px;padding:10px 12px">'
+                     f'<div style="font-size:1.1rem;margin-bottom:3px">{_r.get("flag","")}</div>'
+                     f'<div style="font-size:0.8rem;font-weight:700;color:#F1F5F9;margin-bottom:4px">'
+                     f'{_r.get("title","")}</div>'
+                     f'<div style="font-size:0.72rem;color:#94A3B8;line-height:1.4">'
+                     f'{_r.get("detail","")}</div></div>')
+        _rdr += '</div>'
+        st.markdown(_rdr, unsafe_allow_html=True)
+
+    for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
+                          ("📈 Equity Flow","equity_flow"),
+                          ("🌏 Overnight Wires","overnight_wires")]:
+        _b_txt = _bulletin.get(_b_k,"")
+        if _b_txt:
+            with st.expander(_b_lbl):
+                st.markdown(f'<div style="font-size:0.88rem;color:#CBD5E1;line-height:1.75">'
+                            f'{_b_txt}</div>', unsafe_allow_html=True)
+
+    _b_ideas = _bulletin.get("trade_ideas", [])
+    if _b_ideas:
+        with st.expander("💡 Trade Ideas"):
+            for _idea in _b_ideas:
+                st.markdown(f"""
+<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);
+            border-radius:10px;padding:12px 14px;margin-bottom:8px">
+  <div style="font-size:0.9rem;font-weight:700;color:#F59E0B;margin-bottom:6px">
+    {_idea.get('setup','')}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    <div><div style="font-size:0.62rem;color:#64748B;text-transform:uppercase">Thesis</div>
+         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('thesis','')}</div></div>
+    <div><div style="font-size:0.62rem;color:#64748B;text-transform:uppercase">Entry</div>
+         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('entry','')}</div></div>
+    <div style="grid-column:1/-1">
+         <div style="font-size:0.62rem;color:#EF4444;text-transform:uppercase">⚠ Risk</div>
+         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('risk','')}</div></div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+    if _bulletin.get("fallback"):
+        st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
+
+    st.markdown('<div style="margin-bottom:20px"></div>', unsafe_allow_html=True)
+
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
     # One combined parallelised cache call — all tickers fetched concurrently
@@ -4156,12 +4490,9 @@ function fiqEF(q) {{
 
     # [old homepage block removed]
 
-# TAB — MORNING BRIEF
-# ═══════════════════════════════════════════════════════════════
-
-# ── Index universe ────────────────────────────────────────────
-_BRIEF_INDICES = [
-    # US
+# ── Duplicate function definitions below are dead code — Brief tab removed ──
+# TODO: clean up on next refactor pass
+_BRIEF_INDICES_OLD_DUPLICATE = [
     ("^GSPC",    "S&P 500",        "🇺🇸", "US"),
     ("^DJI",     "Dow Jones",      "🇺🇸", "US"),
     ("^IXIC",    "Nasdaq",         "🇺🇸", "US"),
@@ -4198,7 +4529,7 @@ _BRIEF_INSTRUMENTS = [
 ]
 
 @st.cache_data(ttl=300)
-def _fetch_brief_data(tickers: list[str]) -> dict:
+def _old_fetch_brief_data(tickers: list[str]) -> dict:
     """Fetch latest price + % change for a list of tickers."""
     out = {}
     for sym in tickers:
@@ -4217,7 +4548,7 @@ def _fetch_brief_data(tickers: list[str]) -> dict:
     return out
 
 @st.cache_data(ttl=3600)
-def _fetch_econ_calendar() -> list:
+def _old_fetch_econ_calendar() -> list:
     """Fetch economic calendar from FMP for next 5 days."""
     today = datetime.now().strftime("%Y-%m-%d")
     end   = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
@@ -4232,7 +4563,7 @@ def _fetch_econ_calendar() -> list:
     return []
 
 @st.cache_data(ttl=600)
-def _fetch_market_news() -> list:
+def _old_fetch_market_news() -> list:
     """Fetch market news from FMP general news endpoint."""
     try:
         url = f"{FMP_BASE}/v4/general_news?page=0&apikey={FMP_KEY}"
@@ -4447,8 +4778,8 @@ def _brief_card(sym, label, flag, price, chg_pct):
         f'</div>'
     )
 
-def _risk_sentiment(vix, gold_pct, dxy_pct):
-    """Derive simple risk-on / risk-off signal."""
+def _old_risk_sentiment(vix, gold_pct, dxy_pct):
+    """OLD duplicate — superseded by version defined before tabs."""
     score = 0
     if vix is not None:
         if vix < 15:   score += 2
@@ -4468,7 +4799,7 @@ def _risk_sentiment(vix, gold_pct, dxy_pct):
     else:
         return "🔴 Risk-Off", "#EF4444", "Risk-off environment — caution warranted, check your stops."
 
-with tab_brief:
+if False:  # Brief tab removed — replaced by Home tab bulletin section
     st.markdown(
         '<div style="display:flex;align-items:center;gap:10px;padding:2px 0 6px 0">'
         '<span style="font-size:0.95rem;font-weight:700;color:#F1F5F9">🌍 Morning Market Intelligence Briefing</span>'
