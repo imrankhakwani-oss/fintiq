@@ -2923,6 +2923,108 @@ _BRIEF_INSTRUMENTS = [
     ("^TNX",     "10Y Treasury",   "Yield %"),
 ]
 
+_SECTOR_ETFS = [
+    ("XLK",  "Technology"),
+    ("XLF",  "Financials"),
+    ("XLE",  "Energy"),
+    ("XLV",  "Healthcare"),
+    ("XLI",  "Industrials"),
+    ("XLC",  "Communications"),
+    ("XLY",  "Consumer Disc."),
+    ("XLP",  "Consumer Staples"),
+    ("XLB",  "Materials"),
+    ("XLRE", "Real Estate"),
+]
+
+@st.cache_data(ttl=300)
+def _fetch_sector_data() -> dict:
+    """Fetch % change for sector ETFs."""
+    out = {}
+    for sym, _ in _SECTOR_ETFS:
+        try:
+            ti = yf.Ticker(sym).fast_info
+            price = getattr(ti, "last_price", None)
+            prev  = getattr(ti, "previous_close", None)
+            chg_pct = (price - prev) / prev * 100 if price and prev and prev != 0 else None
+            out[sym] = chg_pct
+        except Exception:
+            out[sym] = None
+    return out
+
+@st.cache_data(ttl=3600)
+def _fetch_earnings_today() -> list:
+    """Fetch today's earnings from FMP."""
+    try:
+        from datetime import date as _date
+        today = _date.today().strftime("%Y-%m-%d")
+        url = f"{FMP_BASE}/v3/earning_calendar?from={today}&to={today}&apikey={FMP_KEY}"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list):
+                return sorted(data[:20], key=lambda x: abs(float(x.get("marketCapitalization") or 0)), reverse=True)[:10]
+    except Exception:
+        pass
+    return []
+
+@st.cache_data(ttl=300)
+def _fetch_market_movers() -> dict:
+    """Fetch top gainers and losers for US, UK, EU using yfinance screener + FMP fallback."""
+    import requests as _req
+
+    def _yf_screener(screen_id: str) -> list:
+        """Call Yahoo Finance screener API directly."""
+        try:
+            url = f"https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?formatted=false&scrIds={screen_id}&count=6"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = _req.get(url, headers=headers, timeout=8)
+            if r.status_code == 200:
+                quotes = r.json().get("finance", {}).get("result", [{}])[0].get("quotes", [])
+                return [
+                    {"symbol": q.get("symbol",""),
+                     "name":   q.get("shortName", q.get("longName","")),
+                     "price":  q.get("regularMarketPrice"),
+                     "chg_pct":q.get("regularMarketChangePercent")}
+                    for q in quotes[:5]
+                ]
+        except Exception:
+            pass
+        return []
+
+    def _fmp_movers(direction: str) -> list:
+        """FMP gainers or losers fallback."""
+        try:
+            ep = "gainers" if direction == "up" else "losers"
+            url = f"{FMP_BASE}/v3/stock_market/{ep}?apikey={FMP_KEY}"
+            r = _req.get(url, timeout=8)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list):
+                    return [{"symbol": x.get("ticker",""), "name": x.get("companyName",""),
+                             "price": x.get("price"), "chg_pct": x.get("changesPercentage")}
+                            for x in data[:5]]
+        except Exception:
+            pass
+        return []
+
+    # US — try yfinance screener first, FMP fallback
+    _us_up   = _yf_screener("day_gainers") or _fmp_movers("up")
+    _us_down = _yf_screener("day_losers")  or _fmp_movers("down")
+
+    # UK — FTSE constituents best effort via yfinance screener
+    _uk_up   = _yf_screener("day_gainers_gb") or []
+    _uk_down = _yf_screener("day_losers_gb")  or []
+
+    # EU — best effort
+    _eu_up   = _yf_screener("day_gainers_fr") or _yf_screener("day_gainers_de") or []
+    _eu_down = _yf_screener("day_losers_fr")  or _yf_screener("day_losers_de")  or []
+
+    return {
+        "us":  {"up": _us_up,   "down": _us_down},
+        "uk":  {"up": _uk_up,   "down": _uk_down},
+        "eu":  {"up": _eu_up,   "down": _eu_down},
+    }
+
 @st.cache_data(ttl=300)
 def _fetch_brief_data(tickers: list) -> dict:
     out = {}
@@ -3010,9 +3112,11 @@ def _make_bulletin(_cache_key: str) -> dict:
     from datetime import datetime as _dt
 
     _syms = [s for s,_,_,_ in _BRIEF_INDICES] + [s for s,_,_ in _BRIEF_INSTRUMENTS]
-    _bd   = _fetch_brief_data(_syms)
-    _news = _fetch_market_news()
-    _econ = _fetch_econ_calendar()
+    _bd      = _fetch_brief_data(_syms)
+    _news    = _fetch_market_news()
+    _econ    = _fetch_econ_calendar()
+    _sectors = _fetch_sector_data()
+    _earnings_today = _fetch_earnings_today()
 
     def _pct(v): return f"{v:+.2f}%" if v is not None else "n/a"
     def _pr(sym): return _bd.get(sym, {})
@@ -3048,6 +3152,17 @@ def _make_bulletin(_cache_key: str) -> dict:
         for e in (_econ or [])[:8]
     ) or "No major events scheduled"
 
+    def _pct2(v): return f"{v:+.1f}%" if v is not None else "n/a"
+    _sector_txt = "  |  ".join(
+        f"{name}: {_pct2(_sectors.get(sym))}"
+        for sym, name in _SECTOR_ETFS
+    ) or "No sector data"
+
+    _earnings_txt = "\n".join(
+        f"- {e.get('symbol','')} ({e.get('name','')}) — EPS est: {e.get('epsEstimated','?')}, rev est: ${e.get('revenueEstimated','?')}"
+        for e in (_earnings_today or [])
+    ) or "No major earnings today"
+
     _now  = _dt.now()
     _hour = _now.hour
     if _hour < 8:    _session = "Pre-Market"
@@ -3058,27 +3173,41 @@ def _make_bulletin(_cache_key: str) -> dict:
 
     _prompt = (
         f"You are a Senior Research Analyst writing the {_session.upper()} BULLETIN for a professional trading desk.\n"
-        f"Be crisp, direct, authoritative. No hedging. No filler. Brief a senior portfolio manager.\n\n"
+        f"Write for a retail investor who wants professional-grade insight in plain English — no jargon, no filler, no hedging.\n\n"
         f"MARKET DATA:\n{_mkt}\n"
+        f"SECTOR PERFORMANCE:\n{_sector_txt}\n\n"
         f"ASIA / EUROPE OVERNIGHT:\n{_region_txt}\n\n"
         f"NEWS HEADLINES:\n{_news_txt}\n\n"
         f"UPCOMING ECONOMIC EVENTS:\n{_econ_txt}\n\n"
+        f"TODAY'S EARNINGS:\n{_earnings_txt}\n\n"
         f"Respond ONLY with valid JSON. CRITICAL RULES: (1) no markdown fences, (2) no text outside the JSON object, "
         f"(3) NEVER use double-quote characters inside string values — use single quotes or dashes instead, "
-        f"(4) no newline characters inside string values — keep each value on one line.\n"
+        f"(4) no newline characters inside string values — each value must be on one line.\n"
         '{{\n'
-        '  "the_call": "ONE sentence. The single most important thing for the desk right now.",\n'
+        '  "the_call": {{\n'
+        '    "headline": "One bold sentence — the single most important thing happening today.",\n'
+        '    "bullets": [\n'
+        '      "Futures: state direction and % (e.g. S&P futures up 0.4%)",\n'
+        '      "Leading sector: which sector is strongest and why",\n'
+        '      "Volatility: VIX level and what it signals in plain English",\n'
+        '      "Bonds: 10Y yield and what it means for stocks",\n'
+        '      "Today earnings: key companies reporting and what to watch",\n'
+        '      "Economic events: key releases today with times",\n'
+        '      "Watch: one specific level or catalyst to monitor"\n'
+        '    ]\n'
+        '  }},\n'
         '  "risk_radar": [\n'
-        '    {{"flag": "🔴", "title": "4-6 word title", "detail": "2-3 sharp sentences."}},\n'
+        '    {{"flag": "🔴", "title": "4-6 word plain English title", "detail": "2-3 sentences. Simple language, explain the impact."}},\n'
         '    {{"flag": "🟡", "title": "...", "detail": "..."}},\n'
         '    {{"flag": "🟢", "title": "...", "detail": "..."}},\n'
         '    {{"flag": "🔵", "title": "...", "detail": "..."}}\n'
         '  ],\n'
-        '  "macro_pulse": "3-4 sentences on rates, FX, commodities. What regime are we in?",\n'
-        '  "equity_flow": "3-4 sentences on sector rotation and where money is moving.",\n'
-        '  "overnight_wires": "2-3 sentences on Asia and Europe overnight and US implications.",\n'
+        '  "macro_pulse": "3-4 plain English sentences on rates, currencies, commodities and what regime we are in.",\n'
+        '  "equity_flow": "3-4 plain English sentences on which sectors money is moving into and out of, and why.",\n'
+        '  "overnight_wires": "2-3 plain English sentences on what happened in Asia and Europe overnight and why it matters for US trading.",\n'
         '  "trade_ideas": [\n'
-        '    {{"setup": "Ticker or theme", "thesis": "Why now", "entry": "Level or trigger", "risk": "What kills this trade"}},\n'
+        '    {{"setup": "Stock or theme name", "thesis": "Why this is interesting right now in plain English", "entry": "Price level or trigger to watch", "risk": "What could go wrong"}},\n'
+        '    {{"setup": "...", "thesis": "...", "entry": "...", "risk": "..."}},\n'
         '    {{"setup": "...", "thesis": "...", "entry": "...", "risk": "..."}}\n'
         '  ]\n'
         '}}'
@@ -3136,7 +3265,7 @@ def _make_bulletin(_cache_key: str) -> dict:
     else:
         _call = f"Mixed signals: VIX {_vix_s}, S&P {_pct(_spx_pct)} — wait for directional clarity."
     return {
-        "the_call": _call,
+        "the_call": {"headline": _call, "bullets": [f"VIX: {_vix_s}", f"S&P 500: {_pct(_spx_pct)}"]},
         "risk_radar": [
             {"flag": "🔴" if (_vix_val or 0) > 25 else "🟡" if (_vix_val or 0) > 18 else "🟢",
              "title": f"VIX at {_vix_s}",
@@ -3759,7 +3888,9 @@ with tab0:
 
     _b_session  = _bulletin.get("session", "Morning")
     _b_ts       = _bulletin.get("timestamp", "")
-    _b_the_call = _bulletin.get("the_call", "")
+    _b_the_call = _bulletin.get("the_call", {})
+    _b_headline = _b_the_call.get("headline", "") if isinstance(_b_the_call, dict) else str(_b_the_call)
+    _b_bullets  = _b_the_call.get("bullets", []) if isinstance(_b_the_call, dict) else []
 
     st.markdown(f"""
 <div style="display:flex;align-items:center;justify-content:space-between;
@@ -3773,14 +3904,22 @@ with tab0:
   <div style="font-size:0.9rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
 </div>""", unsafe_allow_html=True)
 
+    # ── The Call — headline + bullets ────────────────────────────
+    _bullets_html = "".join(
+        f'<li style="margin-bottom:5px;color:#CBD5E1">{b}</li>'
+        for b in _b_bullets
+    )
     st.markdown(f"""
 <div style="background:linear-gradient(135deg,#080F1C,#0D1B2E);
             border-left:4px solid #F59E0B;border-radius:0 8px 8px 0;
             padding:14px 18px;margin-bottom:12px">
   <div style="font-size:0.65rem;font-weight:700;color:#F59E0B;letter-spacing:1.5px;
-              text-transform:uppercase;margin-bottom:5px">📢 The Call</div>
-  <div style="font-size:1rem;font-weight:600;color:#F1F5F9;line-height:1.6">
-    {_b_the_call}</div>
+              text-transform:uppercase;margin-bottom:6px">📢 The Call</div>
+  <div style="font-size:1rem;font-weight:700;color:#F1F5F9;line-height:1.6;margin-bottom:10px">
+    {_b_headline}</div>
+  <ul style="margin:0;padding-left:18px;font-size:0.88rem;line-height:1.7">
+    {_bullets_html}
+  </ul>
 </div>""", unsafe_allow_html=True)
 
     _b_radar = _bulletin.get("risk_radar", [])
@@ -3798,6 +3937,107 @@ with tab0:
                      f'{_r.get("detail","")}</div></div>')
         _rdr += '</div>'
         st.markdown(_rdr, unsafe_allow_html=True)
+
+    # ── Sector Snapshot ───────────────────────────────────────────
+    _sec_data = _fetch_sector_data()
+    _sec_chips = ""
+    for _sym, _sname in _SECTOR_ETFS:
+        _sv = _sec_data.get(_sym)
+        _sc = "#22C55E" if (_sv or 0) > 0 else "#EF4444"
+        _ss = f"{_sv:+.1f}%" if _sv is not None else "—"
+        _sec_chips += (f'<div style="background:#0D1F33;border:1px solid {_sc}44;'
+                       f'border-radius:6px;padding:6px 10px;text-align:center;min-width:90px">'
+                       f'<div style="font-size:0.72rem;color:#94A3B8">{_sname}</div>'
+                       f'<div style="font-size:0.82rem;font-weight:700;color:{_sc}">{_ss}</div>'
+                       f'<div style="font-size:0.65rem;color:#64748B">{_sym}</div></div>')
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">{_sec_chips}</div>',
+        unsafe_allow_html=True
+    )
+
+    # ── Today's Catalysts ─────────────────────────────────────────
+    _earn_today = _fetch_earnings_today()
+    _econ_today = _fetch_econ_calendar() or []
+    with st.expander("📅 Today's Catalysts", expanded=False):
+        if _earn_today:
+            st.markdown('<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
+                        'letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">'
+                        '📊 Earnings Today</div>', unsafe_allow_html=True)
+            for _e in _earn_today:
+                _eps_est = _e.get("epsEstimated")
+                _eps_str = f"EPS est: ${_eps_est:.2f}" if _eps_est else ""
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'padding:5px 0;border-bottom:1px solid #1E293B">'
+                    f'<span style="font-size:0.85rem;font-weight:600;color:#F1F5F9">'
+                    f'{_e.get("symbol","")} — {_e.get("name","")}</span>'
+                    f'<span style="font-size:0.8rem;color:#94A3B8">{_eps_str}</span></div>',
+                    unsafe_allow_html=True
+                )
+        else:
+            st.caption("No major earnings scheduled today.")
+        if _econ_today:
+            st.markdown('<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
+                        'letter-spacing:1px;text-transform:uppercase;margin:10px 0 6px">'
+                        '🗓 Economic Events</div>', unsafe_allow_html=True)
+            for _ev in _econ_today[:8]:
+                _t = _ev.get("date","")[:16]
+                _ev_name = _ev.get("event","")
+                _est  = _ev.get("estimate","")
+                _prev = _ev.get("previous","")
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'padding:5px 0;border-bottom:1px solid #1E293B">'
+                    f'<span style="font-size:0.85rem;color:#CBD5E1">{_ev_name}</span>'
+                    f'<span style="font-size:0.78rem;color:#94A3B8">{_t} | est: {_est} prev: {_prev}</span></div>',
+                    unsafe_allow_html=True
+                )
+        else:
+            st.caption("No major economic events today.")
+
+    # ── Market Movers ─────────────────────────────────────────────
+    _movers = _fetch_market_movers()
+    with st.expander("🚀 Market Movers", expanded=False):
+        def _mover_table(title: str, up: list, down: list):
+            if not up and not down:
+                st.caption(f"No data available for {title}.")
+                return
+            st.markdown(f'<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
+                        f'letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">'
+                        f'{title}</div>', unsafe_allow_html=True)
+            _cols = st.columns(2)
+            for _col, _lst, _color, _label, _arrow in [
+                (_cols[0], up,   "#22C55E", "🟢 Top Gainers", "▲"),
+                (_cols[1], down, "#EF4444", "🔴 Top Losers",  "▼"),
+            ]:
+                with _col:
+                    st.markdown(f'<div style="font-size:0.72rem;font-weight:700;color:{_color};'
+                                f'margin-bottom:6px">{_label}</div>', unsafe_allow_html=True)
+                    for _m in _lst:
+                        _sym  = _m.get("symbol","")
+                        _name = _m.get("name","") or _sym
+                        _pct  = _m.get("chg_pct")
+                        _pr   = _m.get("price")
+                        _pct_s = f"{_arrow}{abs(_pct):.1f}%" if _pct is not None else "—"
+                        _pr_s  = f"${_pr:.2f}" if _pr else ""
+                        st.markdown(
+                            f'<div style="display:flex;justify-content:space-between;'
+                            f'align-items:center;padding:5px 0;border-bottom:1px solid #1E293B">'
+                            f'<div><div style="font-size:0.83rem;font-weight:700;color:#F1F5F9">{_sym}</div>'
+                            f'<div style="font-size:0.72rem;color:#64748B">{_name[:28]}</div></div>'
+                            f'<div style="text-align:right">'
+                            f'<div style="font-size:0.83rem;font-weight:700;color:{_color}">{_pct_s}</div>'
+                            f'<div style="font-size:0.72rem;color:#94A3B8">{_pr_s}</div></div></div>',
+                            unsafe_allow_html=True
+                        )
+
+        _mover_table("🇺🇸 US Markets", _movers["us"]["up"], _movers["us"]["down"])
+        if _movers["uk"]["up"] or _movers["uk"]["down"]:
+            st.markdown('<hr style="border-color:#1E293B;margin:10px 0">', unsafe_allow_html=True)
+            _mover_table("🇬🇧 UK Markets", _movers["uk"]["up"], _movers["uk"]["down"])
+        if _movers["eu"]["up"] or _movers["eu"]["down"]:
+            st.markdown('<hr style="border-color:#1E293B;margin:10px 0">', unsafe_allow_html=True)
+            _mover_table("🇪🇺 EU Markets", _movers["eu"]["up"], _movers["eu"]["down"])
 
     for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
                           ("📈 Equity Flow","equity_flow"),
