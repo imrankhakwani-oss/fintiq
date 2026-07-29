@@ -3747,63 +3747,50 @@ with tab0:
 
     st.markdown(f"""
 <div style="display:flex;align-items:center;justify-content:space-between;
-            padding:10px 16px;background:linear-gradient(90deg,#050D18,#0F1E35);
-            border:1px solid rgba(251,191,36,0.35);border-radius:12px;margin-bottom:10px">
-  <div>
+            padding:6px 14px;background:linear-gradient(90deg,#050D18,#0F1E35);
+            border:1px solid rgba(251,191,36,0.35);border-radius:10px;margin-bottom:6px">
+  <div style="display:flex;align-items:center;gap:10px">
     <div style="font-size:0.6rem;font-weight:700;color:#F59E0B;letter-spacing:2px;
                 text-transform:uppercase">Fintiq · Global Markets Intelligence</div>
-    <div style="font-size:1.1rem;font-weight:800;color:#F1F5F9;margin-top:3px">
-      ⏰ {_b_session} Bulletin</div>
+    <div style="font-size:1rem;font-weight:800;color:#F1F5F9">⏰ {_b_session} Bulletin</div>
   </div>
-  <div style="text-align:right">
-    <div style="font-size:0.62rem;color:#475569;text-transform:uppercase">Updated</div>
-    <div style="font-size:0.88rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
-  </div>
+  <div style="font-size:0.8rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
 </div>""", unsafe_allow_html=True)
 
     st.markdown(f"""
 <div style="background:linear-gradient(135deg,#080F1C,#0D1B2E);
-            border-left:4px solid #F59E0B;border-radius:0 10px 10px 0;
-            padding:12px 18px;margin-bottom:12px">
-  <div style="font-size:0.6rem;font-weight:700;color:#F59E0B;letter-spacing:1.5px;
-              text-transform:uppercase;margin-bottom:5px">📢 The Call</div>
-  <div style="font-size:0.97rem;font-weight:600;color:#F1F5F9;line-height:1.55">
+            border-left:4px solid #F59E0B;border-radius:0 8px 8px 0;
+            padding:8px 14px;margin-bottom:8px">
+  <div style="font-size:0.58rem;font-weight:700;color:#F59E0B;letter-spacing:1.5px;
+              text-transform:uppercase;margin-bottom:3px">📢 The Call</div>
+  <div style="font-size:0.92rem;font-weight:600;color:#F1F5F9;line-height:1.5">
     {_b_the_call}</div>
 </div>""", unsafe_allow_html=True)
 
     _b_radar = _bulletin.get("risk_radar", [])
     if _b_radar:
         _fc_map = {"🔴":"#EF4444","🟡":"#F59E0B","🟢":"#22C55E","🔵":"#3B82F6"}
-        _rdr = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:8px;margin-bottom:14px">'
+        _rdr = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:6px;margin-bottom:8px">'
         for _r in _b_radar:
             _fc = _fc_map.get(_r.get("flag","🔵"),"#3B82F6")
             _rdr += (f'<div style="background:#0D1F33;border:1px solid {_fc}44;'
-                     f'border-radius:10px;padding:10px 12px">'
-                     f'<div style="font-size:1.1rem;margin-bottom:3px">{_r.get("flag","")}</div>'
-                     f'<div style="font-size:0.8rem;font-weight:700;color:#F1F5F9;margin-bottom:4px">'
+                     f'border-radius:8px;padding:7px 10px">'
+                     f'<div style="font-size:0.95rem;margin-bottom:2px">{_r.get("flag","")}</div>'
+                     f'<div style="font-size:0.76rem;font-weight:700;color:#F1F5F9;margin-bottom:3px">'
                      f'{_r.get("title","")}</div>'
-                     f'<div style="font-size:0.72rem;color:#94A3B8;line-height:1.4">'
+                     f'<div style="font-size:0.68rem;color:#94A3B8;line-height:1.35">'
                      f'{_r.get("detail","")}</div></div>')
         _rdr += '</div>'
         st.markdown(_rdr, unsafe_allow_html=True)
 
-    for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
-                          ("📈 Equity Flow","equity_flow"),
-                          ("🌏 Overnight Wires","overnight_wires")]:
-        _b_txt = _bulletin.get(_b_k,"")
-        if _b_txt:
-            with st.expander(_b_lbl):
-                st.markdown(f'<div style="font-size:0.88rem;color:#CBD5E1;line-height:1.75">'
-                            f'{_b_txt}</div>', unsafe_allow_html=True)
-
     _b_ideas = _bulletin.get("trade_ideas", [])
     if _b_ideas:
-        with st.expander("💡 Trade Ideas"):
+        with st.expander("💡 Trade Ideas", expanded=True):
             for _idea in _b_ideas:
                 st.markdown(f"""
 <div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);
-            border-radius:10px;padding:12px 14px;margin-bottom:8px">
-  <div style="font-size:0.9rem;font-weight:700;color:#F59E0B;margin-bottom:6px">
+            border-radius:8px;padding:8px 12px;margin-bottom:6px">
+  <div style="font-size:0.82rem;font-weight:700;color:#F59E0B;margin-bottom:4px">
     {_idea.get('setup','')}</div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
     <div><div style="font-size:0.62rem;color:#64748B;text-transform:uppercase">Thesis</div>
@@ -3815,6 +3802,15 @@ with tab0:
          <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('risk','')}</div></div>
   </div>
 </div>""", unsafe_allow_html=True)
+
+    for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
+                          ("📈 Equity Flow","equity_flow"),
+                          ("🌏 Overnight Wires","overnight_wires")]:
+        _b_txt = _bulletin.get(_b_k,"")
+        if _b_txt:
+            with st.expander(_b_lbl):
+                st.markdown(f'<div style="font-size:0.88rem;color:#CBD5E1;line-height:1.75">'
+                            f'{_b_txt}</div>', unsafe_allow_html=True)
 
     if _bulletin.get("fallback"):
         st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
