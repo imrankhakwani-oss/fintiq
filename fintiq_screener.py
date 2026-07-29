@@ -3063,7 +3063,9 @@ def _make_bulletin(_cache_key: str) -> dict:
         f"ASIA / EUROPE OVERNIGHT:\n{_region_txt}\n\n"
         f"NEWS HEADLINES:\n{_news_txt}\n\n"
         f"UPCOMING ECONOMIC EVENTS:\n{_econ_txt}\n\n"
-        f"Respond ONLY with valid JSON (no markdown fences, no text outside the JSON):\n"
+        f"Respond ONLY with valid JSON. CRITICAL RULES: (1) no markdown fences, (2) no text outside the JSON object, "
+        f"(3) NEVER use double-quote characters inside string values — use single quotes or dashes instead, "
+        f"(4) no newline characters inside string values — keep each value on one line.\n"
         '{{\n'
         '  "the_call": "ONE sentence. The single most important thing for the desk right now.",\n'
         '  "risk_radar": [\n'
@@ -3094,11 +3096,17 @@ def _make_bulletin(_cache_key: str) -> dict:
                 messages=[{"role": "user", "content": _prompt}]
             )
             _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
+            # Strip markdown fences
             if _raw.startswith("```"):
                 _lines = _raw.split("\n")
                 _raw = "\n".join(_lines[1:])
                 if _raw.rstrip().endswith("```"):
                     _raw = _raw.rstrip()[:-3].rstrip()
+            # Robustly extract the JSON object (ignore any text before/after)
+            _j_start = _raw.find('{')
+            _j_end   = _raw.rfind('}') + 1
+            if _j_start >= 0 and _j_end > _j_start:
+                _raw = _raw[_j_start:_j_end]
             _parsed = _json.loads(_raw)
             _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
                             "session": _session})
