@@ -3771,7 +3771,7 @@ with tab0:
 
     _b_radar = _bulletin.get("risk_radar", [])
     if _b_radar:
-        _fc_map = {{"🔴":"#EF4444","🟡":"#F59E0B","🟢":"#22C55E","🔵":"#3B82F6"}}
+        _fc_map = {"🔴":"#EF4444","🟡":"#F59E0B","🟢":"#22C55E","🔵":"#3B82F6"}
         _rdr = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:8px;margin-bottom:14px">'
         for _r in _b_radar:
             _fc = _fc_map.get(_r.get("flag","🔵"),"#3B82F6")
