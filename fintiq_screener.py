@@ -3093,7 +3093,7 @@ def _make_bulletin(_cache_key: str) -> dict:
                 max_tokens=1800,
                 messages=[{"role": "user", "content": _prompt}]
             )
-            _raw = _resp.content[0].text.strip()
+            _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
             if _raw.startswith("```"):
                 _lines = _raw.split("\n")
                 _raw = "\n".join(_lines[1:])
