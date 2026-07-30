@@ -3105,9 +3105,10 @@ def _risk_sentiment(vix, gold_pct, dxy_pct):
         return "🔴 Risk-Off", "#EF4444", "Risk-off environment — caution warranted, check your stops."
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def _make_bulletin(_cache_key: str) -> dict:
+def _make_bulletin(_cache_key: str, _has_key: bool = False) -> dict:
     """Fetch market data and generate Goldman-style trading desk bulletin via Claude.
-    Cached 30 mins. Falls back to rules-based summary if ANTHROPIC_API_KEY not set."""
+    Cached 30 mins. _has_key is part of the cache key so fallback results don't
+    persist once the API key becomes available."""
     import os as _os_b, json as _json
     from datetime import datetime as _dt
 
@@ -3288,10 +3289,12 @@ def _make_bulletin(_cache_key: str) -> dict:
 # ─────────────────────────────────────────────────────────────
 @st.fragment
 def _render_bulletin():
+    import os as _os_rb
     _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d%H') + \
              str(__import__('datetime').datetime.now().minute // 30)
+    _b_has_key = bool(_os_rb.environ.get("ANTHROPIC_API_KEY", ""))
     with st.spinner("📡 Generating bulletin…"):
-        _bulletin = _make_bulletin(_b_key)
+        _bulletin = _make_bulletin(_b_key, _b_has_key)
 
     _b_session  = _bulletin.get("session", "Morning")
     _b_ts       = _bulletin.get("timestamp", "")
@@ -4075,7 +4078,8 @@ with tab0:
         return (f'<table style="width:100%;border-collapse:collapse;font-family:inherit">'
                 f'{hdr}<tbody>{rows}</tbody></table>')
 
-    # Bulletin renders AFTER macro indicators — see _render_bulletin() call below
+    # ── Market Bulletin — top of Home tab ───────────────────────
+    _render_bulletin()
 
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
@@ -4463,9 +4467,6 @@ setTimeout(setH, 50);
 setTimeout(setH, 400);
 </script>
 </body></html>""", height=_macro_h, scrolling=False)
-
-    # ── Market Bulletin — loads here, after fast macro cards ─────
-    _render_bulletin()
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
