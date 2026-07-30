@@ -4075,11 +4075,7 @@ with tab0:
         return (f'<table style="width:100%;border-collapse:collapse;font-family:inherit">'
                 f'{hdr}<tbody>{rows}</tbody></table>')
 
-    # ─────────────────────────────────────────────────────────────
-    # ── Market Bulletin (top of Home tab) ────────────────────────
-    _render_bulletin()  # defined at module level with @st.fragment
-
-    pass  # bulletin rendered above by _render_bulletin() @st.fragment
+    # Bulletin renders AFTER macro indicators — see _render_bulletin() call below
 
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
@@ -4467,6 +4463,9 @@ setTimeout(setH, 50);
 setTimeout(setH, 400);
 </script>
 </body></html>""", height=_macro_h, scrolling=False)
+
+    # ── Market Bulletin — loads here, after fast macro cards ─────
+    _render_bulletin()
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
