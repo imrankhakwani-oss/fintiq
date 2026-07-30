@@ -3104,7 +3104,7 @@ def _risk_sentiment(vix, gold_pct, dxy_pct):
     else:
         return "🔴 Risk-Off", "#EF4444", "Risk-off environment — caution warranted, check your stops."
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=14400, show_spinner=False)
 def _make_bulletin(_cache_key: str, _has_key: bool = False) -> dict:
     """Fetch market data and generate Goldman-style trading desk bulletin via Claude.
     Cached 30 mins. _has_key is part of the cache key so fallback results don't
@@ -3290,11 +3290,16 @@ def _make_bulletin(_cache_key: str, _has_key: bool = False) -> dict:
 @st.fragment
 def _render_bulletin():
     import os as _os_rb
-    _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d%H') + \
-             str(__import__('datetime').datetime.now().minute // 30)
+    _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d') + \
+             str(__import__('datetime').datetime.now().hour // 4)
     _b_has_key = bool(_os_rb.environ.get("ANTHROPIC_API_KEY", ""))
-    with st.spinner("📡 Generating bulletin…"):
-        _bulletin = _make_bulletin(_b_key, _b_has_key)
+    _ss_key = f"bulletin_{_b_key}_{_b_has_key}"
+
+    if _ss_key not in st.session_state:
+        with st.spinner("📡 Generating market intelligence…"):
+            st.session_state[_ss_key] = _make_bulletin(_b_key, _b_has_key)
+
+    _bulletin = st.session_state[_ss_key]
 
     _b_session  = _bulletin.get("session", "Morning")
     _b_ts       = _bulletin.get("timestamp", "")
@@ -4078,8 +4083,11 @@ with tab0:
         return (f'<table style="width:100%;border-collapse:collapse;font-family:inherit">'
                 f'{hdr}<tbody>{rows}</tbody></table>')
 
-    # ── Market Bulletin — top of Home tab ───────────────────────
-    _render_bulletin()
+    # ── Market Bulletin placeholder — renders at top instantly ──
+    # Bulletin slot is reserved here so it appears above macro cards.
+    # The actual content fills in after macro cards are rendered (fast path first).
+    _bulletin_slot = st.empty()
+    _bulletin_slot.info("📡 Loading market intelligence — macro data below is live now…")
 
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
@@ -4467,6 +4475,10 @@ setTimeout(setH, 50);
 setTimeout(setH, 400);
 </script>
 </body></html>""", height=_macro_h, scrolling=False)
+
+    # ── Fill bulletin slot (macro cards already visible above) ───
+    with _bulletin_slot.container():
+        _render_bulletin()
 
     # ── EPS Earnings Tracker — self-contained cv1.html ──
     # Fixed 880px iframe; table scrolls inside — no page-length bloat regardless of row count
