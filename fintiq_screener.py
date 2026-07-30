@@ -3202,9 +3202,9 @@ def _make_bulletin(_cache_key: str) -> dict:
         '    {{"flag": "🟢", "title": "...", "detail": "..."}},\n'
         '    {{"flag": "🔵", "title": "...", "detail": "..."}}\n'
         '  ],\n'
-        '  "macro_pulse": "3-4 plain English sentences on rates, currencies, commodities and what regime we are in.",\n'
-        '  "equity_flow": "3-4 plain English sentences on which sectors money is moving into and out of, and why.",\n'
-        '  "overnight_wires": "2-3 plain English sentences on what happened in Asia and Europe overnight and why it matters for US trading.",\n'
+        '  "macro_pulse": "You are a Senior Global Macro Strategist at a top hedge fund. Write 5-7 sentences. DO NOT describe prices — explain WHY markets are moving and connect assets together. Cover: (1) current market regime (risk-on/off/transitional and why), (2) cross-asset capital flows — where is money actually going and what does that reveal, (3) correlation signals — are assets behaving as expected or breaking down, (4) the dominant macro driver today and what it means for positioning. Example style: do not say gold is up 1% — say gold is outperforming while Treasury yields fall and VIX rises, signalling defensive repositioning. Always distinguish facts from probable interpretation. If signals conflict, explain the conflict.",\n'
+        '  "equity_flow": "You are a Quantitative Equity Strategist. Write 5-7 sentences. Cover: (1) sector rotation — which sectors are receiving inflows vs outflows and what macro regime this implies, (2) style rotation — growth vs value vs defensives, (3) any unusual divergence between sectors that signals institutional repositioning, (4) what the rotation pattern historically precedes. Never just list sector performance — explain what the money movement reveals about institutional intent and the broader market narrative.",\n'
+        '  "overnight_wires": "2-3 plain English sentences on what happened in Asia and Europe overnight and the key implication for US trading today.",\n'
         '  "trade_ideas": [\n'
         '    {{"setup": "Stock or theme name", "thesis": "Why this is interesting right now in plain English", "entry": "Price level or trigger to watch", "risk": "What could go wrong"}},\n'
         '    {{"setup": "...", "thesis": "...", "entry": "...", "risk": "..."}},\n'
@@ -3282,6 +3282,202 @@ def _make_bulletin(_cache_key: str) -> dict:
         "timestamp": _now.strftime("%H:%M GMT"),
         "session": _session,
     }
+
+# ─────────────────────────────────────────────────────────────
+# BULLETIN FRAGMENT — renders independently, doesn't block page
+# ─────────────────────────────────────────────────────────────
+@st.fragment
+def _render_bulletin():
+    _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d%H') + \
+             str(__import__('datetime').datetime.now().minute // 30)
+    with st.spinner("📡 Generating bulletin…"):
+        _bulletin = _make_bulletin(_b_key)
+
+    _b_session  = _bulletin.get("session", "Morning")
+    _b_ts       = _bulletin.get("timestamp", "")
+    _b_the_call = _bulletin.get("the_call", {})
+    _b_headline = _b_the_call.get("headline", "") if isinstance(_b_the_call, dict) else str(_b_the_call)
+    _b_bullets  = _b_the_call.get("bullets", []) if isinstance(_b_the_call, dict) else []
+
+    # ── Header ───────────────────────────────────────────────────
+    st.markdown(f"""
+<div style="display:flex;align-items:center;justify-content:space-between;
+            padding:12px 18px;background:linear-gradient(90deg,#050D18,#0F1E35);
+            border:1px solid rgba(251,191,36,0.35);border-radius:10px;margin-bottom:10px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <div style="font-size:0.65rem;font-weight:700;color:#F59E0B;letter-spacing:2px;
+                text-transform:uppercase">Fintiq · Global Markets Intelligence</div>
+    <div style="font-size:1.15rem;font-weight:800;color:#F1F5F9">⏰ {_b_session} Bulletin</div>
+  </div>
+  <div style="font-size:0.9rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
+</div>""", unsafe_allow_html=True)
+
+    # ── The Call — headline + bullets ────────────────────────────
+    _bullets_html = "".join(
+        f'<li style="margin-bottom:5px;color:#CBD5E1">{b}</li>'
+        for b in _b_bullets
+    )
+    st.markdown(f"""
+<div style="background:linear-gradient(135deg,#080F1C,#0D1B2E);
+            border-left:4px solid #F59E0B;border-radius:0 8px 8px 0;
+            padding:14px 18px;margin-bottom:12px">
+  <div style="font-size:0.65rem;font-weight:700;color:#F59E0B;letter-spacing:1.5px;
+              text-transform:uppercase;margin-bottom:6px">📢 The Call</div>
+  <div style="font-size:1rem;font-weight:700;color:#F1F5F9;line-height:1.6;margin-bottom:10px">
+    {_b_headline}</div>
+  <ul style="margin:0;padding-left:18px;font-size:0.88rem;line-height:1.7">
+    {_bullets_html}
+  </ul>
+</div>""", unsafe_allow_html=True)
+
+    # ── Risk Radar ────────────────────────────────────────────────
+    _b_radar = _bulletin.get("risk_radar", [])
+    if _b_radar:
+        _fc_map = {"🔴":"#EF4444","🟡":"#F59E0B","🟢":"#22C55E","🔵":"#3B82F6"}
+        _rdr = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px">'
+        for _r in _b_radar:
+            _fc = _fc_map.get(_r.get("flag","🔵"),"#3B82F6")
+            _rdr += (f'<div style="background:#0D1F33;border:1px solid {_fc}44;'
+                     f'border-radius:8px;padding:12px 14px">'
+                     f'<div style="font-size:1.1rem;margin-bottom:4px">{_r.get("flag","")}</div>'
+                     f'<div style="font-size:0.82rem;font-weight:700;color:#F1F5F9;margin-bottom:5px">'
+                     f'{_r.get("title","")}</div>'
+                     f'<div style="font-size:0.76rem;color:#94A3B8;line-height:1.45">'
+                     f'{_r.get("detail","")}</div></div>')
+        _rdr += '</div>'
+        st.markdown(_rdr, unsafe_allow_html=True)
+
+    # ── Sector Snapshot ───────────────────────────────────────────
+    _sec_data = _fetch_sector_data()
+    _sec_chips = ""
+    for _sym, _sname in _SECTOR_ETFS:
+        _sv = _sec_data.get(_sym)
+        _sc = "#22C55E" if (_sv or 0) > 0 else "#EF4444"
+        _ss = f"{_sv:+.1f}%" if _sv is not None else "—"
+        _sec_chips += (f'<div style="background:#0D1F33;border:1px solid {_sc}44;'
+                       f'border-radius:6px;padding:6px 10px;text-align:center;min-width:90px">'
+                       f'<div style="font-size:0.72rem;color:#94A3B8">{_sname}</div>'
+                       f'<div style="font-size:0.82rem;font-weight:700;color:{_sc}">{_ss}</div>'
+                       f'<div style="font-size:0.65rem;color:#64748B">{_sym}</div></div>')
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">{_sec_chips}</div>',
+        unsafe_allow_html=True
+    )
+
+    # ── Today's Catalysts ─────────────────────────────────────────
+    _earn_today = _fetch_earnings_today()
+    _econ_today = _fetch_econ_calendar() or []
+    with st.expander("📅 Today's Catalysts", expanded=False):
+        if _earn_today:
+            st.markdown('<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
+                        'letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">'
+                        '📊 Earnings Today</div>', unsafe_allow_html=True)
+            for _e in _earn_today:
+                _eps_est = _e.get("epsEstimated")
+                _eps_str = f"EPS est: ${_eps_est:.2f}" if _eps_est else ""
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'padding:5px 0;border-bottom:1px solid #1E293B">'
+                    f'<span style="font-size:0.85rem;font-weight:600;color:#F1F5F9">'
+                    f'{_e.get("symbol","")} — {_e.get("name","")}</span>'
+                    f'<span style="font-size:0.8rem;color:#94A3B8">{_eps_str}</span></div>',
+                    unsafe_allow_html=True)
+        else:
+            st.caption("No major earnings scheduled today.")
+        if _econ_today:
+            st.markdown('<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
+                        'letter-spacing:1px;text-transform:uppercase;margin:10px 0 6px">'
+                        '🗓 Economic Events</div>', unsafe_allow_html=True)
+            for _ev in _econ_today[:8]:
+                _t = _ev.get("date","")[:16]
+                _ev_name = _ev.get("event","")
+                _est  = _ev.get("estimate","")
+                _prev = _ev.get("previous","")
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'padding:5px 0;border-bottom:1px solid #1E293B">'
+                    f'<span style="font-size:0.85rem;color:#CBD5E1">{_ev_name}</span>'
+                    f'<span style="font-size:0.78rem;color:#94A3B8">{_t} | est: {_est} prev: {_prev}</span></div>',
+                    unsafe_allow_html=True)
+        else:
+            st.caption("No major economic events today.")
+
+    # ── Market Movers ─────────────────────────────────────────────
+    _movers = _fetch_market_movers()
+    with st.expander("🚀 Market Movers", expanded=False):
+        def _mover_table(title, up, down):
+            if not up and not down:
+                st.caption(f"No data available for {title}.")
+                return
+            st.markdown(f'<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
+                        f'letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">'
+                        f'{title}</div>', unsafe_allow_html=True)
+            _cols = st.columns(2)
+            for _col, _lst, _color, _label, _arrow in [
+                (_cols[0], up,   "#22C55E", "🟢 Top Gainers", "▲"),
+                (_cols[1], down, "#EF4444", "🔴 Top Losers",  "▼"),
+            ]:
+                with _col:
+                    st.markdown(f'<div style="font-size:0.72rem;font-weight:700;color:{_color};'
+                                f'margin-bottom:6px">{_label}</div>', unsafe_allow_html=True)
+                    for _m in _lst:
+                        _sym  = _m.get("symbol","")
+                        _name = _m.get("name","") or _sym
+                        _pct  = _m.get("chg_pct")
+                        _pr   = _m.get("price")
+                        _pct_s = f"{_arrow}{abs(_pct):.1f}%" if _pct is not None else "—"
+                        _pr_s  = f"${_pr:.2f}" if _pr else ""
+                        st.markdown(
+                            f'<div style="display:flex;justify-content:space-between;'
+                            f'align-items:center;padding:5px 0;border-bottom:1px solid #1E293B">'
+                            f'<div><div style="font-size:0.83rem;font-weight:700;color:#F1F5F9">{_sym}</div>'
+                            f'<div style="font-size:0.72rem;color:#64748B">{_name[:28]}</div></div>'
+                            f'<div style="text-align:right">'
+                            f'<div style="font-size:0.83rem;font-weight:700;color:{_color}">{_pct_s}</div>'
+                            f'<div style="font-size:0.72rem;color:#94A3B8">{_pr_s}</div></div></div>',
+                            unsafe_allow_html=True)
+        _mover_table("🇺🇸 US Markets", _movers["us"]["up"], _movers["us"]["down"])
+        if _movers["uk"]["up"] or _movers["uk"]["down"]:
+            st.markdown('<hr style="border-color:#1E293B;margin:10px 0">', unsafe_allow_html=True)
+            _mover_table("🇬🇧 UK Markets", _movers["uk"]["up"], _movers["uk"]["down"])
+        if _movers["eu"]["up"] or _movers["eu"]["down"]:
+            st.markdown('<hr style="border-color:#1E293B;margin:10px 0">', unsafe_allow_html=True)
+            _mover_table("🇪🇺 EU Markets", _movers["eu"]["up"], _movers["eu"]["down"])
+
+    # ── Macro Pulse / Equity Flow / Overnight Wires ───────────────
+    for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
+                          ("📈 Equity Flow","equity_flow"),
+                          ("🌏 Overnight Wires","overnight_wires")]:
+        _b_txt = _bulletin.get(_b_k,"")
+        if _b_txt:
+            with st.expander(_b_lbl):
+                st.markdown(f'<div style="font-size:0.88rem;color:#CBD5E1;line-height:1.75">'
+                            f'{_b_txt}</div>', unsafe_allow_html=True)
+
+    # ── Trade Ideas ───────────────────────────────────────────────
+    _b_ideas = _bulletin.get("trade_ideas", [])
+    if _b_ideas:
+        with st.expander("💡 Trade Ideas", expanded=False):
+            for _idea in _b_ideas:
+                st.markdown(f"""
+<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);
+            border-radius:8px;padding:12px 16px;margin-bottom:8px">
+  <div style="font-size:0.88rem;font-weight:700;color:#F59E0B;margin-bottom:6px">
+    {_idea.get('setup','')}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    <div><div style="font-size:0.62rem;color:#64748B;text-transform:uppercase">Thesis</div>
+         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('thesis','')}</div></div>
+    <div><div style="font-size:0.62rem;color:#64748B;text-transform:uppercase">Entry</div>
+         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('entry','')}</div></div>
+    <div style="grid-column:1/-1">
+         <div style="font-size:0.62rem;color:#EF4444;text-transform:uppercase">⚠ Risk</div>
+         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('risk','')}</div></div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+    if _bulletin.get("fallback"):
+        st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
+    st.markdown('<div style="margin-bottom:20px"></div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # TABS
@@ -3881,197 +4077,9 @@ with tab0:
 
     # ─────────────────────────────────────────────────────────────
     # ── Market Bulletin (top of Home tab) ────────────────────────
-    _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d%H') + \
-             str(__import__('datetime').datetime.now().minute // 30)
-    with st.spinner("Generating bulletin…"):
-        _bulletin = _make_bulletin(_b_key)
+    _render_bulletin()  # defined at module level with @st.fragment
 
-    _b_session  = _bulletin.get("session", "Morning")
-    _b_ts       = _bulletin.get("timestamp", "")
-    _b_the_call = _bulletin.get("the_call", {})
-    _b_headline = _b_the_call.get("headline", "") if isinstance(_b_the_call, dict) else str(_b_the_call)
-    _b_bullets  = _b_the_call.get("bullets", []) if isinstance(_b_the_call, dict) else []
-
-    st.markdown(f"""
-<div style="display:flex;align-items:center;justify-content:space-between;
-            padding:12px 18px;background:linear-gradient(90deg,#050D18,#0F1E35);
-            border:1px solid rgba(251,191,36,0.35);border-radius:10px;margin-bottom:10px">
-  <div style="display:flex;align-items:center;gap:12px">
-    <div style="font-size:0.65rem;font-weight:700;color:#F59E0B;letter-spacing:2px;
-                text-transform:uppercase">Fintiq · Global Markets Intelligence</div>
-    <div style="font-size:1.15rem;font-weight:800;color:#F1F5F9">⏰ {_b_session} Bulletin</div>
-  </div>
-  <div style="font-size:0.9rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
-</div>""", unsafe_allow_html=True)
-
-    # ── The Call — headline + bullets ────────────────────────────
-    _bullets_html = "".join(
-        f'<li style="margin-bottom:5px;color:#CBD5E1">{b}</li>'
-        for b in _b_bullets
-    )
-    st.markdown(f"""
-<div style="background:linear-gradient(135deg,#080F1C,#0D1B2E);
-            border-left:4px solid #F59E0B;border-radius:0 8px 8px 0;
-            padding:14px 18px;margin-bottom:12px">
-  <div style="font-size:0.65rem;font-weight:700;color:#F59E0B;letter-spacing:1.5px;
-              text-transform:uppercase;margin-bottom:6px">📢 The Call</div>
-  <div style="font-size:1rem;font-weight:700;color:#F1F5F9;line-height:1.6;margin-bottom:10px">
-    {_b_headline}</div>
-  <ul style="margin:0;padding-left:18px;font-size:0.88rem;line-height:1.7">
-    {_bullets_html}
-  </ul>
-</div>""", unsafe_allow_html=True)
-
-    _b_radar = _bulletin.get("risk_radar", [])
-    if _b_radar:
-        _fc_map = {"🔴":"#EF4444","🟡":"#F59E0B","🟢":"#22C55E","🔵":"#3B82F6"}
-        _rdr = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px">'
-        for _r in _b_radar:
-            _fc = _fc_map.get(_r.get("flag","🔵"),"#3B82F6")
-            _rdr += (f'<div style="background:#0D1F33;border:1px solid {_fc}44;'
-                     f'border-radius:8px;padding:12px 14px">'
-                     f'<div style="font-size:1.1rem;margin-bottom:4px">{_r.get("flag","")}</div>'
-                     f'<div style="font-size:0.82rem;font-weight:700;color:#F1F5F9;margin-bottom:5px">'
-                     f'{_r.get("title","")}</div>'
-                     f'<div style="font-size:0.76rem;color:#94A3B8;line-height:1.45">'
-                     f'{_r.get("detail","")}</div></div>')
-        _rdr += '</div>'
-        st.markdown(_rdr, unsafe_allow_html=True)
-
-    # ── Sector Snapshot ───────────────────────────────────────────
-    _sec_data = _fetch_sector_data()
-    _sec_chips = ""
-    for _sym, _sname in _SECTOR_ETFS:
-        _sv = _sec_data.get(_sym)
-        _sc = "#22C55E" if (_sv or 0) > 0 else "#EF4444"
-        _ss = f"{_sv:+.1f}%" if _sv is not None else "—"
-        _sec_chips += (f'<div style="background:#0D1F33;border:1px solid {_sc}44;'
-                       f'border-radius:6px;padding:6px 10px;text-align:center;min-width:90px">'
-                       f'<div style="font-size:0.72rem;color:#94A3B8">{_sname}</div>'
-                       f'<div style="font-size:0.82rem;font-weight:700;color:{_sc}">{_ss}</div>'
-                       f'<div style="font-size:0.65rem;color:#64748B">{_sym}</div></div>')
-    st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">{_sec_chips}</div>',
-        unsafe_allow_html=True
-    )
-
-    # ── Today's Catalysts ─────────────────────────────────────────
-    _earn_today = _fetch_earnings_today()
-    _econ_today = _fetch_econ_calendar() or []
-    with st.expander("📅 Today's Catalysts", expanded=False):
-        if _earn_today:
-            st.markdown('<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
-                        'letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">'
-                        '📊 Earnings Today</div>', unsafe_allow_html=True)
-            for _e in _earn_today:
-                _eps_est = _e.get("epsEstimated")
-                _eps_str = f"EPS est: ${_eps_est:.2f}" if _eps_est else ""
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;'
-                    f'padding:5px 0;border-bottom:1px solid #1E293B">'
-                    f'<span style="font-size:0.85rem;font-weight:600;color:#F1F5F9">'
-                    f'{_e.get("symbol","")} — {_e.get("name","")}</span>'
-                    f'<span style="font-size:0.8rem;color:#94A3B8">{_eps_str}</span></div>',
-                    unsafe_allow_html=True
-                )
-        else:
-            st.caption("No major earnings scheduled today.")
-        if _econ_today:
-            st.markdown('<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
-                        'letter-spacing:1px;text-transform:uppercase;margin:10px 0 6px">'
-                        '🗓 Economic Events</div>', unsafe_allow_html=True)
-            for _ev in _econ_today[:8]:
-                _t = _ev.get("date","")[:16]
-                _ev_name = _ev.get("event","")
-                _est  = _ev.get("estimate","")
-                _prev = _ev.get("previous","")
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;'
-                    f'padding:5px 0;border-bottom:1px solid #1E293B">'
-                    f'<span style="font-size:0.85rem;color:#CBD5E1">{_ev_name}</span>'
-                    f'<span style="font-size:0.78rem;color:#94A3B8">{_t} | est: {_est} prev: {_prev}</span></div>',
-                    unsafe_allow_html=True
-                )
-        else:
-            st.caption("No major economic events today.")
-
-    # ── Market Movers ─────────────────────────────────────────────
-    _movers = _fetch_market_movers()
-    with st.expander("🚀 Market Movers", expanded=False):
-        def _mover_table(title: str, up: list, down: list):
-            if not up and not down:
-                st.caption(f"No data available for {title}.")
-                return
-            st.markdown(f'<div style="font-size:0.75rem;font-weight:700;color:#F59E0B;'
-                        f'letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">'
-                        f'{title}</div>', unsafe_allow_html=True)
-            _cols = st.columns(2)
-            for _col, _lst, _color, _label, _arrow in [
-                (_cols[0], up,   "#22C55E", "🟢 Top Gainers", "▲"),
-                (_cols[1], down, "#EF4444", "🔴 Top Losers",  "▼"),
-            ]:
-                with _col:
-                    st.markdown(f'<div style="font-size:0.72rem;font-weight:700;color:{_color};'
-                                f'margin-bottom:6px">{_label}</div>', unsafe_allow_html=True)
-                    for _m in _lst:
-                        _sym  = _m.get("symbol","")
-                        _name = _m.get("name","") or _sym
-                        _pct  = _m.get("chg_pct")
-                        _pr   = _m.get("price")
-                        _pct_s = f"{_arrow}{abs(_pct):.1f}%" if _pct is not None else "—"
-                        _pr_s  = f"${_pr:.2f}" if _pr else ""
-                        st.markdown(
-                            f'<div style="display:flex;justify-content:space-between;'
-                            f'align-items:center;padding:5px 0;border-bottom:1px solid #1E293B">'
-                            f'<div><div style="font-size:0.83rem;font-weight:700;color:#F1F5F9">{_sym}</div>'
-                            f'<div style="font-size:0.72rem;color:#64748B">{_name[:28]}</div></div>'
-                            f'<div style="text-align:right">'
-                            f'<div style="font-size:0.83rem;font-weight:700;color:{_color}">{_pct_s}</div>'
-                            f'<div style="font-size:0.72rem;color:#94A3B8">{_pr_s}</div></div></div>',
-                            unsafe_allow_html=True
-                        )
-
-        _mover_table("🇺🇸 US Markets", _movers["us"]["up"], _movers["us"]["down"])
-        if _movers["uk"]["up"] or _movers["uk"]["down"]:
-            st.markdown('<hr style="border-color:#1E293B;margin:10px 0">', unsafe_allow_html=True)
-            _mover_table("🇬🇧 UK Markets", _movers["uk"]["up"], _movers["uk"]["down"])
-        if _movers["eu"]["up"] or _movers["eu"]["down"]:
-            st.markdown('<hr style="border-color:#1E293B;margin:10px 0">', unsafe_allow_html=True)
-            _mover_table("🇪🇺 EU Markets", _movers["eu"]["up"], _movers["eu"]["down"])
-
-    for _b_lbl, _b_k in [("📊 Macro Pulse","macro_pulse"),
-                          ("📈 Equity Flow","equity_flow"),
-                          ("🌏 Overnight Wires","overnight_wires")]:
-        _b_txt = _bulletin.get(_b_k,"")
-        if _b_txt:
-            with st.expander(_b_lbl):
-                st.markdown(f'<div style="font-size:0.88rem;color:#CBD5E1;line-height:1.75">'
-                            f'{_b_txt}</div>', unsafe_allow_html=True)
-
-    _b_ideas = _bulletin.get("trade_ideas", [])
-    if _b_ideas:
-        with st.expander("💡 Trade Ideas", expanded=False):
-            for _idea in _b_ideas:
-                st.markdown(f"""
-<div style="background:#0D1F33;border:1px solid rgba(100,116,139,0.25);
-            border-radius:8px;padding:12px 16px;margin-bottom:8px">
-  <div style="font-size:0.88rem;font-weight:700;color:#F59E0B;margin-bottom:6px">
-    {_idea.get('setup','')}</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-    <div><div style="font-size:0.62rem;color:#64748B;text-transform:uppercase">Thesis</div>
-         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('thesis','')}</div></div>
-    <div><div style="font-size:0.62rem;color:#64748B;text-transform:uppercase">Entry</div>
-         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('entry','')}</div></div>
-    <div style="grid-column:1/-1">
-         <div style="font-size:0.62rem;color:#EF4444;text-transform:uppercase">⚠ Risk</div>
-         <div style="font-size:0.8rem;color:#E2E8F0">{_idea.get('risk','')}</div></div>
-  </div>
-</div>""", unsafe_allow_html=True)
-
-    if _bulletin.get("fallback"):
-        st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
-
-    st.markdown('<div style="margin-bottom:20px"></div>', unsafe_allow_html=True)
+    pass  # bulletin rendered above by _render_bulletin() @st.fragment
 
     # PRE-FETCH EPS + BUILD INLINE EPS HTML
     # ─────────────────────────────────────────────────────────────
