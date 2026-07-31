@@ -3104,11 +3104,21 @@ def _risk_sentiment(vix, gold_pct, dxy_pct):
     else:
         return "🔴 Risk-Off", "#EF4444", "Risk-off environment — caution warranted, check your stops."
 
+def _get_api_key() -> str:
+    """Read ANTHROPIC_API_KEY from env or st.secrets — whichever is available."""
+    import os as _os_k
+    _key = _os_k.environ.get("ANTHROPIC_API_KEY", "")
+    if not _key:
+        try:
+            _key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        except Exception:
+            pass
+    return _key or ""
+
 @st.cache_data(ttl=14400, show_spinner=False)
-def _make_bulletin(_cache_key: str, _has_key: bool = False) -> dict:
-    """Fetch market data and generate Goldman-style trading desk bulletin via Claude.
-    Cached 30 mins. _has_key is part of the cache key so fallback results don't
-    persist once the API key becomes available."""
+def _make_bulletin(_cache_key: str) -> dict:
+    """Fetch market data + call Claude. Only called when API key is confirmed present.
+    Cached 4 hours. Fallback is handled by the caller — never cached here."""
     import os as _os_b, json as _json
     from datetime import datetime as _dt
 
@@ -3214,68 +3224,100 @@ def _make_bulletin(_cache_key: str, _has_key: bool = False) -> dict:
         '}}'
     )
 
-    _api_key = _os_b.environ.get("ANTHROPIC_API_KEY", "")
-    _debug_err = ""
-    if _api_key:
-        import anthropic as _anth_b, time as _time_b
-        _client = _anth_b.Anthropic(api_key=_api_key)
-        for _attempt in range(3):
-            try:
-                _resp = _client.messages.create(
-                    model="claude-sonnet-5",
-                    max_tokens=8000,
-                    messages=[{"role": "user", "content": _prompt}]
-                )
-                _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
-                # Strip markdown fences
-                if _raw.startswith("```"):
-                    _lines = _raw.split("\n")
-                    _raw = "\n".join(_lines[1:])
-                    if _raw.rstrip().endswith("```"):
-                        _raw = _raw.rstrip()[:-3].rstrip()
-                # Robustly extract the JSON object (ignore any text before/after)
-                _j_start = _raw.find('{')
-                _j_end   = _raw.rfind('}') + 1
-                if _j_start >= 0 and _j_end > _j_start:
-                    _raw = _raw[_j_start:_j_end]
-                _parsed = _json.loads(_raw)
-                _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
-                                "session": _session})
-                return _parsed
-            except _anth_b.APIStatusError as _e:
-                if _e.status_code == 529 and _attempt < 2:
-                    _time_b.sleep(5 * (_attempt + 1))  # 5s, 10s
-                    continue
-                _debug_err = f"API error: {type(_e).__name__}: {str(_e)[:200]}"
-                break
-            except Exception as _e:
-                _debug_err = f"API error: {type(_e).__name__}: {str(_e)[:200]}"
-                break
-    else:
-        _debug_err = "ANTHROPIC_API_KEY not found in environment"
+    _api_key = _get_api_key()
+    import anthropic as _anth_b, time as _time_b
+    _client = _anth_b.Anthropic(api_key=_api_key)
+    for _attempt in range(3):
+        try:
+            _resp = _client.messages.create(
+                model="claude-sonnet-5",
+                max_tokens=8000,
+                messages=[{"role": "user", "content": _prompt}]
+            )
+            _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
+            if _raw.startswith("```"):
+                _lines = _raw.split("\n")
+                _raw = "\n".join(_lines[1:])
+                if _raw.rstrip().endswith("```"):
+                    _raw = _raw.rstrip()[:-3].rstrip()
+            _j_start = _raw.find('{')
+            _j_end   = _raw.rfind('}') + 1
+            if _j_start >= 0 and _j_end > _j_start:
+                _raw = _raw[_j_start:_j_end]
+            _parsed = _json.loads(_raw)
+            _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
+                            "session": _session})
+            return _parsed
+        except _anth_b.APIStatusError as _e:
+            if _e.status_code == 529 and _attempt < 2:
+                _time_b.sleep(5 * (_attempt + 1))
+                continue
+            raise
+        except Exception:
+            raise
 
-    # ── Rules-based fallback (no API key or on error) ─────────
-    _vix_val = _vix.get("price")
-    _spx_pct = _spx.get("chg_pct")
+def _make_bulletin_fallback() -> dict:
+    """Instant rules-based bulletin — never cached, called only when API key is absent."""
+    from datetime import datetime as _dt
+    _syms = [s for s,_,_,_ in _BRIEF_INDICES] + [s for s,_,_ in _BRIEF_INSTRUMENTS]
+    _bd   = _fetch_brief_data(_syms)
+    _econ = _fetch_econ_calendar()
+    _sectors = _fetch_sector_data()
+    def _pct(v): return f"{v:+.2f}%" if v is not None else "n/a"
+    def _pct2(v): return f"{v:+.1f}%" if v is not None else "n/a"
+    _spx  = _bd.get("^GSPC", {}); _vix = _bd.get("^VIX", {})
+    _gold = _bd.get("GC=F",  {}); _dxy = _bd.get("DX-Y.NYB", {})
+    _tnx  = _bd.get("^TNX",  {}); _brent = _bd.get("BZ=F", {})
+    _vix_val = _vix.get("price"); _spx_pct = _spx.get("chg_pct")
     _sent, _, _smsg = _risk_sentiment(_vix_val, _gold.get("chg_pct"), _dxy.get("chg_pct"))
     _vix_s = f"{_vix_val:.1f}" if _vix_val else "—"
+    _region_txt = "\n".join(
+        f"{lbl}: {_bd.get(sym,{}).get('price','n/a')} ({_pct(_bd.get(sym,{}).get('chg_pct'))})"
+        for sym, lbl, _, region in _BRIEF_INDICES if region in ("Asia", "Europe", "UK")
+    )
+    _econ_txt = "\n".join(
+        f"- {e.get('date','')[:16]} [{e.get('country','')}] {e.get('event','')}"
+        for e in (_econ or [])[:6]
+    ) or "No major events scheduled"
+    _sector_txt = "  |  ".join(
+        f"{name}: {_pct2(_sectors.get(sym))}" for sym, name in _SECTOR_ETFS
+    ) or "No sector data"
     if "Risk-On" in _sent:
         _call = f"Risk-on tape: S&P {_pct(_spx_pct)}, VIX {_vix_s} — stay long quality, trim defensives."
     elif "Risk-Off" in _sent:
         _call = f"Risk-off: VIX {_vix_s}, S&P {_pct(_spx_pct)} — protect downside, tighten stops."
     else:
         _call = f"Mixed signals: VIX {_vix_s}, S&P {_pct(_spx_pct)} — wait for directional clarity."
+    _now = _dt.now()
+    _hour = _now.hour
+    if _hour < 8:    _session = "Pre-Market"
+    elif _hour < 12: _session = "Morning"
+    elif _hour < 14: _session = "Midday"
+    elif _hour < 16: _session = "Close Watch"
+    else:            _session = "After-Hours"
     return {
-        "the_call": {"headline": _call, "bullets": [f"VIX: {_vix_s}", f"S&P 500: {_pct(_spx_pct)}"]},
+        "the_call": {
+            "headline": _call,
+            "bullets": [
+                f"S&P 500: {_pct(_spx_pct)}",
+                f"VIX: {_vix_s}",
+                f"Gold: {_pct(_gold.get('chg_pct'))}",
+                f"10Y UST: {_tnx.get('price','—')}%",
+                f"DXY: {_pct(_dxy.get('chg_pct'))}",
+                f"Brent: {_pct(_brent.get('chg_pct'))}",
+            ]
+        },
         "risk_radar": [
             {"flag": "🔴" if (_vix_val or 0) > 25 else "🟡" if (_vix_val or 0) > 18 else "🟢",
-             "title": f"VIX at {_vix_s}",
-             "detail": _smsg},
+             "title": f"VIX at {_vix_s}", "detail": _smsg},
             {"flag": "🔵", "title": "Economic Events", "detail": _econ_txt[:300]},
         ],
-        "macro_pulse": (f"S&P 500 {_pct(_spx_pct)}. Gold {_pct(_gold.get('chg_pct'))}. "
-                        f"DXY {_pct(_dxy.get('chg_pct'))}. 10Y UST {_tnx.get('price','—')}%. "
-                        f"Brent {_pct(_brent.get('chg_pct'))}."),
+        "sector_snapshot": _sector_txt,
+        "macro_pulse": (
+            f"S&P 500 {_pct(_spx_pct)}. Gold {_pct(_gold.get('chg_pct'))}. "
+            f"DXY {_pct(_dxy.get('chg_pct'))}. 10Y UST {_tnx.get('price','—')}%. "
+            f"Brent {_pct(_brent.get('chg_pct'))}. (AI analysis unavailable — add ANTHROPIC_API_KEY to Railway Variables.)"
+        ),
         "equity_flow": "",
         "overnight_wires": _region_txt or "Data unavailable.",
         "trade_ideas": [],
@@ -3289,17 +3331,23 @@ def _make_bulletin(_cache_key: str, _has_key: bool = False) -> dict:
 # ─────────────────────────────────────────────────────────────
 @st.fragment
 def _render_bulletin():
-    import os as _os_rb
     _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d') + \
              str(__import__('datetime').datetime.now().hour // 4)
-    _b_has_key = bool(_os_rb.environ.get("ANTHROPIC_API_KEY", ""))
-    _ss_key = f"bulletin_{_b_key}_{_b_has_key}"
+    _api_key = _get_api_key()
 
-    if _ss_key not in st.session_state:
-        with st.spinner("📡 Generating market intelligence…"):
-            st.session_state[_ss_key] = _make_bulletin(_b_key, _b_has_key)
-
-    _bulletin = st.session_state[_ss_key]
+    if _api_key:
+        # AI path — cached 4h, session state for instant reruns
+        _ss_key = f"bulletin_ai_{_b_key}"
+        if _ss_key not in st.session_state:
+            with st.spinner("📡 Generating market intelligence…"):
+                try:
+                    st.session_state[_ss_key] = _make_bulletin(_b_key)
+                except Exception as _e:
+                    st.session_state[_ss_key] = _make_bulletin_fallback()
+        _bulletin = st.session_state[_ss_key]
+    else:
+        # Fallback path — never cached, instant, recovers immediately when key is added
+        _bulletin = _make_bulletin_fallback()
 
     _b_session  = _bulletin.get("session", "Morning")
     _b_ts       = _bulletin.get("timestamp", "")
