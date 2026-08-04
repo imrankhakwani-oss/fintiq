@@ -3585,10 +3585,15 @@ def _comp_data_summary(d: dict) -> str:
     _from_hi = ((_pr - _hi) / _hi * 100) if _pr and _hi else None
     _lines = [
         f"── {d['ticker']} | {_i.get('longName','')} | {_i.get('sector','')} | {_i.get('exchange','')}",
-        f"Price: {_pr:.2f} {_i.get('currency','')} | 52wk {_lo:.2f}–{_hi:.2f}" + (f" | {_from_hi:+.1f}% from high" if _from_hi else ""),
+        f"Price: {_pr:.2f} {_i.get('currency','')}" + (f" | 52wk {_lo:.2f}–{_hi:.2f}" if _lo and _hi else "") + (f" | {_from_hi:+.1f}% from high" if _from_hi else ""),
         f"Mkt cap: {'%.1fB'%(_cap/1e9) if _cap else '?'} | Beta: {_beta:.2f}" if _beta else f"Mkt cap: {'%.1fB'%(_cap/1e9) if _cap else '?'}",
-        f"Valuation — trailing PE: {_pe:.1f}x | fwd PE: {_fpe:.1f}x | P/S: {_ps:.1f}x | P/B: {_pb:.1f}x | EV/EBITDA: {_eve:.1f}x" if _pe else
-        f"Valuation — fwd PE: {_fpe:.1f}x | P/S: {_ps:.1f}x" if _fpe else "Valuation: limited data",
+        ("Valuation — " + " | ".join(filter(None, [
+            f"trailing PE: {_pe:.1f}x" if _pe else None,
+            f"fwd PE: {_fpe:.1f}x" if _fpe else None,
+            f"P/S: {_ps:.1f}x" if _ps else None,
+            f"P/B: {_pb:.1f}x" if _pb else None,
+            f"EV/EBITDA: {_eve:.1f}x" if _eve else None,
+        ]))) if any([_pe, _fpe, _ps, _pb, _eve]) else "Valuation: limited data",
         f"Revenue: {'%.1fB'%(_rev/1e9) if _rev else '?'}" + (f" | growth {_rg*100:+.1f}%yoy" if _rg else ""),
         f"Margins — gross {_gm*100:.1f}% | operating {_om*100:.1f}% | net {_nm*100:.1f}%" if _gm and _om else "",
         f"ROE: {_roe*100:.1f}% | D/E: {_de:.2f}x | FCF: {'%.1fB'%(_fcf/1e9)}" if _roe and _de and _fcf else "",
