@@ -3659,7 +3659,7 @@ You have live data above. Use it conversationally — never recite metrics as a 
 • Fama-French lens: comment on size, value, profitability, investment factors naturally
 • Challenge if user is momentum-chasing: "You mentioned it's up 80% — I want to make sure we're evaluating the business, not the price action"
 • Compare to sector where relevant
-• End: "The quality picture is clear. The real question is whether the price reflects it. Shall we look at valuation?"""",
+• End: 'The quality picture is clear. The real question is whether the price reflects it. Shall we look at valuation?'""",
 
         'valuation': f"""STAGE: Valuation (3-Phase DCF with McKinsey Continuing Value)
 The right panel shows DCF inputs and results. Reference them in conversation.
@@ -3668,7 +3668,7 @@ The right panel shows DCF inputs and results. Reference them in conversation.
 • Frame the result as a range not a point: "The DCF suggests intrinsic value of X–Y per share"
 • Monte Carlo: "Stress-testing 4,000 scenarios, 80% of outcomes land between X and Y — the stock at [price] sits [above/below/within] that range"
 • Margin of safety discussion: is the user paying for certainty or buying uncertainty?
-• End: "Valuation sets the target. Technicals tell us about timing. Shall we look at the chart?"""",
+• End: 'Valuation sets the target. Technicals tell us about timing. Shall we look at the chart?'""",
 
         'technical': f"""STAGE: Technical Analysis
 Describe price action like a seasoned chartist — not a data table.
@@ -5750,7 +5750,7 @@ with tab_comp:
                     f'border-radius:6px;padding:6px 10px;margin-bottom:4px">'
                     f'<span style="font-weight:700;color:#FBBF24;font-size:0.82rem">{_wt}</span>'
                     f'<span style="font-size:0.75rem;color:#94A3B8">{_wn[:22]}</span>'
-                    f'<span style="font-size:0.8rem;color:#E2E8F0">{_wp:.2f}" if isinstance(_wp,float) else ""}</span>'
+                    f'<span style="font-size:0.8rem;color:#E2E8F0">{f"{_wp:.2f}" if isinstance(_wp,float) else ""}</span>'
                     f'</div>', unsafe_allow_html=True)
             st.markdown(f'<div style="font-size:0.72rem;color:#64748B;text-align:right;'
                         f'margin-bottom:14px">{len(_wl)}/{_MAX_STOCKS} slots used</div>',
