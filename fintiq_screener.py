@@ -5773,53 +5773,9 @@ with tab_comp:
     _wl    = _SS.cp_ctx.get('watchlist', [])
 
     # ════════════════════════════════════════════════════════════
-    # HEADER ROW — title | stage badge | reset button
+    # OPENING MESSAGE — generate BEFORE header so download button
+    # is always available on first render
     # ════════════════════════════════════════════════════════════
-    _stage_labels = {
-        'discovery':   ('🔎', 'Discovery',   '#64748B'),
-        'fundamental': ('📊', 'Fundamental', '#3B82F6'),
-        'valuation':   ('💰', 'Valuation',   '#8B5CF6'),
-        'technical':   ('📈', 'Technical',   '#10B981'),
-        'finalise':    ('✅', 'Finalising',  '#FBBF24'),
-        'report':      ('📄', 'Report',      '#F59E0B'),
-    }
-    _sico, _slbl, _scol = _stage_labels.get(_stage, ('●', _stage, '#64748B'))
-    _hc1, _hc2, _hc3, _hc4 = st.columns([4, 2, 2, 2])
-    with _hc1:
-        st.markdown(
-            '<div style="font-size:1.1rem;font-weight:700;color:#E2E8F0;padding-top:6px">'
-            '🤖 AI Investment Companion</div>', unsafe_allow_html=True)
-    with _hc2:
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:6px;padding-top:8px">'
-            f'<span style="font-size:1rem">{_sico}</span>'
-            f'<span style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
-            f'color:{_scol};text-transform:uppercase">{_slbl}</span>'
-            f'</div>', unsafe_allow_html=True)
-    with _hc3:
-        # Download chat transcript
-        if _SS.cp_msgs:
-            _chat_txt = f"Fintiq AI Equity Analyst — Chat Transcript\n"
-            _chat_txt += f"{'='*50}\n\n"
-            for _cm in _SS.cp_msgs:
-                _role = "AI Analyst" if _cm['role'] == 'assistant' else "You"
-                _chat_txt += f"[{_role}]\n{_cm['content']}\n\n"
-            st.download_button("⬇️ Chat", data=_chat_txt,
-                file_name=f"fintiq_chat_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                mime="text/plain", use_container_width=True, key="cp_dl_chat")
-        else:
-            st.markdown("")
-    with _hc4:
-        if st.button("🔄 New Session", use_container_width=True, key="cp_reset"):
-            for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses','cp_report','cp_new_ticks']:
-                if _k in _SS: del _SS[_k]
-            st.rerun()
-
-    # ════════════════════════════════════════════════════════════
-    # CHAT — full width, taller
-    # ════════════════════════════════════════════════════════════
-
-    # Opening message if no history
     if not _SS.cp_msgs:
         _bull_ctx = ""
         _bk = __import__('datetime').datetime.now().strftime('%Y%m%d') + \
@@ -5834,6 +5790,96 @@ with tab_comp:
             _open_sys)
         _SS.cp_msgs.append({"role": "assistant", "content": _open_msg})
 
+    # ════════════════════════════════════════════════════════════
+    # HEADER ROW — title | stage | download | resume | new session
+    # ════════════════════════════════════════════════════════════
+    import json as _json
+    _stage_labels = {
+        'discovery':   ('🔎', 'Discovery',   '#64748B'),
+        'fundamental': ('📊', 'Fundamental', '#3B82F6'),
+        'valuation':   ('💰', 'Valuation',   '#8B5CF6'),
+        'technical':   ('📈', 'Technical',   '#10B981'),
+        'finalise':    ('✅', 'Finalising',  '#FBBF24'),
+        'report':      ('📄', 'Report',      '#F59E0B'),
+    }
+    _sico, _slbl, _scol = _stage_labels.get(_stage, ('●', _stage, '#64748B'))
+
+    # Build session JSON for download / resume
+    _session_json = _json.dumps({
+        "v": 1,
+        "stage": _SS.cp_stage,
+        "ctx":   _SS.cp_ctx,
+        "tickers": list(_SS.cp_data.keys()),
+        "analyses": {k: {ak: av for ak, av in av.items() if ak != 'mc'}
+                     for k, av in _SS.cp_analyses.items()},
+        "msgs":  _SS.cp_msgs,
+    }, ensure_ascii=False, indent=2)
+
+    _hc1, _hc2, _hc3, _hc4, _hc5 = st.columns([3, 2, 2, 2, 2])
+    with _hc1:
+        st.markdown(
+            '<div style="font-size:1.05rem;font-weight:700;color:#E2E8F0;padding-top:6px">'
+            '🤖 AI Investment Companion</div>', unsafe_allow_html=True)
+    with _hc2:
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:6px;padding-top:8px">'
+            f'<span style="font-size:1rem">{_sico}</span>'
+            f'<span style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+            f'color:{_scol};text-transform:uppercase">{_slbl}</span>'
+            f'</div>', unsafe_allow_html=True)
+    with _hc3:
+        st.download_button(
+            "⬇️ Save Chat",
+            data=_session_json,
+            file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json",
+            use_container_width=True,
+            key="cp_dl_chat",
+            help="Download session — upload this file later to resume exactly where you left off")
+    with _hc4:
+        if st.button("📂 Resume", use_container_width=True, key="cp_resume_btn",
+                     help="Upload a saved session file to continue a previous conversation"):
+            _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
+    with _hc5:
+        if st.button("🔄 New Session", use_container_width=True, key="cp_reset"):
+            for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses',
+                       'cp_report','cp_new_ticks','cp_show_resume']:
+                if _k in _SS: del _SS[_k]
+            st.rerun()
+
+    # ── Resume upload panel ───────────────────────────────────
+    if _SS.get('cp_show_resume'):
+        _up_file = st.file_uploader(
+            "Upload a saved Fintiq session (.json)",
+            type="json", key="cp_upload",
+            label_visibility="collapsed")
+        if _up_file:
+            try:
+                _saved = _json.loads(_up_file.read().decode('utf-8'))
+                if _saved.get('v') == 1:
+                    _SS.cp_msgs    = _saved.get('msgs', [])
+                    _SS.cp_stage   = _saved.get('stage', 'discovery')
+                    _SS.cp_ctx     = _saved.get('ctx', {})
+                    _SS.cp_ctx.setdefault('watchlist', [])
+                    _SS.cp_analyses = _saved.get('analyses', {})
+                    _SS.cp_data    = {}
+                    # Re-fetch yfinance data for all saved tickers
+                    _saved_tks = _saved.get('tickers', [])
+                    if _saved_tks:
+                        with st.spinner(f"Re-fetching data for {', '.join(_saved_tks)}…"):
+                            for _stk in _saved_tks:
+                                _SS.cp_data[_stk] = _comp_fetch(_stk)
+                    _SS['cp_show_resume'] = False
+                    st.success(f"✅ Session restored — {len(_SS.cp_msgs)} messages, stage: {_SS.cp_stage.upper()}")
+                    st.rerun()
+                else:
+                    st.error("Unrecognised file format. Please upload a Fintiq session .json file.")
+            except Exception as _ue:
+                st.error(f"Could not load session: {_ue}")
+
+    # ════════════════════════════════════════════════════════════
+    # CHAT — full width, taller
+    # ════════════════════════════════════════════════════════════
     _chat_container = st.container(height=380)
     with _chat_container:
         for _m in _SS.cp_msgs:
