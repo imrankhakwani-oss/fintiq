@@ -6023,8 +6023,8 @@ with tab_comp:
                                   if m['role'] == 'assistant'), '') if _SS.cp_msgs else ''
 
                 # Discovery → Confirm: AI outputs ---CONFIRM_FETCH--- block
-                # Also check _reply (current) in case it was just generated
-                _check_confirm_in = _last_ast + ' ' + _reply
+                # _reply not yet defined here — check only previous AI message
+                _check_confirm_in = _last_ast
                 if _cur_stage == 'discovery' and '---CONFIRM_FETCH---' in _check_confirm_in:
                     # Parse proposed tickers — handles both inline and multiline format
                     _cf_match = _re_stage.search(
@@ -6166,7 +6166,17 @@ with tab_comp:
                 _SS.cp_name_map = _comp_parse_name_map(_reply, _SS.cp_name_map)
 
                 # ── Check if reply triggers stage advance ─────────
-                if _SS.cp_stage == 'discovery' and any(
+                # Also check for CONFIRM_FETCH in the reply itself
+                if _SS.cp_stage == 'discovery' and '---CONFIRM_FETCH---' in _reply:
+                    _cf_m2 = _re_stage.search(
+                        r'---CONFIRM_FETCH---[\s\S]*?Stocks:\s*(.+?)(?:\n|FF4|$)', _reply)
+                    if _cf_m2:
+                        _prop_line2 = _cf_m2.group(1).strip()
+                        _prop_tks2 = _re_stage.findall(r'\(([A-Z]{1,6}(?:\.[A-Z]{1,2})?)\)', _prop_line2)
+                        _SS.cp_ctx['proposed'] = _prop_line2
+                        _SS.cp_ctx['proposed_tickers'] = _prop_tks2[:5]
+                    _SS.cp_stage = 'confirm'
+                elif _SS.cp_stage == 'discovery' and any(
                     p in _reply for p in ['look at the fundamentals', 'give me a moment',
                                           'fundamentals properly', 'pull fundamentals',
                                           'pull the data', 'break down', 'dig into',
