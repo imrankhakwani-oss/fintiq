@@ -5760,12 +5760,13 @@ with tab_comp:
         if _stage == 'discovery':
             st.markdown("""
 <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-            border-radius:10px;padding:16px;font-size:0.82rem;color:#94A3B8;line-height:1.7">
-<strong style="color:#E2E8F0;display:block;margin-bottom:8px">How this works</strong>
+            border-radius:10px;padding:20px 16px;font-size:0.82rem;color:#94A3B8;line-height:1.9;
+            height:255px;box-sizing:border-box;overflow:hidden;">
+<strong style="color:#E2E8F0;display:block;margin-bottom:10px">How this works</strong>
 Chat with your AI companion on the left. It will guide you through:<br><br>
 <span style="color:#FBBF24">①</span> Fundamental quality screen<br>
 <span style="color:#FBBF24">②</span> DCF valuation + Monte Carlo<br>
-<span style="color:#FBBF24">③</span> Technical analysis & timing<br>
+<span style="color:#FBBF24">③</span> Technical analysis &amp; timing<br>
 <span style="color:#FBBF24">④</span> Watchlist (up to 5 stocks)<br>
 <span style="color:#FBBF24">⑤</span> Research report (download)<br><br>
 <em>Data updates here as the conversation progresses.</em>
@@ -5885,8 +5886,16 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
                     mime="text/html",
                     use_container_width=True)
 
-        # ── Reset button ─────────────────────────────────────────
-        st.markdown("<br>", unsafe_allow_html=True)
+        # ── Reset button — height matched to chat input (~56px) ──
+        st.markdown("""
+        <style>
+        div[data-testid="stButton"]:has(button[data-testid="cp_reset"]) button,
+        button[data-testid="cp_reset"] {
+            min-height: 56px !important;
+            height: 56px !important;
+            font-size: 0.95rem !important;
+        }
+        </style>""", unsafe_allow_html=True)
         if st.button("🔄 New Analysis Session", use_container_width=True, key="cp_reset"):
             for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses','cp_report','cp_new_ticks']:
                 if _k in _SS: del _SS[_k]
