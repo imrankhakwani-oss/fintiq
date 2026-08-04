@@ -5761,7 +5761,7 @@ with tab_comp:
             st.markdown("""
 <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
             border-radius:10px;padding:20px 16px;font-size:0.82rem;color:#94A3B8;line-height:1.9;
-            height:255px;box-sizing:border-box;overflow:hidden;">
+            height:220px;box-sizing:border-box;overflow:hidden;">
 <strong style="color:#E2E8F0;display:block;margin-bottom:10px">How this works</strong>
 Chat with your AI companion on the left. It will guide you through:<br><br>
 <span style="color:#FBBF24">①</span> Fundamental quality screen<br>
@@ -5929,7 +5929,7 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
             _SS.cp_msgs.append({"role": "assistant", "content": _open_msg})
 
         # Display chat history
-        _chat_container = st.container(height=255)
+        _chat_container = st.container(height=220)
         with _chat_container:
             for _m in _SS.cp_msgs:
                 with st.chat_message(_m["role"],
