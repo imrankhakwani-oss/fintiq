@@ -3875,7 +3875,7 @@ def _comp_generate_report(watchlist: list, data: dict, ctx: dict, analyses: dict
 
 tab0, tab_comp, tab1, tab_factor, tab_mc, tab3, tab2, tab_opt, tab5, tab4 = st.tabs([
     "🏠 Home",
-    "🤖 AI Companion",
+    "🤖 AI Equity Analyst",
     "🔍 Fundamental",
     "🔬 Factor",
     "🎲 Monte Carlo",
@@ -5897,10 +5897,8 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
     # ════════════════════════════════════════════════════════════
     with _col_chat:
         st.markdown(
-            '<div style="font-size:1.1rem;font-weight:700;color:#E2E8F0;margin-bottom:4px">'
-            '🤖 AI Investment Companion</div>'
-            '<div style="font-size:0.78rem;color:#64748B;margin-bottom:16px">'
-            'Guided analysis · Educational only · Not financial advice</div>',
+            '<div style="font-size:1.1rem;font-weight:700;color:#E2E8F0;margin-bottom:16px">'
+            '🤖 AI Investment Companion</div>',
             unsafe_allow_html=True)
 
         # Opening message if no history
@@ -5930,6 +5928,7 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
                     st.markdown(_m["content"])
 
         # Chat input
+        st.caption("Guided analysis · Educational only · Not financial advice")
         if _user_input := st.chat_input("Type your message…", key="cp_input"):
 
             # Add user message
