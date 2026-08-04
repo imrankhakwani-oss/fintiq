@@ -3536,11 +3536,346 @@ def _render_bulletin():
     st.markdown('<div style="margin-bottom:20px"></div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
+# AI COMPANION — helper functions
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _comp_fetch(ticker: str) -> dict:
+    """Fetch all data for a single ticker for the AI companion."""
+    import yfinance as _yf_c
+    try:
+        _tk = _yf_c.Ticker(ticker.upper())
+        _info = _tk.info or {}
+        _price = (_info.get('currentPrice') or _info.get('regularMarketPrice')
+                  or _info.get('previousClose'))
+        if not _price:
+            return {'ticker': ticker, 'error': f'No price data for {ticker}'}
+        _hist = _tk.history(period="1y", interval="1d", auto_adjust=True)
+        try:
+            _fin = _tk.financials
+            _cf  = _tk.cashflow
+        except Exception:
+            _fin = _cf = None
+        return {'ticker': ticker.upper(), 'info': _info, 'hist': _hist,
+                'financials': _fin, 'cashflow': _cf, 'price': _price, 'error': None}
+    except Exception as _e:
+        return {'ticker': ticker, 'error': str(_e)[:120]}
+
+
+def _comp_data_summary(d: dict) -> str:
+    """Convert ticker data dict → compact text for Claude system prompt."""
+    if d.get('error'):
+        return f"{d['ticker']}: data unavailable ({d['error']})"
+    _i = d.get('info', {})
+    def _f(v):
+        try: return float(v)
+        except: return None
+    _pr   = d.get('price'); _hi  = _f(_i.get('fiftyTwoWeekHigh'))
+    _lo   = _f(_i.get('fiftyTwoWeekLow'))
+    _cap  = _f(_i.get('marketCap')); _pe  = _f(_i.get('trailingPE'))
+    _fpe  = _f(_i.get('forwardPE')); _ps  = _f(_i.get('priceToSalesTrailing12Months'))
+    _pb   = _f(_i.get('priceToBook')); _eve = _f(_i.get('enterpriseToEbitda'))
+    _rev  = _f(_i.get('totalRevenue')); _rg  = _f(_i.get('revenueGrowth'))
+    _gm   = _f(_i.get('grossMargins')); _om  = _f(_i.get('operatingMargins'))
+    _nm   = _f(_i.get('profitMargins')); _roe = _f(_i.get('returnOnEquity'))
+    _de   = _f(_i.get('debtToEquity')); _fcf = _f(_i.get('freeCashflow'))
+    _tgt  = _f(_i.get('targetMeanPrice')); _rec = _f(_i.get('recommendationMean'))
+    _na   = _i.get('numberOfAnalystOpinions', '')
+    _beta = _f(_i.get('beta'))
+    _from_hi = ((_pr - _hi) / _hi * 100) if _pr and _hi else None
+    _lines = [
+        f"── {d['ticker']} | {_i.get('longName','')} | {_i.get('sector','')} | {_i.get('exchange','')}",
+        f"Price: {_pr:.2f} {_i.get('currency','')} | 52wk {_lo:.2f}–{_hi:.2f}" + (f" | {_from_hi:+.1f}% from high" if _from_hi else ""),
+        f"Mkt cap: {'%.1fB'%(_cap/1e9) if _cap else '?'} | Beta: {_beta:.2f}" if _beta else f"Mkt cap: {'%.1fB'%(_cap/1e9) if _cap else '?'}",
+        f"Valuation — trailing PE: {_pe:.1f}x | fwd PE: {_fpe:.1f}x | P/S: {_ps:.1f}x | P/B: {_pb:.1f}x | EV/EBITDA: {_eve:.1f}x" if _pe else
+        f"Valuation — fwd PE: {_fpe:.1f}x | P/S: {_ps:.1f}x" if _fpe else "Valuation: limited data",
+        f"Revenue: {'%.1fB'%(_rev/1e9) if _rev else '?'}" + (f" | growth {_rg*100:+.1f}%yoy" if _rg else ""),
+        f"Margins — gross {_gm*100:.1f}% | operating {_om*100:.1f}% | net {_nm*100:.1f}%" if _gm and _om else "",
+        f"ROE: {_roe*100:.1f}% | D/E: {_de:.2f}x | FCF: {'%.1fB'%(_fcf/1e9)}" if _roe and _de and _fcf else "",
+        f"Analyst consensus ({_na}): target {_tgt:.2f} | rating {_rec:.1f}/5 (1=StrongBuy)" if _tgt and _rec else "",
+        f"Business: {_i.get('longBusinessSummary','')[:300]}..." if _i.get('longBusinessSummary') else "",
+    ]
+    return "\n".join(l for l in _lines if l and l.strip())
+
+
+def _comp_monte_carlo(base: float, uncertainty: float = 0.35, n: int = 4000) -> dict:
+    """Log-normal Monte Carlo around a DCF base value. Returns percentiles."""
+    import numpy as _np
+    _np.random.seed(42)
+    _mu = _np.log(max(base, 0.01)) - 0.5 * uncertainty ** 2
+    _s  = _np.random.lognormal(_mu, uncertainty, n)
+    return {
+        'p10': float(_np.percentile(_s, 10)), 'p25': float(_np.percentile(_s, 25)),
+        'p50': float(_np.percentile(_s, 50)), 'p75': float(_np.percentile(_s, 75)),
+        'p90': float(_np.percentile(_s, 90)), 'mean': float(_np.mean(_s)),
+        'samples': _s[:300].tolist()
+    }
+
+
+def _comp_ai(messages: list, system: str) -> str:
+    """Single Claude call for companion. Returns text response."""
+    _k = _get_api_key()
+    if not _k:
+        return "API key not configured — please set ANTHROPIC_API_KEY in Railway Variables."
+    import anthropic as _a
+    try:
+        _r = _a.Anthropic(api_key=_k).messages.create(
+            model="claude-sonnet-5", max_tokens=1200, system=system, messages=messages)
+        return next(b.text for b in _r.content if hasattr(b, 'text')).strip()
+    except Exception as _e:
+        return f"Connection issue: {str(_e)[:120]}. Please try again."
+
+
+def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
+    """Build full system prompt for current companion stage."""
+    _data_txt = ""
+    if data:
+        _data_txt = "\n\nLIVE DATA (fetched now — weave naturally into conversation, never recite as a list):\n"
+        for _tk, _d in data.items():
+            _data_txt += "\n" + _comp_data_summary(_d) + "\n"
+
+    _ctx_txt = ""
+    if ctx:
+        _ctx_txt = "\n\nUSER CONTEXT:\n" + "\n".join(f"  {k}: {v}" for k, v in ctx.items() if k != 'watchlist')
+
+    _wl = ctx.get('watchlist', [])
+    _max = ctx.get('max_stocks', 5)
+
+    _stages = {
+        'discovery': f"""STAGE: Discovery
+Goal: Understand the user's intent. Establish investment horizon, risk tolerance, what they want to analyse and why.
+Rules:
+• Ask ONE question per response — never multiple
+• If they name a company, say you're pulling the data and ask them to confirm the ticker or full name
+• Probe their reasoning gently — thesis-driven or performance-chasing?
+• Once you know (a) what to analyse, (b) horizon, (c) risk appetite → transition
+• Transition: "Right — I've got a clear picture of what you're after. Let me look at the fundamentals properly. Give me a moment."
+• If user seems unsure what to analyse, help them think through sectors or themes first""",
+
+        'fundamental': f"""STAGE: Fundamental Analysis
+You have live data above. Use it conversationally — never recite metrics as a table.
+• Lead with what's genuinely interesting or unusual — not a data dump
+• Cover business quality: competitive moat, revenue trajectory, margin quality, balance sheet
+• Fama-French lens: comment on size, value, profitability, investment factors naturally
+• Challenge if user is momentum-chasing: "You mentioned it's up 80% — I want to make sure we're evaluating the business, not the price action"
+• Compare to sector where relevant
+• End: "The quality picture is clear. The real question is whether the price reflects it. Shall we look at valuation?"""",
+
+        'valuation': f"""STAGE: Valuation (3-Phase DCF with McKinsey Continuing Value)
+The right panel shows DCF inputs and results. Reference them in conversation.
+• Ask the user what revenue growth rate they think is realistic — make them own the assumption
+• Challenge optimistic inputs: "That's on the high end — historically this business has grown at X%. What gives you confidence in that rate?"
+• Frame the result as a range not a point: "The DCF suggests intrinsic value of X–Y per share"
+• Monte Carlo: "Stress-testing 4,000 scenarios, 80% of outcomes land between X and Y — the stock at [price] sits [above/below/within] that range"
+• Margin of safety discussion: is the user paying for certainty or buying uncertainty?
+• End: "Valuation sets the target. Technicals tell us about timing. Shall we look at the chart?"""",
+
+        'technical': f"""STAGE: Technical Analysis
+Describe price action like a seasoned chartist — not a data table.
+• Describe the trend character (strength, momentum, distribution/accumulation patterns)
+• Identify key support/resistance levels and what they mean
+• Discuss entry zone options given their horizon
+• Mention upcoming catalysts: earnings, macro events relevant to this stock
+• Ask: "Given your [X]-month horizon and the setup we've discussed, where are you thinking on timing?"
+• End: "I think we have enough. Let me pull this together and we can finalise your watchlist."
+Current watchlist: {_wl} ({len(_wl)}/{_max} slots)""",
+
+        'finalise': f"""STAGE: Finalise Watchlist
+Current watchlist: {_wl} ({len(_wl)}/{_max} stocks maximum)
+• Summarise each stock: one-line quality verdict + valuation view + entry logic + key risk
+• Ask if user wants changes — any additions, removals, or replacements
+• Enforce the discipline: if user wants more than {_max}, explain "A concentrated watchlist forces conviction — let's keep the strongest {_max}"
+• When satisfied: "Ready to generate your research report?"
+• The report will include: thesis per stock, valuation range, entry logic, key risks, disclaimer""",
+
+        'report': """STAGE: Report Generated
+The research report is displayed in the right panel and available for download.
+• Briefly highlight the key conviction call from the analysis
+• Remind user: "This documents your reasoning process — revisit the key risk for each position before acting"
+• Offer to start a new analysis session or deep-dive on any individual stock"""
+    }
+
+    return f"""You are Fintiq's AI Investment Companion.
+
+You combine the perspectives of: a senior equity analyst, hedge fund analyst, quantitative researcher, and behavioural finance expert. You have deep markets knowledge and speak like a smart senior colleague — direct, substantive, no filler.
+
+CORE RULES (never break these):
+1. EDUCATE and GUIDE — never advise. Say "the data suggests..." not "you should buy..."
+2. ONE question per response maximum
+3. Flag behavioural biases gently when you spot them
+4. No filler phrases ("great question!", "absolutely!", "certainly!")
+5. Be concise — maximum 4 short paragraphs per response
+6. If asked directly "should I buy X?": "I'm here to help you think through the analysis — the decision is yours. What's your instinct on it, and why?"
+7. Every session ends: analysis for education, not financial advice
+
+{_stages.get(stage, '')}
+{_ctx_txt}
+{_data_txt}"""
+
+
+def _comp_detect_ticker(text: str, existing: list) -> list:
+    """Extract likely ticker symbols from user message. Returns list of candidates."""
+    import re as _re, yfinance as _yf_d
+    _found = []
+    # Pattern: 1-5 uppercase letters, optionally .L .AS .PA etc
+    _raw = _re.findall(r'\b([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b', text)
+    # Also try uppercasing the whole message to catch casual mentions
+    _raw += _re.findall(r'\b([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b', text.upper())
+    _raw = list(set(_raw))
+    _skip = {'I', 'A', 'AI', 'UK', 'US', 'EU', 'PE', 'EV', 'AM', 'PM', 'THE',
+             'AND', 'FOR', 'BUT', 'NOT', 'OR', 'IF', 'MY', 'SO', 'IN', 'IS',
+             'BE', 'TO', 'DO', 'AN', 'AT', 'BY', 'UP', 'ON', 'NO', 'GO', 'OK',
+             'IP', 'VC', 'CEO', 'CFO', 'CTO', 'GDP', 'CPI', 'FED', 'IMF', 'ROE',
+             'DCF', 'EPS', 'FCF', 'ETF', 'IPO', 'ICE', 'NYSE', 'LSE', 'IT'}
+    for _t in _raw:
+        if _t in _skip or _t in existing or len(_t) < 2:
+            continue
+        try:
+            _info = _yf_d.Ticker(_t).fast_info
+            if hasattr(_info, 'last_price') and _info.last_price:
+                _found.append(_t)
+        except Exception:
+            pass
+    return _found[:3]  # max 3 new tickers per message
+
+
+def _comp_generate_report(watchlist: list, data: dict, ctx: dict, analyses: dict) -> str:
+    """Generate HTML research report from accumulated companion session."""
+    from datetime import datetime as _dt
+    _now = _dt.now().strftime("%d %B %Y, %H:%M GMT")
+    _horizon = ctx.get('investment_horizon', 'Not specified')
+    _risk    = ctx.get('risk_appetite', 'Not specified')
+
+    _cards = ""
+    for _tk in watchlist:
+        _d    = data.get(_tk, {})
+        _info = _d.get('info', {}) if not _d.get('error') else {}
+        _an   = analyses.get(_tk, {})
+        _pr   = _d.get('price', '—')
+        _name = _info.get('longName', _tk)
+        _sect = _info.get('sector', '—')
+        _tgt  = _info.get('targetMeanPrice', '—')
+        _pe   = _info.get('trailingPE', '—')
+        _dcf  = _an.get('dcf_str', '—')
+        _mc_lo= _an.get('mc_p25', '—')
+        _mc_hi= _an.get('mc_p75', '—')
+        _thesis  = _an.get('thesis', 'See conversation for full analysis.')
+        _entry   = _an.get('entry', '—')
+        _risk_txt= _an.get('key_risk', '—')
+
+        _mc_str = f"£{_mc_lo:.2f} – £{_mc_hi:.2f}" if isinstance(_mc_lo, float) else "—"
+        _pe_str = f"{_pe:.1f}x" if isinstance(_pe, float) else str(_pe)
+        _pr_str = f"{_pr:.2f}" if isinstance(_pr, float) else str(_pr)
+
+        _cards += f"""
+<div class="stock-card">
+  <div class="stock-header">
+    <span class="ticker-badge">{_tk}</span>
+    <span class="company-name">{_name}</span>
+    <span class="sector-tag">{_sect}</span>
+  </div>
+  <div class="metrics-row">
+    <div class="metric"><span class="m-label">Current Price</span><span class="m-value">{_pr_str}</span></div>
+    <div class="metric"><span class="m-label">Analyst Target</span><span class="m-value">{_tgt}</span></div>
+    <div class="metric"><span class="m-label">Trailing PE</span><span class="m-value">{_pe_str}</span></div>
+    <div class="metric"><span class="m-label">DCF Value</span><span class="m-value">{_dcf}</span></div>
+    <div class="metric"><span class="m-label">Monte Carlo Range (P25–P75)</span><span class="m-value">{_mc_str}</span></div>
+  </div>
+  <div class="analysis-section">
+    <div class="analysis-block"><strong>Investment Thesis</strong><p>{_thesis}</p></div>
+    <div class="analysis-block"><strong>Entry Logic</strong><p>{_entry}</p></div>
+    <div class="analysis-block"><strong>Key Risk</strong><p>{_risk_txt}</p></div>
+  </div>
+</div>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fintiq Research Report — {_now}</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #050D18; color: #E2E8F0; padding: 32px 24px; max-width: 900px; margin: 0 auto; }}
+  .report-header {{ border-bottom: 2px solid rgba(251,191,36,0.4); padding-bottom: 20px; margin-bottom: 32px; }}
+  .report-title {{ font-size: 1.6rem; font-weight: 700; color: #FBBF24; margin-bottom: 6px; }}
+  .report-meta {{ font-size: 0.82rem; color: #64748B; }}
+  .report-meta span {{ margin-right: 20px; }}
+  .disclaimer {{ background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25);
+                 border-radius: 8px; padding: 12px 16px; margin-bottom: 28px;
+                 font-size: 0.8rem; color: #94A3B8; line-height: 1.5; }}
+  .section-title {{ font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em;
+                    color: #64748B; text-transform: uppercase; margin: 28px 0 14px; }}
+  .investor-profile {{ display: flex; gap: 20px; margin-bottom: 28px; }}
+  .profile-item {{ background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+                   border-radius: 8px; padding: 12px 16px; flex: 1; }}
+  .profile-label {{ font-size: 0.72rem; color: #64748B; margin-bottom: 4px; }}
+  .profile-value {{ font-size: 0.95rem; font-weight: 600; color: #E2E8F0; }}
+  .stock-card {{ background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.09);
+                 border-radius: 12px; padding: 24px; margin-bottom: 20px; }}
+  .stock-header {{ display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }}
+  .ticker-badge {{ background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.4);
+                   color: #FBBF24; font-weight: 700; font-size: 1rem; padding: 4px 12px; border-radius: 6px; }}
+  .company-name {{ font-size: 1rem; font-weight: 600; color: #E2E8F0; }}
+  .sector-tag {{ font-size: 0.72rem; color: #64748B; background: rgba(255,255,255,0.06);
+                 padding: 3px 10px; border-radius: 12px; margin-left: auto; }}
+  .metrics-row {{ display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }}
+  .metric {{ background: rgba(255,255,255,0.04); border-radius: 8px; padding: 10px 14px; min-width: 130px; }}
+  .m-label {{ font-size: 0.68rem; color: #64748B; display: block; margin-bottom: 3px; }}
+  .m-value {{ font-size: 0.95rem; font-weight: 600; color: #E2E8F0; }}
+  .analysis-section {{ display: flex; flex-direction: column; gap: 12px; }}
+  .analysis-block {{ border-left: 3px solid rgba(251,191,36,0.3); padding-left: 14px; }}
+  .analysis-block strong {{ font-size: 0.75rem; color: #FBBF24; text-transform: uppercase;
+                             letter-spacing: 0.08em; display: block; margin-bottom: 6px; }}
+  .analysis-block p {{ font-size: 0.88rem; color: #CBD5E1; line-height: 1.6; }}
+  .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08);
+             font-size: 0.75rem; color: #475569; line-height: 1.6; }}
+</style>
+</head>
+<body>
+<div class="report-header">
+  <div class="report-title">Fintiq · AI Research Report</div>
+  <div class="report-meta">
+    <span>Generated: {_now}</span>
+    <span>Stocks: {len(watchlist)}</span>
+  </div>
+</div>
+<div class="disclaimer">
+  ⚠️ <strong>Educational Analysis Only.</strong> This report was generated through a guided AI conversation
+  to help structure your research process. Nothing in this report constitutes financial advice, a
+  solicitation, or a recommendation to buy or sell any security. Always conduct your own due diligence
+  and consider seeking qualified financial advice before making investment decisions.
+</div>
+<div class="section-title">Investor Profile</div>
+<div class="investor-profile">
+  <div class="profile-item"><div class="profile-label">Investment Horizon</div>
+    <div class="profile-value">{_horizon}</div></div>
+  <div class="profile-item"><div class="profile-label">Risk Appetite</div>
+    <div class="profile-value">{_risk}</div></div>
+  <div class="profile-item"><div class="profile-label">Watchlist Size</div>
+    <div class="profile-value">{len(watchlist)} stocks</div></div>
+</div>
+<div class="section-title">Research Watchlist</div>
+{_cards}
+<div class="footer">
+  This report was produced by Fintiq's AI Investment Companion through a structured analytical conversation
+  covering business quality, valuation (3-phase DCF with McKinsey Continuing Value formula), and technical
+  analysis. Monte Carlo simulation used log-normal distribution with 4,000 scenarios. All data sourced from
+  Yahoo Finance at time of analysis. Past performance does not guarantee future results. Fintiq is not
+  authorised or regulated by the FCA. This is not financial advice.
+</div>
+</body>
+</html>"""
+
+
+# ─────────────────────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────────────────────
 
-tab0, tab1, tab_factor, tab_mc, tab3, tab2, tab_opt, tab5, tab4 = st.tabs([
+tab0, tab_comp, tab1, tab_factor, tab_mc, tab3, tab2, tab_opt, tab5, tab4 = st.tabs([
     "🏠 Home",
+    "🤖 AI Companion",
     "🔍 Fundamental",
     "🔬 Factor",
     "🎲 Monte Carlo",
@@ -5353,6 +5688,390 @@ if False:  # Brief tab removed — replaced by Home tab bulletin section
                 f'<div style="font-size:0.82rem;font-weight:600;color:#3B82F6">{_name}</div>'
                 f'<div style="font-size:0.7rem;color:#475569">{_desc}</div></a>',
                 unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════
+# TAB COMPANION — AI INVESTMENT COMPANION
+# ═══════════════════════════════════════════════════════════════
+
+with tab_comp:
+    # ── Session state init ───────────────────────────────────────
+    _SS = st.session_state
+    if 'cp_msgs'      not in _SS: _SS.cp_msgs      = []
+    if 'cp_stage'     not in _SS: _SS.cp_stage     = 'discovery'
+    if 'cp_ctx'       not in _SS: _SS.cp_ctx       = {}
+    if 'cp_data'      not in _SS: _SS.cp_data      = {}
+    if 'cp_analyses'  not in _SS: _SS.cp_analyses  = {}
+    if 'cp_report'    not in _SS: _SS.cp_report    = None
+    if 'cp_new_ticks' not in _SS: _SS.cp_new_ticks = []
+
+    _MAX_STOCKS = 5
+    _SS.cp_ctx.setdefault('max_stocks', _MAX_STOCKS)
+    _SS.cp_ctx.setdefault('watchlist', [])
+
+    # ── Layout: chat left | data right ──────────────────────────
+    _col_chat, _col_data = st.columns([6, 4], gap="large")
+
+    # ════════════════════════════════════════════════════════════
+    # RIGHT PANEL — dynamic data display
+    # ════════════════════════════════════════════════════════════
+    with _col_data:
+        _stage = _SS.cp_stage
+        _wl    = _SS.cp_ctx.get('watchlist', [])
+
+        # ── Stage badge ─────────────────────────────────────────
+        _stage_labels = {
+            'discovery':   ('🔎', 'Discovery',          '#64748B'),
+            'fundamental': ('📊', 'Fundamental',        '#3B82F6'),
+            'valuation':   ('💰', 'Valuation',          '#8B5CF6'),
+            'technical':   ('📈', 'Technical',          '#10B981'),
+            'finalise':    ('✅', 'Finalising',         '#FBBF24'),
+            'report':      ('📄', 'Report Ready',       '#F59E0B'),
+        }
+        _sico, _slbl, _scol = _stage_labels.get(_stage, ('●', _stage, '#64748B'))
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'
+            f'<span style="font-size:1.2rem">{_sico}</span>'
+            f'<span style="font-size:0.7rem;font-weight:700;letter-spacing:0.1em;'
+            f'color:{_scol};text-transform:uppercase">{_slbl} STAGE</span>'
+            f'</div>', unsafe_allow_html=True)
+
+        # ── Watchlist tracker ────────────────────────────────────
+        if _wl:
+            st.markdown('<div style="font-size:0.7rem;color:#64748B;font-weight:700;'
+                        'letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">'
+                        'WATCHLIST</div>', unsafe_allow_html=True)
+            for _wt in _wl:
+                _wd = _SS.cp_data.get(_wt, {})
+                _wp = _wd.get('price')
+                _wn = _wd.get('info', {}).get('longName', _wt) if not _wd.get('error') else _wt
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                    f'background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);'
+                    f'border-radius:6px;padding:6px 10px;margin-bottom:4px">'
+                    f'<span style="font-weight:700;color:#FBBF24;font-size:0.82rem">{_wt}</span>'
+                    f'<span style="font-size:0.75rem;color:#94A3B8">{_wn[:22]}</span>'
+                    f'<span style="font-size:0.8rem;color:#E2E8F0">{_wp:.2f}" if isinstance(_wp,float) else ""}</span>'
+                    f'</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:0.72rem;color:#64748B;text-align:right;'
+                        f'margin-bottom:14px">{len(_wl)}/{_MAX_STOCKS} slots used</div>',
+                        unsafe_allow_html=True)
+
+        # ── Stage-specific right panel content ───────────────────
+        if _stage == 'discovery':
+            st.markdown("""
+<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
+            border-radius:10px;padding:16px;font-size:0.82rem;color:#94A3B8;line-height:1.7">
+<strong style="color:#E2E8F0;display:block;margin-bottom:8px">How this works</strong>
+Chat with your AI companion on the left. It will guide you through:<br><br>
+<span style="color:#FBBF24">①</span> Fundamental quality screen<br>
+<span style="color:#FBBF24">②</span> DCF valuation + Monte Carlo<br>
+<span style="color:#FBBF24">③</span> Technical analysis & timing<br>
+<span style="color:#FBBF24">④</span> Watchlist (up to 5 stocks)<br>
+<span style="color:#FBBF24">⑤</span> Research report (download)<br><br>
+<em>Data updates here as the conversation progresses.</em>
+</div>""", unsafe_allow_html=True)
+
+        elif _stage in ('fundamental', 'valuation', 'technical') and _SS.cp_data:
+            # Show key metrics cards for each tracked ticker
+            for _tk, _td in _SS.cp_data.items():
+                if _td.get('error'):
+                    st.warning(f"{_tk}: {_td['error']}")
+                    continue
+                _ti   = _td.get('info', {})
+                _pr   = _td.get('price')
+                _name = _ti.get('longName', _tk)
+                _sect = _ti.get('sector', '')
+                def _fv(v):
+                    try: return float(v)
+                    except: return None
+
+                st.markdown(
+                    f'<div style="font-size:0.75rem;font-weight:700;color:#FBBF24;'
+                    f'letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">'
+                    f'{_tk} — {_name[:28]}</div>'
+                    f'<div style="font-size:0.68rem;color:#64748B;margin-bottom:10px">{_sect}</div>',
+                    unsafe_allow_html=True)
+
+                _metrics = [
+                    ("Price",          f"{_pr:.2f} {_ti.get('currency','')}" if isinstance(_pr,float) else "—"),
+                    ("Mkt Cap",        f"{'%.1fB'%(_fv(_ti.get('marketCap'))/1e9)}" if _fv(_ti.get('marketCap')) else "—"),
+                    ("Trailing PE",    f"{_fv(_ti.get('trailingPE')):.1f}x" if _fv(_ti.get('trailingPE')) else "—"),
+                    ("Forward PE",     f"{_fv(_ti.get('forwardPE')):.1f}x" if _fv(_ti.get('forwardPE')) else "—"),
+                    ("EV/EBITDA",      f"{_fv(_ti.get('enterpriseToEbitda')):.1f}x" if _fv(_ti.get('enterpriseToEbitda')) else "—"),
+                    ("Rev Growth",     f"{_fv(_ti.get('revenueGrowth'))*100:+.1f}%" if _fv(_ti.get('revenueGrowth')) else "—"),
+                    ("Op Margin",      f"{_fv(_ti.get('operatingMargins'))*100:.1f}%" if _fv(_ti.get('operatingMargins')) else "—"),
+                    ("Gross Margin",   f"{_fv(_ti.get('grossMargins'))*100:.1f}%" if _fv(_ti.get('grossMargins')) else "—"),
+                    ("ROE",            f"{_fv(_ti.get('returnOnEquity'))*100:.1f}%" if _fv(_ti.get('returnOnEquity')) else "—"),
+                    ("Debt/Equity",    f"{_fv(_ti.get('debtToEquity')):.2f}x" if _fv(_ti.get('debtToEquity')) else "—"),
+                    ("FCF",            f"{'%.1fB'%(_fv(_ti.get('freeCashflow'))/1e9)}" if _fv(_ti.get('freeCashflow')) else "—"),
+                    ("Analyst Target", f"{_fv(_ti.get('targetMeanPrice')):.2f}" if _fv(_ti.get('targetMeanPrice')) else "—"),
+                    ("52wk High",      f"{_fv(_ti.get('fiftyTwoWeekHigh')):.2f}" if _fv(_ti.get('fiftyTwoWeekHigh')) else "—"),
+                    ("52wk Low",       f"{_fv(_ti.get('fiftyTwoWeekLow')):.2f}" if _fv(_ti.get('fiftyTwoWeekLow')) else "—"),
+                    ("Beta",           f"{_fv(_ti.get('beta')):.2f}" if _fv(_ti.get('beta')) else "—"),
+                ]
+                _mrows = "".join(
+                    f'<div style="display:flex;justify-content:space-between;padding:5px 0;'
+                    f'border-bottom:1px solid rgba(255,255,255,0.05)">'
+                    f'<span style="color:#64748B;font-size:0.75rem">{_ml}</span>'
+                    f'<span style="color:#E2E8F0;font-size:0.78rem;font-weight:600">{_mv}</span></div>'
+                    for _ml, _mv in _metrics)
+                st.markdown(
+                    f'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);'
+                    f'border-radius:10px;padding:14px;margin-bottom:16px">{_mrows}</div>',
+                    unsafe_allow_html=True)
+
+                # Valuation stage: show DCF + Monte Carlo
+                if _stage == 'valuation' and _tk in _SS.cp_analyses:
+                    _an = _SS.cp_analyses[_tk]
+                    if _an.get('mc'):
+                        _mc = _an['mc']
+                        st.markdown('<div style="font-size:0.7rem;color:#8B5CF6;font-weight:700;'
+                                    'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">'
+                                    'Monte Carlo — 4,000 Scenarios</div>', unsafe_allow_html=True)
+                        _mc_rows = [
+                            ("P10 (bear)", f"{_mc['p10']:.2f}"),
+                            ("P25",        f"{_mc['p25']:.2f}"),
+                            ("P50 (base)", f"{_mc['p50']:.2f}"),
+                            ("P75",        f"{_mc['p75']:.2f}"),
+                            ("P90 (bull)", f"{_mc['p90']:.2f}"),
+                        ]
+                        _mc_html = "".join(
+                            f'<div style="display:flex;justify-content:space-between;padding:4px 0;'
+                            f'border-bottom:1px solid rgba(139,92,246,0.15)">'
+                            f'<span style="color:#64748B;font-size:0.75rem">{_l}</span>'
+                            f'<span style="color:#A78BFA;font-size:0.78rem;font-weight:600">{_v}</span></div>'
+                            for _l, _v in _mc_rows)
+                        st.markdown(
+                            f'<div style="background:rgba(139,92,246,0.06);border:1px solid rgba(139,92,246,0.2);'
+                            f'border-radius:10px;padding:12px;margin-bottom:14px">{_mc_html}</div>',
+                            unsafe_allow_html=True)
+
+                # Technical stage: mini price chart
+                if _stage == 'technical' and _td.get('hist') is not None:
+                    _h = _td['hist']
+                    if not _h.empty:
+                        import pandas as _pd_c
+                        _h2 = _h['Close'].tail(180)
+                        st.markdown('<div style="font-size:0.7rem;color:#10B981;font-weight:700;'
+                                    'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">'
+                                    '6-Month Price Chart</div>', unsafe_allow_html=True)
+                        st.line_chart(_h2, use_container_width=True, height=150,
+                                      color="#10B981")
+
+                st.markdown("---")
+
+        elif _stage in ('finalise', 'report') and _wl:
+            st.markdown('<div style="font-size:0.7rem;color:#FBBF24;font-weight:700;'
+                        'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">'
+                        'Final Watchlist</div>', unsafe_allow_html=True)
+            for _wt in _wl:
+                _wan = _SS.cp_analyses.get(_wt, {})
+                _wd2 = _SS.cp_data.get(_wt, {})
+                _wpr = _wd2.get('price', '—')
+                _wpr_s = f"{_wpr:.2f}" if isinstance(_wpr, float) else str(_wpr)
+                _wth = _wan.get('thesis', 'See conversation.')
+                st.markdown(
+                    f'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(251,191,36,0.2);'
+                    f'border-radius:8px;padding:12px;margin-bottom:10px">'
+                    f'<div style="font-weight:700;color:#FBBF24;margin-bottom:4px">{_wt} — {_wpr_s}</div>'
+                    f'<div style="font-size:0.78rem;color:#94A3B8;line-height:1.5">{_wth[:180]}…</div>'
+                    f'</div>', unsafe_allow_html=True)
+
+            if _stage == 'report' and _SS.cp_report:
+                st.download_button(
+                    "⬇️ Download Research Report (HTML)",
+                    data=_SS.cp_report,
+                    file_name=f"fintiq_research_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.html",
+                    mime="text/html",
+                    use_container_width=True)
+
+        # ── Reset button ─────────────────────────────────────────
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 New Analysis Session", use_container_width=True, key="cp_reset"):
+            for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses','cp_report','cp_new_ticks']:
+                if _k in _SS: del _SS[_k]
+            st.rerun()
+
+    # ════════════════════════════════════════════════════════════
+    # LEFT PANEL — chat interface
+    # ════════════════════════════════════════════════════════════
+    with _col_chat:
+        st.markdown(
+            '<div style="font-size:1.1rem;font-weight:700;color:#E2E8F0;margin-bottom:4px">'
+            '🤖 AI Investment Companion</div>'
+            '<div style="font-size:0.78rem;color:#64748B;margin-bottom:16px">'
+            'Guided analysis · Educational only · Not financial advice</div>',
+            unsafe_allow_html=True)
+
+        # Opening message if no history
+        if not _SS.cp_msgs:
+            from datetime import datetime as _dtc
+            _bull_ctx = ""
+            if 'bulletin_ai_' + (__import__('datetime').datetime.now().strftime('%Y%m%d') +
+                                  str(__import__('datetime').datetime.now().hour // 4)) in _SS:
+                _bul = _SS.get('bulletin_ai_' + __import__('datetime').datetime.now().strftime('%Y%m%d') +
+                               str(__import__('datetime').datetime.now().hour // 4), {})
+                _call = _bul.get('the_call', {})
+                if isinstance(_call, dict):
+                    _hl = _call.get('headline', '')
+                    _bull_ctx = f" Today's market read: {_hl}" if _hl else ""
+            _open_sys = _comp_system_prompt('discovery', {}, {})
+            _open_msg = _comp_ai(
+                [{"role": "user", "content": f"Start the session with a brief, sharp opening — reference today's market context if available. One sentence on the market, then ask what the user wants to work on today. Keep it under 60 words.{_bull_ctx}"}],
+                _open_sys)
+            _SS.cp_msgs.append({"role": "assistant", "content": _open_msg})
+
+        # Display chat history
+        _chat_container = st.container(height=520)
+        with _chat_container:
+            for _m in _SS.cp_msgs:
+                with st.chat_message(_m["role"],
+                                     avatar="🤖" if _m["role"] == "assistant" else "👤"):
+                    st.markdown(_m["content"])
+
+        # Chat input
+        if _user_input := st.chat_input("Type your message…", key="cp_input"):
+
+            # Add user message
+            _SS.cp_msgs.append({"role": "user", "content": _user_input})
+
+            # ── Detect tickers in user message ───────────────────
+            with st.spinner("Analysing…"):
+                _new_tks = _comp_detect_ticker(_user_input, list(_SS.cp_data.keys()))
+                for _ntk in _new_tks:
+                    if _ntk not in _SS.cp_data:
+                        _SS.cp_data[_ntk] = _comp_fetch(_ntk)
+
+                # ── Extract context clues from user message ───────
+                _ui_lower = _user_input.lower()
+                if any(w in _ui_lower for w in ['year','month','week','long','short','hold','swing','trade']):
+                    if 'investment_horizon' not in _SS.cp_ctx:
+                        for _hw, _hv in [('day trad','Day trading'),('week','Days to weeks'),
+                                         ('month','1-3 months'),('3 month','3-6 months'),
+                                         ('6 month','6-12 months'),('year','1-3 years'),
+                                         ('long term','3+ years'),('long-term','3+ years')]:
+                            if _hw in _ui_lower:
+                                _SS.cp_ctx['investment_horizon'] = _hv; break
+                if any(w in _ui_lower for w in ['risk','conservative','aggressive','cautious','growth']):
+                    if 'risk_appetite' not in _SS.cp_ctx:
+                        for _rw, _rv in [('conserv','Conservative'),('cautious','Cautious'),
+                                         ('moderate','Moderate'),('aggressive','Aggressive'),
+                                         ('high risk','High Risk'),('growth','Growth-oriented')]:
+                            if _rw in _ui_lower: _SS.cp_ctx['risk_appetite'] = _rv; break
+
+                # ── Stage progression logic ───────────────────────
+                _cur_stage = _SS.cp_stage
+                # Check for stage advancement keywords in latest assistant message
+                if _SS.cp_msgs:
+                    _last_ast = next((m['content'] for m in reversed(_SS.cp_msgs)
+                                      if m['role'] == 'assistant'), '')
+                    if _cur_stage == 'discovery' and any(
+                        p in _last_ast for p in ['look at the fundamentals', 'give me a moment',
+                                                  'pull the fundamental', 'fundamentals properly']):
+                        _SS.cp_stage = 'fundamental'
+                    elif _cur_stage == 'fundamental' and any(
+                        p in _last_ast for p in ['look at valuation', 'what it\'s worth',
+                                                  'shall we look at', 'turn to valuation']):
+                        _SS.cp_stage = 'valuation'
+                    elif _cur_stage == 'valuation' and any(
+                        p in _last_ast for p in ['look at the chart', 'technical', 'timing',
+                                                  'technicals tell us']):
+                        _SS.cp_stage = 'technical'
+                    elif _cur_stage == 'technical' and any(
+                        p in _last_ast for p in ['finalise', 'finalize', 'watchlist',
+                                                  'pull this together']):
+                        _SS.cp_stage = 'finalise'
+
+                # ── Run DCF + Monte Carlo when entering valuation ─
+                if _SS.cp_stage == 'valuation':
+                    for _vtk, _vd in _SS.cp_data.items():
+                        if _vtk not in _SS.cp_analyses and not _vd.get('error'):
+                            _vi = _vd.get('info', {})
+                            _vrev = _vi.get('totalRevenue')
+                            _vshares = _vi.get('sharesOutstanding') or _vi.get('impliedSharesOutstanding')
+                            if _vrev and _vshares:
+                                try:
+                                    # Import existing DCF from outer scope
+                                    _vrev_m = float(_vrev) / 1e6
+                                    _vsect  = _vi.get('sector', 'Other')
+                                    _sg = {'Technology':15,'Healthcare':10,'Financials':8,
+                                           'Consumer Discretionary':8,'Consumer Staples':6,
+                                           'Energy':5,'Materials':6,'Industrials':8,
+                                           'Communication Services':8,'Other':6}.get(_vsect, 6)
+                                    _sm = {'Technology':20,'Healthcare':15,'Financials':25,
+                                           'Consumer Discretionary':8,'Consumer Staples':10,
+                                           'Energy':12,'Materials':14,'Industrials':12,
+                                           'Communication Services':20,'Other':12}.get(_vsect, 12)
+                                    # Use simple 3-phase DCF inline (mirrors calc_revenue_dcf_3phase)
+                                    def _simple_dcf(rev, rg_s, om_s, rg_m, om_m, rg_l, om_l,
+                                                    tax=25, inv=20, disc=9, tg=2.5, ronic=15):
+                                        try:
+                                            om_s/=100;om_m/=100;om_l/=100
+                                            rg_s/=100;rg_m/=100;rg_l/=100
+                                            tax/=100;inv/=100;disc/=100;tg/=100;ronic/=100
+                                            if disc<=tg: return None
+                                            pv=0.0; revenue=abs(rev)
+                                            for t in range(1,11):
+                                                rg,om = (rg_s,om_s) if t<=3 else ((rg_m,om_m) if t<=7 else (rg_l,om_l))
+                                                revenue*=(1+rg)
+                                                nopat=revenue*om*(1-tax)
+                                                fcf=nopat*(1-inv)
+                                                pv+=fcf/((1+disc)**t)
+                                            term_nopat=revenue*(1+tg)*om_l*(1-tax)
+                                            rr=tg/ronic if ronic>0 and tg>0 else 0.05
+                                            term_fcf=term_nopat*(1-rr)
+                                            tv=term_fcf/(disc-tg)
+                                            pv_tv=tv/((1+disc)**10)
+                                            return pv+pv_tv
+                                        except: return None
+                                    _dcf_total = _simple_dcf(_vrev_m, _sg*1.2, _sm, _sg, _sm*0.95, _sg*0.6, _sm*1.05)
+                                    _dcf_ps = (_dcf_total*1e6/float(_vshares)) if _dcf_total and _vshares else None
+                                    _mc = _comp_monte_carlo(_dcf_ps) if _dcf_ps and _dcf_ps > 0 else None
+                                    _SS.cp_analyses[_vtk] = {
+                                        'dcf_ps': _dcf_ps,
+                                        'dcf_str': f"{_dcf_ps:.2f}" if _dcf_ps else "—",
+                                        'mc': _mc,
+                                        'mc_p25': _mc['p25'] if _mc else None,
+                                        'mc_p75': _mc['p75'] if _mc else None,
+                                        'thesis': '', 'entry': '', 'key_risk': ''
+                                    }
+                                except Exception:
+                                    _SS.cp_analyses[_vtk] = {}
+
+                # ── Watchlist add/remove from user message ────────
+                if _SS.cp_stage in ('finalise', 'technical'):
+                    for _wtk in list(_SS.cp_data.keys()):
+                        if (_wtk.lower() in _user_input.lower() and
+                            any(w in _user_input.lower() for w in ['add','include','yes','watchlist','keep'])):
+                            if _wtk not in _SS.cp_ctx['watchlist'] and len(_SS.cp_ctx['watchlist']) < _MAX_STOCKS:
+                                _SS.cp_ctx['watchlist'].append(_wtk)
+                        if (_wtk.lower() in _user_input.lower() and
+                            any(w in _user_input.lower() for w in ['remove','drop','exclude','no'])):
+                            if _wtk in _SS.cp_ctx['watchlist']:
+                                _SS.cp_ctx['watchlist'].remove(_wtk)
+
+                # ── Report generation ─────────────────────────────
+                if (any(w in _user_input.lower() for w in ['generate report','create report',
+                    'produce report','show report','download report']) and _SS.cp_ctx.get('watchlist')):
+                    _SS.cp_stage = 'report'
+                    _SS.cp_report = _comp_generate_report(
+                        _SS.cp_ctx['watchlist'], _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses)
+
+                # ── Build AI response ─────────────────────────────
+                _sys = _comp_system_prompt(_SS.cp_stage, _SS.cp_ctx, _SS.cp_data)
+                # Pass last 12 messages for context (keep tokens reasonable)
+                _hist = [{"role": m["role"], "content": m["content"]}
+                         for m in _SS.cp_msgs[-12:]]
+                _reply = _comp_ai(_hist, _sys)
+
+                # ── Check if reply triggers stage advance ─────────
+                if _SS.cp_stage == 'discovery' and any(
+                    p in _reply for p in ['look at the fundamentals', 'give me a moment',
+                                          'fundamentals properly']):
+                    _SS.cp_stage = 'fundamental'
+
+            _SS.cp_msgs.append({"role": "assistant", "content": _reply})
+            st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1 — FUNDAMENTAL SCREEN
