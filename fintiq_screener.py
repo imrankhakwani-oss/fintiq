@@ -3556,8 +3556,17 @@ def _comp_fetch(ticker: str) -> dict:
             _cf  = _tk.cashflow
         except Exception:
             _fin = _cf = None
+        # ── Fama-French factor lookup ─────────────────────────
+        _factor = None
+        try:
+            _ff_data, _ = _fetch_factor_data(2)
+            _tk_upper = ticker.upper()
+            _factor = next((s for s in _ff_data if s.get('ticker','').upper() == _tk_upper), None)
+        except Exception:
+            pass
         return {'ticker': ticker.upper(), 'info': _info, 'hist': _hist,
-                'financials': _fin, 'cashflow': _cf, 'price': _price, 'error': None}
+                'financials': _fin, 'cashflow': _cf, 'price': _price,
+                'factor': _factor, 'error': None}
     except Exception as _e:
         return {'ticker': ticker, 'error': str(_e)[:120]}
 
@@ -3600,6 +3609,23 @@ def _comp_data_summary(d: dict) -> str:
         f"Analyst consensus ({_na}): target {_tgt:.2f} | rating {_rec:.1f}/5 (1=StrongBuy)" if _tgt and _rec else "",
         f"Business: {_i.get('longBusinessSummary','')[:300]}..." if _i.get('longBusinessSummary') else "",
     ]
+    # ── Fama-French 4-factor block ────────────────────────────
+    _ff = d.get('factor')
+    if _ff:
+        _sig_map = {'green': 'STRONG ALPHA', 'amber': 'MARGINAL', 'red': 'AVOID'}
+        _sig_lbl = _sig_map.get(_ff.get('signal',''), _ff.get('signal','').upper())
+        _a_sign  = '+' if _ff.get('alpha', 0) >= 0 else ''
+        _ff_line = (
+            f"Fama-French 4-Factor (2yr OLS): Signal={_sig_lbl} | "
+            f"Alpha={_a_sign}{_ff.get('alpha',0):.1f}%pa (p={_ff.get('pval',1):.3f}) | "
+            f"MKT-beta={_ff.get('beta',1):.2f} | SMB={_ff.get('smb',0):.2f} | "
+            f"HML={_ff.get('hml',0):.2f} | MOM={_ff.get('mom',0):.2f}"
+        )
+        if _ff.get('insight'):
+            _ff_line += f" | Insight: {_ff['insight']}"
+        _lines.append(_ff_line)
+    else:
+        _lines.append("Fama-French 4-Factor: not available for this ticker (non-US or not in universe)")
     return "\n".join(l for l in _lines if l and l.strip())
 
 
@@ -5758,7 +5784,7 @@ with tab_comp:
         'report':      ('📄', 'Report',      '#F59E0B'),
     }
     _sico, _slbl, _scol = _stage_labels.get(_stage, ('●', _stage, '#64748B'))
-    _hc1, _hc2, _hc3 = st.columns([5, 2, 2])
+    _hc1, _hc2, _hc3, _hc4 = st.columns([4, 2, 2, 2])
     with _hc1:
         st.markdown(
             '<div style="font-size:1.1rem;font-weight:700;color:#E2E8F0;padding-top:6px">'
@@ -5771,6 +5797,19 @@ with tab_comp:
             f'color:{_scol};text-transform:uppercase">{_slbl}</span>'
             f'</div>', unsafe_allow_html=True)
     with _hc3:
+        # Download chat transcript
+        if _SS.cp_msgs:
+            _chat_txt = f"Fintiq AI Equity Analyst — Chat Transcript\n"
+            _chat_txt += f"{'='*50}\n\n"
+            for _cm in _SS.cp_msgs:
+                _role = "AI Analyst" if _cm['role'] == 'assistant' else "You"
+                _chat_txt += f"[{_role}]\n{_cm['content']}\n\n"
+            st.download_button("⬇️ Chat", data=_chat_txt,
+                file_name=f"fintiq_chat_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                mime="text/plain", use_container_width=True, key="cp_dl_chat")
+        else:
+            st.markdown("")
+    with _hc4:
         if st.button("🔄 New Session", use_container_width=True, key="cp_reset"):
             for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses','cp_report','cp_new_ticks']:
                 if _k in _SS: del _SS[_k]
@@ -5848,8 +5887,18 @@ with tab_comp:
                                       if m['role'] == 'assistant'), '')
                     if _cur_stage == 'discovery' and any(
                         p in _last_ast for p in ['look at the fundamentals', 'give me a moment',
-                                                  'pull the fundamental', 'fundamentals properly']):
+                                                  'pull the fundamental', 'fundamentals properly',
+                                                  'pull fundamentals', 'pull the data']):
                         _SS.cp_stage = 'fundamental'
+                        # ── Key fix: AI may have suggested tickers in conversation.
+                        # Scan last 10 messages (user + AI) for tickers so we fetch
+                        # companies the AI named, not just what the user typed. ──────
+                        if not _SS.cp_data:
+                            _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-10:])
+                            _conv_tks = _comp_detect_ticker(_conv_text, [])
+                            for _ctk in _conv_tks[:5]:
+                                if _ctk not in _SS.cp_data:
+                                    _SS.cp_data[_ctk] = _comp_fetch(_ctk)
                     elif _cur_stage == 'fundamental' and any(
                         p in _last_ast for p in ['look at valuation', 'what it\'s worth',
                                                   'shall we look at', 'turn to valuation']):
@@ -5948,8 +5997,16 @@ with tab_comp:
                 # ── Check if reply triggers stage advance ─────────
                 if _SS.cp_stage == 'discovery' and any(
                     p in _reply for p in ['look at the fundamentals', 'give me a moment',
-                                          'fundamentals properly']):
+                                          'fundamentals properly', 'pull fundamentals',
+                                          'pull the data']):
                     _SS.cp_stage = 'fundamental'
+                    # Scan full conversation for tickers the AI named
+                    if not _SS.cp_data:
+                        _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-10:]) + " " + _reply
+                        _conv_tks = _comp_detect_ticker(_conv_text, [])
+                        for _ctk in _conv_tks[:5]:
+                            if _ctk not in _SS.cp_data:
+                                _SS.cp_data[_ctk] = _comp_fetch(_ctk)
 
             _SS.cp_msgs.append({"role": "assistant", "content": _reply})
             st.rerun()
@@ -6038,6 +6095,27 @@ with tab_comp:
                 f'<span style="color:#E2E8F0;font-size:0.74rem;font-weight:600">{_v}</span></div>'
                 for _l, _v in _mets)
 
+            # Factor badge
+            _ff = _td.get('factor')
+            _ff_row = ''
+            if _ff:
+                _sig_colours = {'green': ('#22c55e','rgba(34,197,94,0.1)','🟢 Strong Alpha'),
+                                'amber': ('#F59E0B','rgba(245,158,11,0.1)','🟡 Marginal'),
+                                'red':   ('#ef4444','rgba(239,68,68,0.08)','🔴 Avoid')}
+                _fc, _fbg, _flbl = _sig_colours.get(_ff.get('signal',''), ('#94A3B8','rgba(148,163,184,0.08)','⚪ N/A'))
+                _fa_sign = '+' if _ff.get('alpha',0) >= 0 else ''
+                _ff_row = (
+                    f'<div style="margin-top:8px;padding:7px 8px;background:{_fbg};'
+                    f'border-radius:6px;border:1px solid {_fc}40">'
+                    f'<div style="font-size:0.62rem;color:#64748B;font-weight:700;margin-bottom:3px">FF4 FACTOR MODEL</div>'
+                    f'<div style="display:flex;justify-content:space-between">'
+                    f'<span style="font-size:0.7rem;color:{_fc};font-weight:700">{_flbl}</span>'
+                    f'<span style="font-size:0.7rem;color:{_fc};font-weight:700">α {_fa_sign}{_ff.get("alpha",0):.1f}%</span>'
+                    f'</div>'
+                    f'<div style="font-size:0.65rem;color:#64748B;margin-top:2px">'
+                    f'β={_ff.get("beta",1):.2f} SMB={_ff.get("smb",0):+.2f} HML={_ff.get("hml",0):+.2f} MOM={_ff.get("mom",0):+.2f}'
+                    f'</div></div>')
+
             _border_col = '#FBBF24' if _in_wl else 'rgba(255,255,255,0.08)'
             _pr_str = f"{_pr:.2f} {_curr}" if isinstance(_pr, float) else '—'
             _cap_str = f"{'%.1fB'%(_fv2(_ti.get('marketCap'))/1e9)}" if _fv2(_ti.get('marketCap')) else ''
@@ -6059,6 +6137,8 @@ with tab_comp:
                 f'</div>'
                 # Metrics
                 f'{_rows_html}'
+                # Factor model
+                f'{_ff_row}'
                 # MC / target
                 f'{_mc_row}{_tgt_row}'
                 + (f'<div style="font-size:0.65rem;color:#FBBF24;margin-top:6px;font-weight:700">★ WATCHLIST</div>' if _in_wl else '')
