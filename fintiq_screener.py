@@ -5927,8 +5927,19 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
                                      avatar="🤖" if _m["role"] == "assistant" else "👤"):
                     st.markdown(_m["content"])
 
-        # Chat input
-        st.caption("Guided analysis · Educational only · Not financial advice")
+        # Chat input — styled to match New Analysis Session button
+        st.markdown("""
+        <style>
+        div[data-testid="stChatInput"] > div {
+            border: 1px solid #C9A84C !important;
+            border-radius: 8px !important;
+            background: rgba(201,168,76,0.05) !important;
+        }
+        div[data-testid="stChatInput"] textarea {
+            color: #E2E8F0 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
         if _user_input := st.chat_input("Type your message…", key="cp_input"):
 
             # Add user message
@@ -6071,6 +6082,8 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
 
             _SS.cp_msgs.append({"role": "assistant", "content": _reply})
             st.rerun()
+
+        st.caption("Guided analysis · Educational only · Not financial advice")
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1 — FUNDAMENTAL SCREEN
