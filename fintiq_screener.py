@@ -3540,8 +3540,9 @@ def _render_bulletin():
 # ─────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _comp_fetch(ticker: str) -> dict:
-    """Fetch all data for a single ticker for the AI companion."""
+def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
+    """Fetch all data for a single ticker for the AI companion.
+    ff_years: Fama-French lookback period (1, 2, or 3 years)."""
     import yfinance as _yf_c
     try:
         _tk = _yf_c.Ticker(ticker.upper())
@@ -3559,14 +3560,14 @@ def _comp_fetch(ticker: str) -> dict:
         # ── Fama-French factor lookup ─────────────────────────
         _factor = None
         try:
-            _ff_data, _ = _fetch_factor_data(2)
+            _ff_data, _ = _fetch_factor_data(ff_years)
             _tk_upper = ticker.upper()
             _factor = next((s for s in _ff_data if s.get('ticker','').upper() == _tk_upper), None)
         except Exception:
             pass
         return {'ticker': ticker.upper(), 'info': _info, 'hist': _hist,
                 'financials': _fin, 'cashflow': _cf, 'price': _price,
-                'factor': _factor, 'error': None}
+                'factor': _factor, 'ff_years': ff_years, 'error': None}
     except Exception as _e:
         return {'ticker': ticker, 'error': str(_e)[:120]}
 
@@ -3615,8 +3616,9 @@ def _comp_data_summary(d: dict) -> str:
         _sig_map = {'green': 'STRONG ALPHA', 'amber': 'MARGINAL', 'red': 'AVOID'}
         _sig_lbl = _sig_map.get(_ff.get('signal',''), _ff.get('signal','').upper())
         _a_sign  = '+' if _ff.get('alpha', 0) >= 0 else ''
+        _ff_yr_lbl = f"{d.get('ff_years', 2)}yr"
         _ff_line = (
-            f"Fama-French 4-Factor (2yr OLS): Signal={_sig_lbl} | "
+            f"Fama-French 4-Factor ({_ff_yr_lbl} OLS): Signal={_sig_lbl} | "
             f"Alpha={_a_sign}{_ff.get('alpha',0):.1f}%pa (p={_ff.get('pval',1):.3f}) | "
             f"MKT-beta={_ff.get('beta',1):.2f} | SMB={_ff.get('smb',0):.2f} | "
             f"HML={_ff.get('hml',0):.2f} | MOM={_ff.get('mom',0):.2f}"
@@ -3681,18 +3683,30 @@ def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
 Goal: Understand the user's intent. Establish investment horizon, risk tolerance, geography/market preference, and what they want to analyse.
 Rules:
 • Ask ONE question per response — never multiple
-• If they name a company, say you're pulling the data and ask them to confirm the ticker or full name
 • Probe their reasoning gently — thesis-driven or performance-chasing?
 • IMPORTANT: Always establish which market/geography they want to invest in (US, UK, Europe, Asia, global).
   If they haven't mentioned it, ask: "Are you focused on a particular market — US, UK, European, Asian, or happy to go global?"
   yfinance covers all global markets: US (NYSE/NASDAQ), UK (.L), Europe (.PA .AS .DE .MI), Asia (.T .HK .SS), India (.NS .BO) etc.
-• Once you know (a) what to analyse, (b) horizon, (c) risk appetite, (d) geography → transition
+• Once you know (a) what to analyse, (b) horizon, (c) risk appetite, (d) geography → propose stocks for confirmation
 • When suggesting stocks, ALWAYS match their stated geography. If UK: suggest LSE-listed stocks with .L tickers.
   If global: mix markets explicitly. NEVER default to US-only unless they asked for US stocks.
-• Transition: "Right — I've got a clear picture of what you're after. Let me look at the fundamentals properly. Give me a moment."
-• If user seems unsure what to analyse, help them think through sectors or themes first
-• CRITICAL — TICKER FORMAT: Every time you mention a company, ALWAYS write it as "Company Name (TICKER)" e.g. "Palantir (PLTR)", "AstraZeneca (AZN.L)", "Reliance (RELIANCE.NS)". Never mention a company without its ticker in brackets.
+• CRITICAL — TICKER FORMAT: Every time you mention a company, ALWAYS write it as "Company Name (TICKER)" e.g. "Palantir (PLTR)", "AstraZeneca (AZN.L)". Never mention a company without its ticker in brackets.
+• TRANSITION — when the user has confirmed or selected their stocks, end your reply with EXACTLY this block (fill in the stocks):
+---CONFIRM_FETCH---
+Stocks: Palantir (PLTR), Nvidia (NVDA), Rolls-Royce (RR.L)
+FF4 period: I'll default to 2 years — or would you prefer 1 year or 3 years?
+---
+• Do NOT start fetching data yet — wait for user confirmation of the stock list.
 Geography context: {ctx.get('geography', 'not yet established — ask if unclear')}""",
+
+        'confirm': f"""STAGE: Confirm & Fetch
+The user has selected their stocks (shown below). Your job:
+1. Present the final stock list clearly and ask the user to confirm
+2. Ask which Fama-French lookback period they prefer: 1 year, 2 years (default), or 3 years
+3. Ask if they want to see the factor signal rating (Strong Alpha / Marginal / Avoid) on the cards
+4. Once the user says yes/confirmed/go ahead → say "Fetching data now — give me a moment."
+Proposed stocks: {ctx.get('proposed', 'see conversation above')}
+• CRITICAL — TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without its ticker.""",
 
         'fundamental': f"""STAGE: Fundamental Analysis
 You have live data above. Use it conversationally — never recite metrics as a table.
@@ -6003,37 +6017,63 @@ with tab_comp:
                             _SS.cp_ctx['geography'] = _gv; break
 
                 # ── Stage progression logic ───────────────────────
+                import re as _re_stage
                 _cur_stage = _SS.cp_stage
-                # Check for stage advancement keywords in latest assistant message
-                if _SS.cp_msgs:
-                    _last_ast = next((m['content'] for m in reversed(_SS.cp_msgs)
-                                      if m['role'] == 'assistant'), '')
-                    if _cur_stage == 'discovery' and any(
-                        p in _last_ast for p in ['look at the fundamentals', 'give me a moment',
-                                                  'pull the fundamental', 'fundamentals properly',
-                                                  'pull fundamentals', 'pull the data']):
-                        _SS.cp_stage = 'fundamental'
-                        # ── Key fix: AI may have suggested tickers in conversation.
-                        # Scan last 10 messages (user + AI) for tickers so we fetch
-                        # companies the AI named, not just what the user typed. ──────
-                        if not _SS.cp_data:
-                            _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-10:])
-                            _conv_tks = _comp_detect_ticker(_conv_text, [], _SS.get('cp_name_map', {}))
-                            for _ctk in _conv_tks[:5]:
-                                if _ctk not in _SS.cp_data:
-                                    _SS.cp_data[_ctk] = _comp_fetch(_ctk)
-                    elif _cur_stage == 'fundamental' and any(
+                _last_ast = next((m['content'] for m in reversed(_SS.cp_msgs)
+                                  if m['role'] == 'assistant'), '') if _SS.cp_msgs else ''
+
+                # Discovery → Confirm: AI outputs ---CONFIRM_FETCH--- block
+                if _cur_stage == 'discovery' and '---CONFIRM_FETCH---' in _last_ast:
+                    # Parse proposed tickers from the block
+                    _cf_match = _re_stage.search(
+                        r'---CONFIRM_FETCH---\s*\nStocks:(.*?)\n', _last_ast, _re_stage.DOTALL)
+                    if _cf_match:
+                        _prop_line = _cf_match.group(1).strip()
+                        _prop_tks = _re_stage.findall(
+                            r'[A-Z][A-Za-z0-9 &\.]+\(([A-Z]{1,6}(?:\.[A-Z]{1,2})?)\)',
+                            _prop_line)
+                        _SS.cp_ctx['proposed'] = _prop_line
+                        _SS.cp_ctx['proposed_tickers'] = _prop_tks
+                    _SS.cp_stage = 'confirm'
+
+                # Confirm → Fundamental: user says yes/confirmed
+                elif _cur_stage == 'confirm' and any(
+                        p in _ui_lower for p in ['yes', 'go ahead', 'confirm', 'proceed',
+                                                   'fetch', 'sure', 'ok', 'okay', 'yep', 'yup']):
+                    # Extract FF4 period preference from user message
+                    _ff_yr = 2
+                    if '1 year' in _ui_lower or '1yr' in _ui_lower or 'one year' in _ui_lower:
+                        _ff_yr = 1
+                    elif '3 year' in _ui_lower or '3yr' in _ui_lower or 'three year' in _ui_lower:
+                        _ff_yr = 3
+                    _SS.cp_ctx['ff_years'] = _ff_yr
+                    _SS.cp_ctx['show_ff_signal'] = any(
+                        p in _ui_lower for p in ['signal', 'rating', 'yes', 'show'])
+                    # Fetch confirmed tickers
+                    _confirmed_tks = _SS.cp_ctx.get('proposed_tickers', [])
+                    if not _confirmed_tks:
+                        # Fallback: scan conversation name map
+                        _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-20:])
+                        _confirmed_tks = _comp_detect_ticker(
+                            _conv_text, [], _SS.get('cp_name_map', {}))[:5]
+                    _ff_yr = _SS.cp_ctx.get('ff_years', 2)
+                    for _ctk in _confirmed_tks:
+                        if _ctk not in _SS.cp_data:
+                            _SS.cp_data[_ctk] = _comp_fetch(_ctk, ff_years=_ff_yr)
+                    _SS.cp_stage = 'fundamental'
+
+                elif _cur_stage == 'fundamental' and any(
                         p in _last_ast for p in ['look at valuation', 'what it\'s worth',
                                                   'shall we look at', 'turn to valuation']):
-                        _SS.cp_stage = 'valuation'
-                    elif _cur_stage == 'valuation' and any(
+                    _SS.cp_stage = 'valuation'
+                elif _cur_stage == 'valuation' and any(
                         p in _last_ast for p in ['look at the chart', 'technical', 'timing',
                                                   'technicals tell us']):
-                        _SS.cp_stage = 'technical'
-                    elif _cur_stage == 'technical' and any(
+                    _SS.cp_stage = 'technical'
+                elif _cur_stage == 'technical' and any(
                         p in _last_ast for p in ['finalise', 'finalize', 'watchlist',
                                                   'pull this together']):
-                        _SS.cp_stage = 'finalise'
+                    _SS.cp_stage = 'finalise'
 
                 # ── Run DCF + Monte Carlo when entering valuation ─
                 if _SS.cp_stage == 'valuation':
@@ -6125,15 +6165,19 @@ with tab_comp:
                 if _SS.cp_stage == 'discovery' and any(
                     p in _reply for p in ['look at the fundamentals', 'give me a moment',
                                           'fundamentals properly', 'pull fundamentals',
-                                          'pull the data']):
+                                          'pull the data', 'break down', 'dig into',
+                                          'go deeper', 'let me pull', 'pull the numbers',
+                                          'side by side', 'compare all']):
                     _SS.cp_stage = 'fundamental'
-                    # Scan full conversation using dynamic name map
-                    if not _SS.cp_data:
-                        _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-10:]) + " " + _reply
-                        _conv_tks = _comp_detect_ticker(_conv_text, [], _SS.cp_name_map)
-                        for _ctk in _conv_tks[:5]:
-                            if _ctk not in _SS.cp_data:
-                                _SS.cp_data[_ctk] = _comp_fetch(_ctk)
+
+                # ── Always: if fundamental stage and no data yet, scan & fetch ──
+                # Runs every turn so we catch tickers even if stage advanced silently
+                if _SS.cp_stage == 'fundamental' and not _SS.cp_data:
+                    _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-20:]) + " " + _reply
+                    _conv_tks = _comp_detect_ticker(_conv_text, [], _SS.cp_name_map)
+                    for _ctk in _conv_tks[:5]:
+                        if _ctk not in _SS.cp_data:
+                            _SS.cp_data[_ctk] = _comp_fetch(_ctk)
 
             _SS.cp_msgs.append({"role": "assistant", "content": _reply})
             st.rerun()
@@ -6224,24 +6268,41 @@ with tab_comp:
 
             # Factor badge
             _ff = _td.get('factor')
+            _ff_yr_used = _td.get('ff_years', _SS.cp_ctx.get('ff_years', 2))
             _ff_row = ''
             if _ff:
-                _sig_colours = {'green': ('#22c55e','rgba(34,197,94,0.1)','🟢 Strong Alpha'),
-                                'amber': ('#F59E0B','rgba(245,158,11,0.1)','🟡 Marginal'),
-                                'red':   ('#ef4444','rgba(239,68,68,0.08)','🔴 Avoid')}
+                _sig_colours = {'green': ('#22c55e','rgba(34,197,94,0.12)','🟢 Strong Alpha'),
+                                'amber': ('#F59E0B','rgba(245,158,11,0.12)','🟡 Marginal'),
+                                'red':   ('#ef4444','rgba(239,68,68,0.10)','🔴 Avoid')}
                 _fc, _fbg, _flbl = _sig_colours.get(_ff.get('signal',''), ('#94A3B8','rgba(148,163,184,0.08)','⚪ N/A'))
                 _fa_sign = '+' if _ff.get('alpha',0) >= 0 else ''
+                _fp = _ff.get('pval', 1)
+                _fp_str = f"p={_fp:.3f}" if _fp is not None else ''
+                _fi = _ff.get('insight', '')
+                _ff_insight_html = (f'<div style="font-size:0.63rem;color:#94A3B8;margin-top:3px;'
+                                    f'font-style:italic">{_fi}</div>') if _fi else ''
                 _ff_row = (
-                    f'<div style="margin-top:8px;padding:7px 8px;background:{_fbg};'
-                    f'border-radius:6px;border:1px solid {_fc}40">'
-                    f'<div style="font-size:0.62rem;color:#64748B;font-weight:700;margin-bottom:3px">FF4 FACTOR MODEL</div>'
-                    f'<div style="display:flex;justify-content:space-between">'
-                    f'<span style="font-size:0.7rem;color:{_fc};font-weight:700">{_flbl}</span>'
-                    f'<span style="font-size:0.7rem;color:{_fc};font-weight:700">α {_fa_sign}{_ff.get("alpha",0):.1f}%</span>'
+                    f'<div style="margin-top:8px;padding:8px 10px;background:{_fbg};'
+                    f'border-radius:6px;border:1px solid {_fc}50">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+                    f'<span style="font-size:0.62rem;color:#64748B;font-weight:700">FF4 · {_ff_yr_used}YR OLS</span>'
+                    f'<span style="font-size:0.68rem;color:{_fc};font-weight:800">{_flbl}</span>'
                     f'</div>'
-                    f'<div style="font-size:0.65rem;color:#64748B;margin-top:2px">'
-                    f'β={_ff.get("beta",1):.2f} SMB={_ff.get("smb",0):+.2f} HML={_ff.get("hml",0):+.2f} MOM={_ff.get("mom",0):+.2f}'
-                    f'</div></div>')
+                    f'<div style="display:flex;justify-content:space-between;margin-bottom:2px">'
+                    f'<span style="font-size:0.72rem;color:{_fc};font-weight:700">α {_fa_sign}{_ff.get("alpha",0):.1f}%pa</span>'
+                    f'<span style="font-size:0.68rem;color:#64748B">{_fp_str}</span>'
+                    f'</div>'
+                    f'<div style="font-size:0.64rem;color:#64748B">'
+                    f'β={_ff.get("beta",1):.2f} · SMB={_ff.get("smb",0):+.2f} · HML={_ff.get("hml",0):+.2f} · MOM={_ff.get("mom",0):+.2f}'
+                    f'</div>'
+                    f'{_ff_insight_html}'
+                    f'</div>')
+            else:
+                _ff_row = ('<div style="margin-top:8px;padding:6px 8px;background:rgba(148,163,184,0.05);'
+                           'border-radius:6px;border:1px solid rgba(148,163,184,0.15)">'
+                           '<div style="font-size:0.62rem;color:#475569;font-weight:700">FF4 FACTOR MODEL</div>'
+                           '<div style="font-size:0.63rem;color:#334155;margin-top:2px">Not in US universe — directional only</div>'
+                           '</div>')
 
             _border_col = '#FBBF24' if _in_wl else 'rgba(255,255,255,0.08)'
             _pr_str = f"{_pr:.2f} {_curr}" if isinstance(_pr, float) else '—'
