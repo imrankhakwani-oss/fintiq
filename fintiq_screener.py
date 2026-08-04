@@ -3719,19 +3719,50 @@ CORE RULES (never break these):
 
 
 def _comp_detect_ticker(text: str, existing: list) -> list:
-    """Extract likely ticker symbols from user message. Returns list of candidates."""
+    """Extract ticker symbols from user message.
+    Only matches already-uppercase sequences — NEVER uppercases the whole text,
+    which would cause common English words to be matched as tickers."""
     import re as _re, yfinance as _yf_d
     _found = []
-    # Pattern: 1-5 uppercase letters, optionally .L .AS .PA etc
-    _raw = _re.findall(r'\b([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b', text)
-    # Also try uppercasing the whole message to catch casual mentions
-    _raw += _re.findall(r'\b([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b', text.upper())
+    # Match $TICKER format (explicit), or bare ALL-CAPS sequences already in text
+    _raw = _re.findall(r'\$([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b', text)
+    _raw += _re.findall(r'\b([A-Z]{2,5}(?:\.[A-Z]{1,2})?)\b', text)
     _raw = list(set(_raw))
-    _skip = {'I', 'A', 'AI', 'UK', 'US', 'EU', 'PE', 'EV', 'AM', 'PM', 'THE',
-             'AND', 'FOR', 'BUT', 'NOT', 'OR', 'IF', 'MY', 'SO', 'IN', 'IS',
-             'BE', 'TO', 'DO', 'AN', 'AT', 'BY', 'UP', 'ON', 'NO', 'GO', 'OK',
-             'IP', 'VC', 'CEO', 'CFO', 'CTO', 'GDP', 'CPI', 'FED', 'IMF', 'ROE',
-             'DCF', 'EPS', 'FCF', 'ETF', 'IPO', 'ICE', 'NYSE', 'LSE', 'IT'}
+
+    # Comprehensive blocklist — common words that are also real tickers
+    _skip = {
+        # Pronouns / articles / prepositions
+        'I','A','AN','AT','BY','IN','IS','IT','MY','NO','OF','ON','OR','SO','TO','UP',
+        'AM','AS','BE','DO','GO','HE','IF','ME','OK','US','WE',
+        'AND','ARE','BUT','FOR','HAS','HAD','HIM','HIS','HOW','ITS','LET','NOT',
+        'NOW','OUR','OUT','OWN','PUT','SAY','SEE','SET','SHE','THE','TOO','USE',
+        'WAS','WHO','WHY','YOU','ALL','ANY','CAN','DID','GET','GOT','MAY','OWN',
+        'ALSO','BACK','BEEN','BOTH','COME','EACH','EVEN','FROM','GAVE','GAVE',
+        'GIVE','HAVE','HERE','INTO','JUST','KEEP','KNOW','LAST','LIKE','LOOK',
+        'MADE','MAKE','MORE','MOVE','MUCH','MUST','NEXT','ONLY','OPEN','OVER',
+        'SAID','SAME','SHOW','SOME','SUCH','TAKE','THAN','THEM','THEN','THEY',
+        'THIS','THAN','THAT','WANT','WELL','WENT','WERE','WHAT','WHEN','WITH',
+        # Common adjectives/nouns that hit real tickers
+        'BEST','BOLD','BULL','CALL','CASH','COST','CORE','DATA','DEAL','DEEP',
+        'DOWN','DRAW','DROP','EARN','EASE','EDGE','FACT','FAIR','FALL','FAST',
+        'FEEL','FIND','FIRM','FLAT','FLOW','FUND','GAIN','GOOD','GROW','HALF',
+        'HARD','HEAD','HEAR','HELD','HELP','HIGH','HOLD','HOPE','HOUR','IDEA',
+        'INTO','JUMP','KEEP','KIND','LATE','LEAD','LEFT','LINE','LIVE','LOAD',
+        'LONG','LOSS','LOST','LOVE','MAIN','MARK','MEAN','MIND','MISS','MODE',
+        'MOVE','NEED','NEWS','NICE','NORM','NOTE','ONCE','OPEN','PEAK','PICK',
+        'PLAN','PLAY','PLUS','POOR','PULL','PUSH','RATE','REAL','RELY','REST',
+        'RISE','RISK','ROLE','ROOM','RULE','SAFE','SEND','SHOW','SIDE','SIZE',
+        'SLOW','SOFT','SORT','SPOT','STAY','STEP','STOP','SURE','SWAP','TERM',
+        'TEST','THIN','TILL','TIME','TOPS','TURN','TYPE','UNIT','VALE','VERY',
+        'VIEW','WAIT','WALK','WARN','WAYS','WEEK','WIDE','WILD','WILL','WINS',
+        'WORD','WORK','WRAP','YEAR','ZERO',
+        # Finance / macro abbreviations
+        'AI','UK','EU','PE','EV','VC','IP','GDP','CPI','FED','IMF','ROE','ROA',
+        'DCF','EPS','FCF','ETF','IPO','ICE','NYSE','LSE','SMA','EMA','RSI',
+        'ATH','YTD','TTM','LTM','QOQ','YOY','NAV','AUM','USD','GBP','EUR',
+        'JPY','BTC','ETH','NFT','ESG','PEG','WACC','EBIT','GAAP','OPEX','CAPEX',
+        'CEO','CFO','CTO','COO','PM','AM','MACD',
+    }
     for _t in _raw:
         if _t in _skip or _t in existing or len(_t) < 2:
             continue
@@ -5712,249 +5743,75 @@ with tab_comp:
     _MAX_STOCKS = 5
     _SS.cp_ctx.setdefault('max_stocks', _MAX_STOCKS)
     _SS.cp_ctx.setdefault('watchlist', [])
-
-    # ── Layout: chat left | data right ──────────────────────────
-    _col_chat, _col_data = st.columns([6, 4], gap="large")
+    _stage = _SS.cp_stage
+    _wl    = _SS.cp_ctx.get('watchlist', [])
 
     # ════════════════════════════════════════════════════════════
-    # RIGHT PANEL — dynamic data display
+    # HEADER ROW — title | stage badge | reset button
     # ════════════════════════════════════════════════════════════
-    with _col_data:
-        _stage = _SS.cp_stage
-        _wl    = _SS.cp_ctx.get('watchlist', [])
-
-        # ── Stage badge ─────────────────────────────────────────
-        _stage_labels = {
-            'discovery':   ('🔎', 'Discovery',          '#64748B'),
-            'fundamental': ('📊', 'Fundamental',        '#3B82F6'),
-            'valuation':   ('💰', 'Valuation',          '#8B5CF6'),
-            'technical':   ('📈', 'Technical',          '#10B981'),
-            'finalise':    ('✅', 'Finalising',         '#FBBF24'),
-            'report':      ('📄', 'Report Ready',       '#F59E0B'),
-        }
-        _sico, _slbl, _scol = _stage_labels.get(_stage, ('●', _stage, '#64748B'))
+    _stage_labels = {
+        'discovery':   ('🔎', 'Discovery',   '#64748B'),
+        'fundamental': ('📊', 'Fundamental', '#3B82F6'),
+        'valuation':   ('💰', 'Valuation',   '#8B5CF6'),
+        'technical':   ('📈', 'Technical',   '#10B981'),
+        'finalise':    ('✅', 'Finalising',  '#FBBF24'),
+        'report':      ('📄', 'Report',      '#F59E0B'),
+    }
+    _sico, _slbl, _scol = _stage_labels.get(_stage, ('●', _stage, '#64748B'))
+    _hc1, _hc2, _hc3 = st.columns([5, 2, 2])
+    with _hc1:
         st.markdown(
-            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'
-            f'<span style="font-size:1.2rem">{_sico}</span>'
-            f'<span style="font-size:0.7rem;font-weight:700;letter-spacing:0.1em;'
-            f'color:{_scol};text-transform:uppercase">{_slbl} STAGE</span>'
+            '<div style="font-size:1.1rem;font-weight:700;color:#E2E8F0;padding-top:6px">'
+            '🤖 AI Investment Companion</div>', unsafe_allow_html=True)
+    with _hc2:
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:6px;padding-top:8px">'
+            f'<span style="font-size:1rem">{_sico}</span>'
+            f'<span style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
+            f'color:{_scol};text-transform:uppercase">{_slbl}</span>'
             f'</div>', unsafe_allow_html=True)
-
-        # ── Watchlist tracker ────────────────────────────────────
-        if _wl:
-            st.markdown('<div style="font-size:0.7rem;color:#64748B;font-weight:700;'
-                        'letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">'
-                        'WATCHLIST</div>', unsafe_allow_html=True)
-            for _wt in _wl:
-                _wd = _SS.cp_data.get(_wt, {})
-                _wp = _wd.get('price')
-                _wn = _wd.get('info', {}).get('longName', _wt) if not _wd.get('error') else _wt
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                    f'background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);'
-                    f'border-radius:6px;padding:6px 10px;margin-bottom:4px">'
-                    f'<span style="font-weight:700;color:#FBBF24;font-size:0.82rem">{_wt}</span>'
-                    f'<span style="font-size:0.75rem;color:#94A3B8">{_wn[:22]}</span>'
-                    f'<span style="font-size:0.8rem;color:#E2E8F0">{f"{_wp:.2f}" if isinstance(_wp,float) else ""}</span>'
-                    f'</div>', unsafe_allow_html=True)
-            st.markdown(f'<div style="font-size:0.72rem;color:#64748B;text-align:right;'
-                        f'margin-bottom:14px">{len(_wl)}/{_MAX_STOCKS} slots used</div>',
-                        unsafe_allow_html=True)
-
-        # ── Stage-specific right panel content ───────────────────
-        if _stage == 'discovery':
-            st.markdown("""
-<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
-            border-radius:10px;padding:20px 16px;font-size:0.82rem;color:#94A3B8;line-height:1.9;
-            height:240px;box-sizing:border-box;overflow:hidden;">
-<strong style="color:#E2E8F0;display:block;margin-bottom:10px">How this works</strong>
-Chat with your AI companion on the left. It will guide you through:<br><br>
-<span style="color:#FBBF24">①</span> Fundamental quality screen<br>
-<span style="color:#FBBF24">②</span> DCF valuation + Monte Carlo<br>
-<span style="color:#FBBF24">③</span> Technical analysis &amp; timing<br>
-<span style="color:#FBBF24">④</span> Watchlist (up to 5 stocks)<br>
-<span style="color:#FBBF24">⑤</span> Research report (download)<br><br>
-<em>Data updates here as the conversation progresses.</em>
-</div>""", unsafe_allow_html=True)
-
-        elif _stage in ('fundamental', 'valuation', 'technical') and _SS.cp_data:
-            # Show key metrics cards for each tracked ticker
-            for _tk, _td in _SS.cp_data.items():
-                if _td.get('error'):
-                    st.warning(f"{_tk}: {_td['error']}")
-                    continue
-                _ti   = _td.get('info', {})
-                _pr   = _td.get('price')
-                _name = _ti.get('longName', _tk)
-                _sect = _ti.get('sector', '')
-                def _fv(v):
-                    try: return float(v)
-                    except: return None
-
-                st.markdown(
-                    f'<div style="font-size:0.75rem;font-weight:700;color:#FBBF24;'
-                    f'letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">'
-                    f'{_tk} — {_name[:28]}</div>'
-                    f'<div style="font-size:0.68rem;color:#64748B;margin-bottom:10px">{_sect}</div>',
-                    unsafe_allow_html=True)
-
-                _metrics = [
-                    ("Price",          f"{_pr:.2f} {_ti.get('currency','')}" if isinstance(_pr,float) else "—"),
-                    ("Mkt Cap",        f"{'%.1fB'%(_fv(_ti.get('marketCap'))/1e9)}" if _fv(_ti.get('marketCap')) else "—"),
-                    ("Trailing PE",    f"{_fv(_ti.get('trailingPE')):.1f}x" if _fv(_ti.get('trailingPE')) else "—"),
-                    ("Forward PE",     f"{_fv(_ti.get('forwardPE')):.1f}x" if _fv(_ti.get('forwardPE')) else "—"),
-                    ("EV/EBITDA",      f"{_fv(_ti.get('enterpriseToEbitda')):.1f}x" if _fv(_ti.get('enterpriseToEbitda')) else "—"),
-                    ("Rev Growth",     f"{_fv(_ti.get('revenueGrowth'))*100:+.1f}%" if _fv(_ti.get('revenueGrowth')) else "—"),
-                    ("Op Margin",      f"{_fv(_ti.get('operatingMargins'))*100:.1f}%" if _fv(_ti.get('operatingMargins')) else "—"),
-                    ("Gross Margin",   f"{_fv(_ti.get('grossMargins'))*100:.1f}%" if _fv(_ti.get('grossMargins')) else "—"),
-                    ("ROE",            f"{_fv(_ti.get('returnOnEquity'))*100:.1f}%" if _fv(_ti.get('returnOnEquity')) else "—"),
-                    ("Debt/Equity",    f"{_fv(_ti.get('debtToEquity')):.2f}x" if _fv(_ti.get('debtToEquity')) else "—"),
-                    ("FCF",            f"{'%.1fB'%(_fv(_ti.get('freeCashflow'))/1e9)}" if _fv(_ti.get('freeCashflow')) else "—"),
-                    ("Analyst Target", f"{_fv(_ti.get('targetMeanPrice')):.2f}" if _fv(_ti.get('targetMeanPrice')) else "—"),
-                    ("52wk High",      f"{_fv(_ti.get('fiftyTwoWeekHigh')):.2f}" if _fv(_ti.get('fiftyTwoWeekHigh')) else "—"),
-                    ("52wk Low",       f"{_fv(_ti.get('fiftyTwoWeekLow')):.2f}" if _fv(_ti.get('fiftyTwoWeekLow')) else "—"),
-                    ("Beta",           f"{_fv(_ti.get('beta')):.2f}" if _fv(_ti.get('beta')) else "—"),
-                ]
-                _mrows = "".join(
-                    f'<div style="display:flex;justify-content:space-between;padding:5px 0;'
-                    f'border-bottom:1px solid rgba(255,255,255,0.05)">'
-                    f'<span style="color:#64748B;font-size:0.75rem">{_ml}</span>'
-                    f'<span style="color:#E2E8F0;font-size:0.78rem;font-weight:600">{_mv}</span></div>'
-                    for _ml, _mv in _metrics)
-                st.markdown(
-                    f'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);'
-                    f'border-radius:10px;padding:14px;margin-bottom:16px">{_mrows}</div>',
-                    unsafe_allow_html=True)
-
-                # Valuation stage: show DCF + Monte Carlo
-                if _stage == 'valuation' and _tk in _SS.cp_analyses:
-                    _an = _SS.cp_analyses[_tk]
-                    if _an.get('mc'):
-                        _mc = _an['mc']
-                        st.markdown('<div style="font-size:0.7rem;color:#8B5CF6;font-weight:700;'
-                                    'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">'
-                                    'Monte Carlo — 4,000 Scenarios</div>', unsafe_allow_html=True)
-                        _mc_rows = [
-                            ("P10 (bear)", f"{_mc['p10']:.2f}"),
-                            ("P25",        f"{_mc['p25']:.2f}"),
-                            ("P50 (base)", f"{_mc['p50']:.2f}"),
-                            ("P75",        f"{_mc['p75']:.2f}"),
-                            ("P90 (bull)", f"{_mc['p90']:.2f}"),
-                        ]
-                        _mc_html = "".join(
-                            f'<div style="display:flex;justify-content:space-between;padding:4px 0;'
-                            f'border-bottom:1px solid rgba(139,92,246,0.15)">'
-                            f'<span style="color:#64748B;font-size:0.75rem">{_l}</span>'
-                            f'<span style="color:#A78BFA;font-size:0.78rem;font-weight:600">{_v}</span></div>'
-                            for _l, _v in _mc_rows)
-                        st.markdown(
-                            f'<div style="background:rgba(139,92,246,0.06);border:1px solid rgba(139,92,246,0.2);'
-                            f'border-radius:10px;padding:12px;margin-bottom:14px">{_mc_html}</div>',
-                            unsafe_allow_html=True)
-
-                # Technical stage: mini price chart
-                if _stage == 'technical' and _td.get('hist') is not None:
-                    _h = _td['hist']
-                    if not _h.empty:
-                        import pandas as _pd_c
-                        _h2 = _h['Close'].tail(180)
-                        st.markdown('<div style="font-size:0.7rem;color:#10B981;font-weight:700;'
-                                    'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">'
-                                    '6-Month Price Chart</div>', unsafe_allow_html=True)
-                        st.line_chart(_h2, use_container_width=True, height=150,
-                                      color="#10B981")
-
-                st.markdown("---")
-
-        elif _stage in ('finalise', 'report') and _wl:
-            st.markdown('<div style="font-size:0.7rem;color:#FBBF24;font-weight:700;'
-                        'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">'
-                        'Final Watchlist</div>', unsafe_allow_html=True)
-            for _wt in _wl:
-                _wan = _SS.cp_analyses.get(_wt, {})
-                _wd2 = _SS.cp_data.get(_wt, {})
-                _wpr = _wd2.get('price', '—')
-                _wpr_s = f"{_wpr:.2f}" if isinstance(_wpr, float) else str(_wpr)
-                _wth = _wan.get('thesis', 'See conversation.')
-                st.markdown(
-                    f'<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(251,191,36,0.2);'
-                    f'border-radius:8px;padding:12px;margin-bottom:10px">'
-                    f'<div style="font-weight:700;color:#FBBF24;margin-bottom:4px">{_wt} — {_wpr_s}</div>'
-                    f'<div style="font-size:0.78rem;color:#94A3B8;line-height:1.5">{_wth[:180]}…</div>'
-                    f'</div>', unsafe_allow_html=True)
-
-            if _stage == 'report' and _SS.cp_report:
-                st.download_button(
-                    "⬇️ Download Research Report (HTML)",
-                    data=_SS.cp_report,
-                    file_name=f"fintiq_research_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.html",
-                    mime="text/html",
-                    use_container_width=True)
-
-        # ── Reset button — height matched to chat input (~56px) ──
-        st.markdown("""
-        <style>
-        div[data-testid="stButton"]:has(button[data-testid="cp_reset"]) button,
-        button[data-testid="cp_reset"] {
-            min-height: 56px !important;
-            height: 56px !important;
-            font-size: 0.95rem !important;
-        }
-        </style>""", unsafe_allow_html=True)
-        if st.button("🔄 New Analysis Session", use_container_width=True, key="cp_reset"):
+    with _hc3:
+        if st.button("🔄 New Session", use_container_width=True, key="cp_reset"):
             for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses','cp_report','cp_new_ticks']:
                 if _k in _SS: del _SS[_k]
             st.rerun()
 
     # ════════════════════════════════════════════════════════════
-    # LEFT PANEL — chat interface
+    # CHAT — full width, taller
     # ════════════════════════════════════════════════════════════
-    with _col_chat:
-        st.markdown(
-            '<div style="font-size:1.1rem;font-weight:700;color:#E2E8F0;margin-bottom:16px">'
-            '🤖 AI Investment Companion</div>',
-            unsafe_allow_html=True)
 
-        # Opening message if no history
-        if not _SS.cp_msgs:
-            from datetime import datetime as _dtc
-            _bull_ctx = ""
-            if 'bulletin_ai_' + (__import__('datetime').datetime.now().strftime('%Y%m%d') +
-                                  str(__import__('datetime').datetime.now().hour // 4)) in _SS:
-                _bul = _SS.get('bulletin_ai_' + __import__('datetime').datetime.now().strftime('%Y%m%d') +
-                               str(__import__('datetime').datetime.now().hour // 4), {})
-                _call = _bul.get('the_call', {})
-                if isinstance(_call, dict):
-                    _hl = _call.get('headline', '')
-                    _bull_ctx = f" Today's market read: {_hl}" if _hl else ""
-            _open_sys = _comp_system_prompt('discovery', {}, {})
-            _open_msg = _comp_ai(
-                [{"role": "user", "content": f"Start the session with a brief, sharp opening — reference today's market context if available. One sentence on the market, then ask what the user wants to work on today. Keep it under 60 words.{_bull_ctx}"}],
-                _open_sys)
-            _SS.cp_msgs.append({"role": "assistant", "content": _open_msg})
+    # Opening message if no history
+    if not _SS.cp_msgs:
+        _bull_ctx = ""
+        _bk = __import__('datetime').datetime.now().strftime('%Y%m%d') + \
+              str(__import__('datetime').datetime.now().hour // 4)
+        _bul = _SS.get(f'bulletin_ai_{_bk}', {})
+        _call = _bul.get('the_call', {}) if isinstance(_bul, dict) else {}
+        _hl = _call.get('headline', '') if isinstance(_call, dict) else ''
+        _bull_ctx = f" Today's market read: {_hl}" if _hl else ""
+        _open_sys = _comp_system_prompt('discovery', {}, {})
+        _open_msg = _comp_ai(
+            [{"role": "user", "content": f"Start the session with a brief, sharp opening — one sentence on the market, then ask what the user wants to work on. Under 50 words.{_bull_ctx}"}],
+            _open_sys)
+        _SS.cp_msgs.append({"role": "assistant", "content": _open_msg})
 
-        # Display chat history
-        _chat_container = st.container(height=220)
-        with _chat_container:
-            for _m in _SS.cp_msgs:
-                with st.chat_message(_m["role"],
-                                     avatar="🤖" if _m["role"] == "assistant" else "👤"):
-                    st.markdown(_m["content"])
+    _chat_container = st.container(height=380)
+    with _chat_container:
+        for _m in _SS.cp_msgs:
+            with st.chat_message(_m["role"],
+                                 avatar="🤖" if _m["role"] == "assistant" else "👤"):
+                st.markdown(_m["content"])
 
-        # Chat input — styled to match New Analysis Session button
-        st.markdown("""
-        <style>
-        div[data-testid="stChatInput"] > div {
-            border: 1px solid #C9A84C !important;
-            border-radius: 8px !important;
-            background: rgba(201,168,76,0.05) !important;
-        }
-        div[data-testid="stChatInput"] textarea {
-            color: #E2E8F0 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        if _user_input := st.chat_input("Type your message…", key="cp_input"):
+    # Chat input
+    st.markdown("""
+    <style>
+    div[data-testid="stChatInput"] > div {
+        border: 1px solid #C9A84C !important;
+        border-radius: 8px !important;
+        background: rgba(201,168,76,0.05) !important;
+    }
+    </style>""", unsafe_allow_html=True)
+    if _user_input := st.chat_input("Type your message…", key="cp_input"):
 
             # Add user message
             _SS.cp_msgs.append({"role": "user", "content": _user_input})
@@ -6097,7 +5954,137 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
             _SS.cp_msgs.append({"role": "assistant", "content": _reply})
             st.rerun()
 
-        st.caption("Guided analysis · Educational only · Not financial advice")
+    st.caption("Guided analysis · Educational only · Not financial advice")
+
+    # ════════════════════════════════════════════════════════════
+    # STOCK CARDS — below chat, one card per tracked company
+    # ════════════════════════════════════════════════════════════
+    def _fv2(v):
+        try: return float(v)
+        except: return None
+
+    if _stage == 'discovery' and not _SS.cp_data:
+        # Show "how this works" intro banner
+        st.markdown("""
+<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);
+    border-radius:10px;padding:18px 24px;margin-top:8px;
+    display:flex;gap:40px;flex-wrap:wrap;align-items:center">
+<span style="font-size:0.82rem;color:#64748B">
+  <span style="color:#FBBF24;font-weight:700">①</span> Fundamental screen &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">②</span> DCF + Monte Carlo &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">③</span> Technical &amp; timing &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">④</span> Watchlist &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">⑤</span> Research report
+  &nbsp;&nbsp;<em style="color:#475569">· Stock cards appear here as we analyse each company</em>
+</span>
+</div>""", unsafe_allow_html=True)
+
+    elif _SS.cp_data:
+        _tickers_to_show = list(_SS.cp_data.keys())
+        _ncols = min(len(_tickers_to_show), 5)
+        _card_cols = st.columns(_ncols, gap="small")
+
+        for _ci, _tk in enumerate(_tickers_to_show):
+            _td   = _SS.cp_data[_tk]
+            _an   = _SS.cp_analyses.get(_tk, {})
+            _ti   = _td.get('info', {}) if not _td.get('error') else {}
+            _pr   = _td.get('price')
+            _name = _ti.get('longName', _tk)
+            _sect = _ti.get('sector', '')
+            _curr = _ti.get('currency', '')
+            _in_wl = _tk in _wl
+
+            # Stage progress
+            _st_done = []
+            if _stage in ('fundamental','valuation','technical','finalise','report'): _st_done.append('F')
+            if _stage in ('valuation','technical','finalise','report'): _st_done.append('V')
+            if _stage in ('technical','finalise','report'): _st_done.append('T')
+            _stage_dots = " ".join(
+                f'<span style="color:#FBBF24;font-weight:700">{s}</span>' if s in _st_done
+                else f'<span style="color:#334155">{s}</span>'
+                for s in ['F','V','T'])
+
+            # Key metrics
+            _mets = [
+                ('Trailing PE', f"{_fv2(_ti.get('trailingPE')):.1f}x" if _fv2(_ti.get('trailingPE')) else '—'),
+                ('Forward PE',  f"{_fv2(_ti.get('forwardPE')):.1f}x"  if _fv2(_ti.get('forwardPE'))  else '—'),
+                ('EV/EBITDA',   f"{_fv2(_ti.get('enterpriseToEbitda')):.1f}x" if _fv2(_ti.get('enterpriseToEbitda')) else '—'),
+                ('Rev Growth',  f"{_fv2(_ti.get('revenueGrowth'))*100:+.1f}%" if _fv2(_ti.get('revenueGrowth')) else '—'),
+                ('Gross Mgn',   f"{_fv2(_ti.get('grossMargins'))*100:.1f}%"   if _fv2(_ti.get('grossMargins'))    else '—'),
+                ('Op Margin',   f"{_fv2(_ti.get('operatingMargins'))*100:.1f}%" if _fv2(_ti.get('operatingMargins')) else '—'),
+                ('ROE',         f"{_fv2(_ti.get('returnOnEquity'))*100:.1f}%"  if _fv2(_ti.get('returnOnEquity'))  else '—'),
+                ('Debt/Eq',     f"{_fv2(_ti.get('debtToEquity')):.2f}x"        if _fv2(_ti.get('debtToEquity'))    else '—'),
+            ]
+
+            # Add MC range if available
+            _mc_row = ''
+            if _an.get('mc'):
+                _mc = _an['mc']
+                _mc_row = (f'<div style="margin-top:8px;padding:8px;background:rgba(139,92,246,0.08);'
+                           f'border-radius:6px;border:1px solid rgba(139,92,246,0.2)">'
+                           f'<div style="font-size:0.65rem;color:#8B5CF6;font-weight:700;margin-bottom:4px">DCF · MC RANGE</div>'
+                           f'<div style="font-size:0.72rem;color:#A78BFA">'
+                           f'Bear {_mc["p25"]:.2f} · Base {_mc["p50"]:.2f} · Bull {_mc["p75"]:.2f}'
+                           f'</div></div>')
+            # Add analyst target if available
+            _tgt = _fv2(_ti.get('targetMeanPrice'))
+            _tgt_row = (f'<div style="font-size:0.7rem;color:#10B981;margin-top:4px">'
+                        f'Analyst target: <strong>{_tgt:.2f}</strong></div>') if _tgt else ''
+
+            _rows_html = "".join(
+                f'<div style="display:flex;justify-content:space-between;'
+                f'padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
+                f'<span style="color:#64748B;font-size:0.72rem">{_l}</span>'
+                f'<span style="color:#E2E8F0;font-size:0.74rem;font-weight:600">{_v}</span></div>'
+                for _l, _v in _mets)
+
+            _border_col = '#FBBF24' if _in_wl else 'rgba(255,255,255,0.08)'
+            _pr_str = f"{_pr:.2f} {_curr}" if isinstance(_pr, float) else '—'
+            _cap_str = f"{'%.1fB'%(_fv2(_ti.get('marketCap'))/1e9)}" if _fv2(_ti.get('marketCap')) else ''
+
+            _card_html = (
+                f'<div style="background:rgba(255,255,255,0.03);border:1px solid {_border_col};'
+                f'border-radius:10px;padding:12px;margin-bottom:8px">'
+                # Header
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">'
+                f'<span style="font-size:0.85rem;font-weight:700;color:#FBBF24">{_tk}</span>'
+                f'<span style="font-size:0.65rem;color:#64748B">{_stage_dots}</span>'
+                f'</div>'
+                f'<div style="font-size:0.7rem;color:#94A3B8;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_name[:30]}</div>'
+                f'<div style="font-size:0.65rem;color:#475569;margin-bottom:8px">{_sect}</div>'
+                # Price row
+                f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
+                f'<span style="font-size:0.9rem;font-weight:700;color:#E2E8F0">{_pr_str}</span>'
+                f'<span style="font-size:0.68rem;color:#64748B">{_cap_str}</span>'
+                f'</div>'
+                # Metrics
+                f'{_rows_html}'
+                # MC / target
+                f'{_mc_row}{_tgt_row}'
+                + (f'<div style="font-size:0.65rem;color:#FBBF24;margin-top:6px;font-weight:700">★ WATCHLIST</div>' if _in_wl else '')
+                + f'</div>')
+
+            with _card_cols[_ci]:
+                if _td.get('error'):
+                    st.warning(f"{_tk}: data unavailable")
+                else:
+                    st.markdown(_card_html, unsafe_allow_html=True)
+
+                # Technical chart in its own column
+                if _stage == 'technical' and _td.get('hist') is not None:
+                    _h = _td['hist']
+                    if not _h.empty:
+                        st.line_chart(_h['Close'].tail(180), use_container_width=True,
+                                      height=120, color="#10B981")
+
+    # Report download (shows below cards when report generated)
+    if _stage == 'report' and _SS.cp_report:
+        st.download_button(
+            "⬇️ Download Research Report (HTML)",
+            data=_SS.cp_report,
+            file_name=f"fintiq_research_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.html",
+            mime="text/html",
+            use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1 — FUNDAMENTAL SCREEN
