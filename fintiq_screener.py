@@ -5920,7 +5920,7 @@ Chat with your AI companion on the left. It will guide you through:<br><br>
             _SS.cp_msgs.append({"role": "assistant", "content": _open_msg})
 
         # Display chat history
-        _chat_container = st.container(height=350)
+        _chat_container = st.container(height=255)
         with _chat_container:
             for _m in _SS.cp_msgs:
                 with st.chat_message(_m["role"],
