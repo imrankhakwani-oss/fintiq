@@ -852,38 +852,10 @@ def _seed_search_count_on_login(user_id: str, existing_sc: str = ""):
     st.query_params["_sc"] = f"{user_id}:{count}|{now_month}"
 
 # ── Auth / upgrade gate ───────────────────────────────────────
+# LOGIN AND PAYWALL TEMPORARILY DISABLED — open access during development
 def _check_auth_gate() -> bool:
-    """Returns True if allowed to run a search."""
-    user = st.session_state.get("fintiq_user", {})
-
-    # Pro — unlimited
-    if user.get("is_pro"):
-        return True
-
-    # Guest — must sign up before any action
-    if not user:
-        for _k in ["screened_df", "screened_symbols"]:
-            if _k in st.session_state: del st.session_state[_k]
-        st.session_state["_show_auth_wall"] = True
-        st.rerun()
-
-    # Free registered user
-    user_id = user.get("id", "")
-
-    # Seed from DB on first access (no-op if DB unavailable)
-    _sc_seed_from_db(user_id)
-
-    current_searches = _sc.get(user_id)
-
-    if current_searches < _MONTHLY_LIMIT:
-        _sc.increment(user_id)
-        return True
-
-    # Limit reached — show upgrade wall
-    for _k in ["screened_df", "screened_symbols"]:
-        if _k in st.session_state: del st.session_state[_k]
-    st.session_state["_show_upgrade_wall"] = (user.get("email", ""), user_id)
-    st.rerun()
+    """Returns True if allowed to run a search. AUTH DISABLED."""
+    return True  # TODO: re-enable when login/paywall protocol is finalised
 
 def _show_auth_wall():
     """Signup wall shown to guests when they try to use the app."""
@@ -3331,19 +3303,47 @@ def _make_bulletin_fallback() -> dict:
 # ─────────────────────────────────────────────────────────────
 @st.fragment
 def _render_bulletin():
+    import json as _bj, os as _bos
     _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d') + \
              str(__import__('datetime').datetime.now().hour // 4)
     _api_key = _get_api_key()
 
     if _api_key:
-        # AI path — cached 4h, session state for instant reruns
-        _ss_key = f"bulletin_ai_{_b_key}"
+        # Three-layer cache: session_state → /tmp file → Claude API
+        # This survives Railway restarts (process-level cache clears, but /tmp persists
+        # within the same container deployment).
+        _ss_key   = f"bulletin_ai_{_b_key}"
+        _tmp_path = f"/tmp/fintiq_bulletin_{_b_key}.json"
+
+        if _ss_key not in st.session_state:
+            # Try /tmp file first (survives Streamlit reruns AND Railway cold starts
+            # within the same container)
+            if _bos.path.exists(_tmp_path):
+                try:
+                    with open(_tmp_path, 'r', encoding='utf-8') as _bf:
+                        st.session_state[_ss_key] = _bj.load(_bf)
+                except Exception:
+                    pass  # corrupted file — fall through to API
+
         if _ss_key not in st.session_state:
             with st.spinner("📡 Generating market intelligence…"):
                 try:
-                    st.session_state[_ss_key] = _make_bulletin(_b_key)
-                except Exception as _e:
+                    _result = _make_bulletin(_b_key)
+                    st.session_state[_ss_key] = _result
+                    # Persist to /tmp so next visit in same 4h window skips the API call
+                    try:
+                        with open(_tmp_path, 'w', encoding='utf-8') as _bf:
+                            _bj.dump(_result, _bf)
+                        # Clean up old bulletin files to avoid accumulation
+                        for _f in _bos.listdir('/tmp'):
+                            if _f.startswith('fintiq_bulletin_') and _f != _bos.path.basename(_tmp_path):
+                                try: _bos.remove(f'/tmp/{_f}')
+                                except: pass
+                    except Exception:
+                        pass  # /tmp write failure is non-fatal
+                except Exception:
                     st.session_state[_ss_key] = _make_bulletin_fallback()
+
         _bulletin = st.session_state[_ss_key]
     else:
         # Fallback path — never cached, instant, recovers immediately when key is added
@@ -6023,17 +6023,21 @@ with tab_comp:
                                   if m['role'] == 'assistant'), '') if _SS.cp_msgs else ''
 
                 # Discovery → Confirm: AI outputs ---CONFIRM_FETCH--- block
-                if _cur_stage == 'discovery' and '---CONFIRM_FETCH---' in _last_ast:
-                    # Parse proposed tickers from the block
+                # Also check _reply (current) in case it was just generated
+                _check_confirm_in = _last_ast + ' ' + _reply
+                if _cur_stage == 'discovery' and '---CONFIRM_FETCH---' in _check_confirm_in:
+                    # Parse proposed tickers — handles both inline and multiline format
                     _cf_match = _re_stage.search(
-                        r'---CONFIRM_FETCH---\s*\nStocks:(.*?)\n', _last_ast, _re_stage.DOTALL)
+                        r'---CONFIRM_FETCH---[\s\S]*?Stocks:\s*(.+?)(?:\n|FF4|$)',
+                        _check_confirm_in)
                     if _cf_match:
                         _prop_line = _cf_match.group(1).strip()
+                        # Extract all (TICKER) patterns from the stocks line
                         _prop_tks = _re_stage.findall(
-                            r'[A-Z][A-Za-z0-9 &\.]+\(([A-Z]{1,6}(?:\.[A-Z]{1,2})?)\)',
+                            r'\(([A-Z]{1,6}(?:\.[A-Z]{1,2})?)\)',
                             _prop_line)
                         _SS.cp_ctx['proposed'] = _prop_line
-                        _SS.cp_ctx['proposed_tickers'] = _prop_tks
+                        _SS.cp_ctx['proposed_tickers'] = _prop_tks[:5]
                     _SS.cp_stage = 'confirm'
 
                 # Confirm → Fundamental: user says yes/confirmed
@@ -6179,7 +6183,12 @@ with tab_comp:
                         if _ctk not in _SS.cp_data:
                             _SS.cp_data[_ctk] = _comp_fetch(_ctk)
 
-            _SS.cp_msgs.append({"role": "assistant", "content": _reply})
+            # Strip the ---CONFIRM_FETCH--- block before displaying in chat
+            import re as _re_strip
+            _display_reply = _re_strip.sub(
+                r'---CONFIRM_FETCH---.*?(?:---|$)',
+                '', _reply, flags=_re_strip.DOTALL).strip()
+            _SS.cp_msgs.append({"role": "assistant", "content": _display_reply or _reply})
             st.rerun()
 
     st.caption("Guided analysis · Educational only · Not financial advice")
@@ -6208,8 +6217,8 @@ with tab_comp:
 </div>""", unsafe_allow_html=True)
 
     elif _SS.cp_data:
-        _tickers_to_show = list(_SS.cp_data.keys())
-        _ncols = min(len(_tickers_to_show), 5)
+        _tickers_to_show = list(_SS.cp_data.keys())[:5]   # cap at 5
+        _ncols = len(_tickers_to_show)
         _card_cols = st.columns(_ncols, gap="small")
 
         for _ci, _tk in enumerate(_tickers_to_show):
@@ -6232,16 +6241,72 @@ with tab_comp:
                 else f'<span style="color:#334155">{s}</span>'
                 for s in ['F','V','T'])
 
-            # Key metrics
+            # ── Quality score (0–100) ─────────────────────────────
+            _roe_v  = _fv2(_ti.get('returnOnEquity')) or 0
+            _gm_v   = _fv2(_ti.get('grossMargins')) or 0
+            _nm_v   = _fv2(_ti.get('profitMargins')) or 0
+            _om_v   = _fv2(_ti.get('operatingMargins')) or 0
+            _de_v   = _fv2(_ti.get('debtToEquity'))
+            _rg_v   = _fv2(_ti.get('revenueGrowth')) or 0
+            _qs = 0
+            if _roe_v >= 0.15: _qs += 25
+            elif _roe_v >= 0.08: _qs += 12
+            if _gm_v >= 0.40: _qs += 20
+            elif _gm_v >= 0.20: _qs += 10
+            if _nm_v >= 0.15: _qs += 20
+            elif _nm_v >= 0.05: _qs += 10
+            if _de_v is None or _de_v <= 1.0: _qs += 20
+            elif _de_v <= 3.0: _qs += 10
+            if _rg_v >= 0.20: _qs += 15
+            elif _rg_v >= 0.05: _qs += 8
+            _qs_col = '#22c55e' if _qs >= 70 else '#F59E0B' if _qs >= 45 else '#ef4444'
+            _qs_lbl = 'HIGH' if _qs >= 70 else 'MED' if _qs >= 45 else 'LOW'
+
+            # ── Technical signal from price history ───────────────
+            _hist = _td.get('hist')
+            _tech_lbl = '—'; _tech_col = '#64748B'
+            _ma50_str = '—'; _ma200_str = '—'; _wk52h_str = '—'
+            if _hist is not None and not _hist.empty and _pr:
+                try:
+                    _cl = _hist['Close']
+                    _ma50  = float(_cl.tail(50).mean())  if len(_cl) >= 50  else 0
+                    _ma200 = float(_cl.tail(200).mean()) if len(_cl) >= 200 else 0
+                    _52h   = float(_cl.tail(252).max())  if len(_cl) >= 20  else 0
+                    _tscore = 0
+                    if _ma50  > 0:
+                        _vsma50 = (_pr/_ma50 - 1)*100
+                        _ma50_str  = f"{'▲' if _vsma50>=0 else '▼'} {abs(_vsma50):.1f}%"
+                        if _vsma50 >= 0: _tscore += 2
+                    if _ma200 > 0:
+                        _vsma200 = (_pr/_ma200 - 1)*100
+                        _ma200_str = f"{'▲' if _vsma200>=0 else '▼'} {abs(_vsma200):.1f}%"
+                        if _vsma200 >= 0: _tscore += 2
+                    if _52h > 0:
+                        _vs52h = (_52h - _pr)/_52h * 100
+                        _wk52h_str = f"-{_vs52h:.1f}% from high"
+                        if _vs52h <= 10: _tscore += 1
+                    _tech_lbl = '✅ Strong' if _tscore >= 4 else '⚠️ Neutral' if _tscore >= 2 else '🔴 Weak'
+                    _tech_col = '#22c55e' if _tscore >= 4 else '#F59E0B' if _tscore >= 2 else '#ef4444'
+                except Exception:
+                    pass
+
+            # ── Metric rows ───────────────────────────────────────
             _mets = [
-                ('Trailing PE', f"{_fv2(_ti.get('trailingPE')):.1f}x" if _fv2(_ti.get('trailingPE')) else '—'),
-                ('Forward PE',  f"{_fv2(_ti.get('forwardPE')):.1f}x"  if _fv2(_ti.get('forwardPE'))  else '—'),
-                ('EV/EBITDA',   f"{_fv2(_ti.get('enterpriseToEbitda')):.1f}x" if _fv2(_ti.get('enterpriseToEbitda')) else '—'),
-                ('Rev Growth',  f"{_fv2(_ti.get('revenueGrowth'))*100:+.1f}%" if _fv2(_ti.get('revenueGrowth')) else '—'),
-                ('Gross Mgn',   f"{_fv2(_ti.get('grossMargins'))*100:.1f}%"   if _fv2(_ti.get('grossMargins'))    else '—'),
-                ('Op Margin',   f"{_fv2(_ti.get('operatingMargins'))*100:.1f}%" if _fv2(_ti.get('operatingMargins')) else '—'),
-                ('ROE',         f"{_fv2(_ti.get('returnOnEquity'))*100:.1f}%"  if _fv2(_ti.get('returnOnEquity'))  else '—'),
-                ('Debt/Eq',     f"{_fv2(_ti.get('debtToEquity')):.2f}x"        if _fv2(_ti.get('debtToEquity'))    else '—'),
+                ('Trailing PE',  f"{_fv2(_ti.get('trailingPE')):.1f}x" if _fv2(_ti.get('trailingPE')) else '—'),
+                ('Forward PE',   f"{_fv2(_ti.get('forwardPE')):.1f}x"  if _fv2(_ti.get('forwardPE'))  else '—'),
+                ('EV/EBITDA',    f"{_fv2(_ti.get('enterpriseToEbitda')):.1f}x" if _fv2(_ti.get('enterpriseToEbitda')) else '—'),
+                ('P/B',          f"{_fv2(_ti.get('priceToBook')):.2f}x" if _fv2(_ti.get('priceToBook')) else '—'),
+                ('Rev Growth',   f"{_rg_v*100:+.1f}%" if _rg_v else '—'),
+                ('Gross Mgn',    f"{_gm_v*100:.1f}%"  if _gm_v else '—'),
+                ('Net Margin',   f"{_nm_v*100:.1f}%"  if _nm_v else '—'),
+                ('Op Margin',    f"{_om_v*100:.1f}%"  if _om_v else '—'),
+                ('ROE',          f"{_roe_v*100:.1f}%"   if _roe_v else '—'),
+                ('Debt/Eq',      f"{_de_v:.2f}x"        if _de_v is not None else '—'),
+                ('Cash Conv',    f"{_fv2(_ti.get('operatingCashflow'))/(_fv2(_ti.get('netIncomeToCommon')) or 1):.2f}x"
+                                 if _fv2(_ti.get('operatingCashflow')) and _fv2(_ti.get('netIncomeToCommon')) else '—'),
+                ('vs 50d MA',    _ma50_str),
+                ('vs 200d MA',   _ma200_str),
+                ('52w High',     _wk52h_str),
             ]
 
             # Add MC range if available
@@ -6317,7 +6382,19 @@ with tab_comp:
                 f'<span style="font-size:0.65rem;color:#64748B">{_stage_dots}</span>'
                 f'</div>'
                 f'<div style="font-size:0.7rem;color:#94A3B8;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_name[:30]}</div>'
-                f'<div style="font-size:0.65rem;color:#475569;margin-bottom:8px">{_sect}</div>'
+                f'<div style="font-size:0.65rem;color:#475569;margin-bottom:6px">{_sect}</div>'
+                # Quality score + Tech signal badges
+                f'<div style="display:flex;gap:6px;margin-bottom:8px">'
+                f'<div style="flex:1;background:rgba(255,255,255,0.04);border-radius:5px;padding:4px 6px;text-align:center">'
+                f'<div style="font-size:0.58rem;color:#64748B;font-weight:700">QUALITY</div>'
+                f'<div style="font-size:0.9rem;font-weight:800;color:{_qs_col}">{_qs}</div>'
+                f'<div style="font-size:0.58rem;color:{_qs_col}">{_qs_lbl}</div>'
+                f'</div>'
+                f'<div style="flex:2;background:rgba(255,255,255,0.04);border-radius:5px;padding:4px 6px;text-align:center">'
+                f'<div style="font-size:0.58rem;color:#64748B;font-weight:700">TECH SIGNAL</div>'
+                f'<div style="font-size:0.75rem;font-weight:700;color:{_tech_col};margin-top:2px">{_tech_lbl}</div>'
+                f'</div>'
+                f'</div>'
                 # Price row
                 f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
                 f'<span style="font-size:0.9rem;font-weight:700;color:#E2E8F0">{_pr_str}</span>'
@@ -6359,17 +6436,9 @@ with tab_comp:
 # ═══════════════════════════════════════════════════════════════
 
 with tab1:
-    # ── Persistent walls — survive reruns caused by browser events ──
+    # AUTH DISABLED — walls bypassed during development
+    # TODO: re-enable when login/paywall protocol is finalised
     _tab1_user = st.session_state.get("fintiq_user", {})
-    # Guest wall: show if session state flag set (triggered by _check_auth_gate)
-    if not _tab1_user and st.session_state.get("_show_auth_wall"):
-        _show_auth_wall()
-        st.stop()
-    # Upgrade wall
-    if st.session_state.get("_show_upgrade_wall") and not _tab1_user.get("is_pro"):
-        _uw = st.session_state["_show_upgrade_wall"]
-        _show_upgrade_wall(_uw[0], _uw[1])
-        st.stop()
 
     st.markdown(
         '<div style="display:flex;align-items:center;gap:10px;padding:2px 0 2px 0;margin-bottom:2px">'
