@@ -3667,29 +3667,44 @@ def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
 
     _ctx_txt = ""
     if ctx:
-        _ctx_txt = "\n\nUSER CONTEXT:\n" + "\n".join(f"  {k}: {v}" for k, v in ctx.items() if k != 'watchlist')
+        _ctx_txt = "\n\nUSER CONTEXT:\n" + "\n".join(
+            f"  {k}: {v}" for k, v in ctx.items()
+            if k not in ('watchlist', 'max_stocks'))
+        if not ctx.get('geography'):
+            _ctx_txt += "\n  geography: NOT YET ESTABLISHED — ask about market preference if not done"
 
     _wl = ctx.get('watchlist', [])
     _max = ctx.get('max_stocks', 5)
 
     _stages = {
         'discovery': f"""STAGE: Discovery
-Goal: Understand the user's intent. Establish investment horizon, risk tolerance, what they want to analyse and why.
+Goal: Understand the user's intent. Establish investment horizon, risk tolerance, geography/market preference, and what they want to analyse.
 Rules:
 • Ask ONE question per response — never multiple
 • If they name a company, say you're pulling the data and ask them to confirm the ticker or full name
 • Probe their reasoning gently — thesis-driven or performance-chasing?
-• Once you know (a) what to analyse, (b) horizon, (c) risk appetite → transition
+• IMPORTANT: Always establish which market/geography they want to invest in (US, UK, Europe, Asia, global).
+  If they haven't mentioned it, ask: "Are you focused on a particular market — US, UK, European, Asian, or happy to go global?"
+  yfinance covers all global markets: US (NYSE/NASDAQ), UK (.L), Europe (.PA .AS .DE .MI), Asia (.T .HK .SS), India (.NS .BO) etc.
+• Once you know (a) what to analyse, (b) horizon, (c) risk appetite, (d) geography → transition
+• When suggesting stocks, ALWAYS match their stated geography. If UK: suggest LSE-listed stocks with .L tickers.
+  If global: mix markets explicitly. NEVER default to US-only unless they asked for US stocks.
 • Transition: "Right — I've got a clear picture of what you're after. Let me look at the fundamentals properly. Give me a moment."
-• If user seems unsure what to analyse, help them think through sectors or themes first""",
+• If user seems unsure what to analyse, help them think through sectors or themes first
+• CRITICAL — TICKER FORMAT: Every time you mention a company, ALWAYS write it as "Company Name (TICKER)" e.g. "Palantir (PLTR)", "AstraZeneca (AZN.L)", "Reliance (RELIANCE.NS)". Never mention a company without its ticker in brackets.
+Geography context: {ctx.get('geography', 'not yet established — ask if unclear')}""",
 
         'fundamental': f"""STAGE: Fundamental Analysis
 You have live data above. Use it conversationally — never recite metrics as a table.
+GEOGRAPHY: User's market preference is {ctx.get('geography', 'not specified — respect whichever market their stocks are from')}.
+If data shows a UK/European/Asian stock, frame comparisons against that market's norms, not US benchmarks.
+• CRITICAL — TICKER FORMAT: Every time you mention a company, ALWAYS write it as "Company Name (TICKER)" e.g. "Nvidia (NVDA)", "Barclays (BARC.L)". Never mention a company without its ticker in brackets.
 • Lead with what's genuinely interesting or unusual — not a data dump
 • Cover business quality: competitive moat, revenue trajectory, margin quality, balance sheet
 • Fama-French lens: comment on size, value, profitability, investment factors naturally
+  (Note: FF4 factor scores above are from the US universe — flag this for non-US stocks)
 • Challenge if user is momentum-chasing: "You mentioned it's up 80% — I want to make sure we're evaluating the business, not the price action"
-• Compare to sector where relevant
+• Compare to sector and regional peers where relevant
 • End: 'The quality picture is clear. The real question is whether the price reflects it. Shall we look at valuation?'""",
 
         'valuation': f"""STAGE: Valuation (3-Phase DCF with McKinsey Continuing Value)
@@ -3744,12 +3759,35 @@ CORE RULES (never break these):
 {_data_txt}"""
 
 
-def _comp_detect_ticker(text: str, existing: list) -> list:
-    """Extract ticker symbols from user message.
-    Only matches already-uppercase sequences — NEVER uppercases the whole text,
-    which would cause common English words to be matched as tickers."""
+def _comp_parse_name_map(ai_text: str, existing_map: dict) -> dict:
+    """Scan an AI reply for 'Company Name (TICKER)' patterns and return updated map."""
+    import re as _re
+    _updated = dict(existing_map)
+    # Match patterns like "Palantir (PLTR)" or "AstraZeneca (AZN.L)"
+    for _name, _tk in _re.findall(
+            r'([A-Z][A-Za-z0-9& \.]{1,40}?)\s+\(([A-Z]{1,6}(?:\.[A-Z]{1,2})?)\)',
+            ai_text):
+        _key = _name.strip().lower()
+        if _key and len(_key) > 1:
+            _updated[_key] = _tk.strip()
+    return _updated
+
+
+def _comp_detect_ticker(text: str, existing: list, name_map: dict = None) -> list:
+    """Extract ticker symbols from text.
+    Checks session dynamic name map first (built from AI replies),
+    then falls back to regex scan of uppercase sequences."""
     import re as _re, yfinance as _yf_d
+
     _found = []
+    _txt_lower = text.lower()
+
+    # ── Dynamic name map (populated from AI replies) ──
+    if name_map:
+        for _name, _tk in name_map.items():
+            if _name in _txt_lower and _tk not in existing and _tk not in _found:
+                _found.append(_tk)
+
     # Match $TICKER format (explicit), or bare ALL-CAPS sequences already in text
     _raw = _re.findall(r'\$([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b', text)
     _raw += _re.findall(r'\b([A-Z]{2,5}(?:\.[A-Z]{1,2})?)\b', text)
@@ -5815,7 +5853,19 @@ with tab_comp:
         "msgs":  _SS.cp_msgs,
     }, ensure_ascii=False, indent=2)
 
-    _hc1, _hc2, _hc3, _hc4, _hc5 = st.columns([3, 2, 2, 2, 2])
+    # Plain-text transcript
+    _ts_lines = [f"Fintiq AI Companion — Session Transcript",
+                 f"Generated: {__import__('datetime').datetime.now().strftime('%d %b %Y %H:%M')}",
+                 f"Stage: {_SS.cp_stage.capitalize()}",
+                 "=" * 60, ""]
+    for _m in _SS.cp_msgs:
+        _role_lbl = "You" if _m['role'] == 'user' else "Fintiq AI"
+        _ts_lines.append(f"[{_role_lbl}]")
+        _ts_lines.append(_m['content'])
+        _ts_lines.append("")
+    _transcript_txt = "\n".join(_ts_lines)
+
+    _hc1, _hc2, _hc3, _hc4, _hc5, _hc6 = st.columns([3, 2, 2, 2, 2, 2])
     with _hc1:
         st.markdown(
             '<div style="font-size:1.05rem;font-weight:700;color:#E2E8F0;padding-top:6px">'
@@ -5837,13 +5887,22 @@ with tab_comp:
             key="cp_dl_chat",
             help="Download session — upload this file later to resume exactly where you left off")
     with _hc4:
+        st.download_button(
+            "📄 Transcript",
+            data=_transcript_txt,
+            file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+            mime="text/plain",
+            use_container_width=True,
+            key="cp_dl_transcript",
+            help="Download readable plain-text transcript of this conversation")
+    with _hc5:
         if st.button("📂 Resume", use_container_width=True, key="cp_resume_btn",
                      help="Upload a saved session file to continue a previous conversation"):
             _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
-    with _hc5:
+    with _hc6:
         if st.button("🔄 New Session", use_container_width=True, key="cp_reset"):
             for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses',
-                       'cp_report','cp_new_ticks','cp_show_resume']:
+                       'cp_report','cp_new_ticks','cp_show_resume','cp_name_map']:
                 if _k in _SS: del _SS[_k]
             st.rerun()
 
@@ -5903,7 +5962,8 @@ with tab_comp:
 
             # ── Detect tickers in user message ───────────────────
             with st.spinner("Analysing…"):
-                _new_tks = _comp_detect_ticker(_user_input, list(_SS.cp_data.keys()))
+                if 'cp_name_map' not in _SS: _SS.cp_name_map = {}
+                _new_tks = _comp_detect_ticker(_user_input, list(_SS.cp_data.keys()), _SS.cp_name_map)
                 for _ntk in _new_tks:
                     if _ntk not in _SS.cp_data:
                         _SS.cp_data[_ntk] = _comp_fetch(_ntk)
@@ -5925,6 +5985,23 @@ with tab_comp:
                                          ('high risk','High Risk'),('growth','Growth-oriented')]:
                             if _rw in _ui_lower: _SS.cp_ctx['risk_appetite'] = _rv; break
 
+                # ── Geography extraction ──────────────────────────
+                _geo_map = [
+                    ('uk','UK'),('united kingdom','UK'),('british','UK'),('ftse','UK'),
+                    ('london','UK'),('lse','UK'),('aim','UK'),
+                    ('us ','US'),('usa','US'),('american','US'),('nasdaq','US'),
+                    ('s&p','US'),('nyse','US'),('dow','US'),
+                    ('europe','Europe'),('european','Europe'),('eu ','Europe'),
+                    ('germany','Europe'),('france','Europe'),('germany','Europe'),
+                    ('asia','Asia'),('japan','Asia'),('china','Asia'),('hong kong','Asia'),
+                    ('india','India'),('nse','India'),('bse','India'),
+                    ('global','Global'),('worldwide','Global'),('international','Global'),
+                ]
+                if 'geography' not in _SS.cp_ctx:
+                    for _gw, _gv in _geo_map:
+                        if _gw in _ui_lower:
+                            _SS.cp_ctx['geography'] = _gv; break
+
                 # ── Stage progression logic ───────────────────────
                 _cur_stage = _SS.cp_stage
                 # Check for stage advancement keywords in latest assistant message
@@ -5941,7 +6018,7 @@ with tab_comp:
                         # companies the AI named, not just what the user typed. ──────
                         if not _SS.cp_data:
                             _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-10:])
-                            _conv_tks = _comp_detect_ticker(_conv_text, [])
+                            _conv_tks = _comp_detect_ticker(_conv_text, [], _SS.get('cp_name_map', {}))
                             for _ctk in _conv_tks[:5]:
                                 if _ctk not in _SS.cp_data:
                                     _SS.cp_data[_ctk] = _comp_fetch(_ctk)
@@ -6040,16 +6117,20 @@ with tab_comp:
                          for m in _SS.cp_msgs[-12:]]
                 _reply = _comp_ai(_hist, _sys)
 
+                # ── Update dynamic name map from AI reply ─────────
+                if 'cp_name_map' not in _SS: _SS.cp_name_map = {}
+                _SS.cp_name_map = _comp_parse_name_map(_reply, _SS.cp_name_map)
+
                 # ── Check if reply triggers stage advance ─────────
                 if _SS.cp_stage == 'discovery' and any(
                     p in _reply for p in ['look at the fundamentals', 'give me a moment',
                                           'fundamentals properly', 'pull fundamentals',
                                           'pull the data']):
                     _SS.cp_stage = 'fundamental'
-                    # Scan full conversation for tickers the AI named
+                    # Scan full conversation using dynamic name map
                     if not _SS.cp_data:
                         _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-10:]) + " " + _reply
-                        _conv_tks = _comp_detect_ticker(_conv_text, [])
+                        _conv_tks = _comp_detect_ticker(_conv_text, [], _SS.cp_name_map)
                         for _ctk in _conv_tks[:5]:
                             if _ctk not in _SS.cp_data:
                                 _SS.cp_data[_ctk] = _comp_fetch(_ctk)
