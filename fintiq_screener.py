@@ -3304,8 +3304,17 @@ def _make_bulletin_fallback() -> dict:
 @st.fragment
 def _render_bulletin():
     import json as _bj, os as _bos
-    _b_key = __import__('datetime').datetime.now().strftime('%Y%m%d') + \
-             str(__import__('datetime').datetime.now().hour // 4)
+    # Four bulletin slots (all GMT) — published BEFORE each session so users can prepare:
+    #   06:00 — pre-UK open    (ready before London opens at 08:00)
+    #   12:00 — pre-US open    (ready before New York opens at ~14:30)
+    #   17:00 — UK close       (London closes ~16:30, recap + US afternoon setup)
+    #   21:00 — US close       (New York closes ~21:00, after-hours + Asia preview)
+    _now_h = __import__('datetime').datetime.utcnow().hour
+    if   _now_h <  6: _slot = '0600'
+    elif _now_h < 12: _slot = '1200'
+    elif _now_h < 17: _slot = '1700'
+    else:             _slot = '2100'
+    _b_key = __import__('datetime').datetime.utcnow().strftime('%Y%m%d') + _slot
     _api_key = _get_api_key()
 
     if _api_key:
@@ -3760,6 +3769,8 @@ Stocks: Palantir (PLTR), Nvidia (NVDA), Rolls-Royce (RR.L)
 FF4 period: I'll default to 2 years — or would you prefer 1 year or 3 years?
 ---
 • Do NOT start fetching data yet — wait for user confirmation of the stock list.
+• CRITICAL — EXAMPLES vs SELECTIONS: When you mention companies as EXAMPLES or ILLUSTRATIONS during the discovery conversation (e.g. "for context, Johnson & Johnson (JNJ) is a conservative pick"), do NOT include them in the CONFIRM_FETCH block. Only put stocks the USER has explicitly chosen to analyse in the Stocks list.
+• CRITICAL — NEVER claim you cannot fetch data for a stock the user names. If the user asks to analyse a specific stock (e.g. "let's focus on Deckers"), respond with willingness to pull it up and output the ---CONFIRM_FETCH--- block with that ticker.
 Geography context: {ctx.get('geography', 'not yet established — ask if unclear')}""",
 
         'confirm': f"""STAGE: Confirm & Fetch
@@ -3777,6 +3788,7 @@ GEOGRAPHY: User's market preference is {ctx.get('geography', 'not specified')}.
 Frame all comparisons against the relevant market norms — never US benchmarks for UK/EU/Asian stocks.
 
 CRITICAL — TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without ticker.
+CRITICAL — NEW STOCK REQUESTS: If the user asks to analyse a stock not yet in your data, say "Pulling up [Company (TICKER)] now — give me a moment." The platform will fetch it automatically. NEVER say you cannot access data for a named stock.
 
 YOUR JOB IN THIS STAGE:
 1. Lead with the single most interesting/unusual thing about this business — not a data dump
@@ -6307,14 +6319,25 @@ with tab_comp:
                                                 'build the report', 'put together a report']):
                     _SS.cp_stage = 'finalise'
 
-                # ── Always: if fundamental stage and no data yet, scan & fetch ──
-                # Runs every turn so we catch tickers even if stage advanced silently
+                # ── Always: if fundamental stage and no data yet, scan USER messages only ──
+                # IMPORTANT: only scan user messages — AI replies contain example tickers
+                # mentioned as illustrations which must NOT be auto-fetched.
                 if _SS.cp_stage == 'fundamental' and not _SS.cp_data:
-                    _conv_text = " ".join(m['content'] for m in _SS.cp_msgs[-20:]) + " " + _reply
-                    _conv_tks = _comp_detect_ticker(_conv_text, [], _SS.cp_name_map)
+                    _user_text = " ".join(
+                        m['content'] for m in _SS.cp_msgs[-20:] if m['role'] == 'user')
+                    _conv_tks = _comp_detect_ticker(_user_text, [], _SS.cp_name_map)
                     for _ctk in _conv_tks[:5]:
                         if _ctk not in _SS.cp_data:
                             _SS.cp_data[_ctk] = _comp_fetch(_ctk)
+
+                # ── Mid-session: user names a new ticker not yet in cp_data ──
+                # Allows adding stocks after the confirm stage without starting over.
+                if _SS.cp_stage in ('fundamental', 'valuation', 'technical'):
+                    _new_user_tks = _comp_detect_ticker(_ui_input, [], _SS.cp_name_map)
+                    for _ntk in _new_user_tks[:5]:
+                        if _ntk not in _SS.cp_data:
+                            _ff_yr_mid = _SS.cp_ctx.get('ff_years', 2)
+                            _SS.cp_data[_ntk] = _comp_fetch(_ntk, ff_years=_ff_yr_mid)
 
             # Strip the ---CONFIRM_FETCH--- block before displaying in chat
             import re as _re_strip
@@ -6423,20 +6446,147 @@ with tab_comp:
                 except Exception:
                     pass
 
+            # ── DCF inputs: ROIC, Inv Rate, Tax Rate, EPS, DPS ──────
+            _fin_df = _td.get('financials')
+            _cf_df  = _td.get('cashflow')
+            _eps_v  = _fv2(_ti.get('trailingEps'))
+            _dps_v  = _fv2(_ti.get('dividendRate'))
+            # Point-in-time ROIC: NOPAT / Invested Capital
+            _roic_v = None
+            try:
+                _ebit   = _fv2(_ti.get('ebit'))
+                _tx_r   = _fv2(_ti.get('effectiveTaxRate'))
+                _eq     = _fv2(_ti.get('totalStockholderEquity') or _ti.get('bookValue'))
+                _debt   = _fv2(_ti.get('totalDebt'))
+                if _ebit and _tx_r and _eq:
+                    _nopat = _ebit * (1 - _tx_r)
+                    _ic    = (_eq or 0) + (_debt or 0)
+                    if _ic > 0: _roic_v = _nopat / _ic
+            except Exception: pass
+            # Investment rate: CapEx / CFO
+            _inv_rate_v = None
+            try:
+                _cfo_v  = _fv2(_ti.get('operatingCashflow'))
+                _capex_v = _fv2(_ti.get('capitalExpenditures'))
+                if _cfo_v and _capex_v and _cfo_v != 0:
+                    _inv_rate_v = abs(_capex_v) / abs(_cfo_v)
+            except Exception: pass
+            # Effective tax rate
+            _taxr_v = _fv2(_ti.get('effectiveTaxRate'))
+
+            # ── 3-year averages from financials DataFrame ─────────
+            _avg_rev_g = _avg_earn_g = _avg_roic = _avg_inv = None
+            try:
+                if _fin_df is not None and not _fin_df.empty and _cf_df is not None:
+                    import numpy as _np_c
+                    _cols = min(4, _fin_df.shape[1])  # up to 4 years
+                    # Revenue CAGR proxy: year-on-year growth rates
+                    _rev_row = None
+                    for _rk in ['Total Revenue','Revenue']:
+                        if _rk in _fin_df.index:
+                            _rev_row = _fin_df.loc[_rk].iloc[:_cols].dropna()
+                            break
+                    if _rev_row is not None and len(_rev_row) >= 2:
+                        _rev_vals = [float(v) for v in _rev_row.values]
+                        _rg_rates = [((_rev_vals[i]/_rev_vals[i+1])-1) for i in range(len(_rev_vals)-1)]
+                        _avg_rev_g = float(_np_c.mean(_rg_rates))
+                    # Earnings growth: Net Income
+                    _ni_row = None
+                    for _nk in ['Net Income','Net Income Common Stockholders']:
+                        if _nk in _fin_df.index:
+                            _ni_row = _fin_df.loc[_nk].iloc[:_cols].dropna()
+                            break
+                    if _ni_row is not None and len(_ni_row) >= 2:
+                        _ni_vals = [float(v) for v in _ni_row.values]
+                        _ni_rates = [((_ni_vals[i]/_ni_vals[i+1])-1)
+                                     for i in range(len(_ni_vals)-1) if _ni_vals[i+1] != 0]
+                        if _ni_rates: _avg_earn_g = float(_np_c.mean(_ni_rates))
+                    # Avg ROIC: EBIT*(1-tax) / (equity+debt) per year from fins
+                    _ebit_row = None
+                    for _ek in ['EBIT','Operating Income']:
+                        if _ek in _fin_df.index:
+                            _ebit_row = _fin_df.loc[_ek].iloc[:_cols].dropna()
+                            break
+                    _tax_row = None
+                    for _tk2 in ['Tax Provision','Income Tax Expense']:
+                        if _tk2 in _fin_df.index:
+                            _tax_row = _fin_df.loc[_tk2].iloc[:_cols].dropna()
+                            break
+                    if _ebit_row is not None and _tax_row is not None and len(_ebit_row) >= 2:
+                        _roic_vals = []
+                        for _ci2 in range(min(len(_ebit_row), len(_tax_row))):
+                            try:
+                                _e = float(_ebit_row.iloc[_ci2])
+                                _t = abs(float(_tax_row.iloc[_ci2]))
+                                _tr2 = (_t / abs(_e)) if _e != 0 else 0.25
+                                _nopat2 = _e * (1 - min(_tr2, 0.5))
+                                _ic2 = (_eq or 0) + (_debt or 0)
+                                if _ic2 > 0: _roic_vals.append(_nopat2 / _ic2)
+                            except Exception: pass
+                        if _roic_vals: _avg_roic = float(_np_c.mean(_roic_vals))
+                    # Avg investment rate: capex / cfo from cashflow
+                    _capex_row = None
+                    for _ck in ['Capital Expenditure','Capital Expenditures']:
+                        if _ck in _cf_df.index:
+                            _capex_row = _cf_df.loc[_ck].iloc[:_cols].dropna()
+                            break
+                    _cfo_row = None
+                    for _ok in ['Operating Cash Flow','Cash Flow From Continuing Operating Activities']:
+                        if _ok in _cf_df.index:
+                            _cfo_row = _cf_df.loc[_ok].iloc[:_cols].dropna()
+                            break
+                    if _capex_row is not None and _cfo_row is not None:
+                        _ir_vals = []
+                        for _ci3 in range(min(len(_capex_row), len(_cfo_row))):
+                            try:
+                                _cx = abs(float(_capex_row.iloc[_ci3]))
+                                _co = abs(float(_cfo_row.iloc[_ci3]))
+                                if _co > 0: _ir_vals.append(_cx / _co)
+                            except Exception: pass
+                        if _ir_vals: _avg_inv = float(_np_c.mean(_ir_vals))
+            except Exception:
+                pass
+
             # ── Metric rows ───────────────────────────────────────
+            # Section header helper
+            def _sec(label):
+                return (label, f'<span style="color:#475569;font-size:0.6rem;font-weight:700;'
+                               f'letter-spacing:0.05em">{label}</span>')
+
             _mets = [
+                # — Valuation —
+                _sec('── VALUATION ──'),
                 ('Trailing PE',  f"{_fv2(_ti.get('trailingPE')):.1f}x" if _fv2(_ti.get('trailingPE')) else '—'),
                 ('Forward PE',   f"{_fv2(_ti.get('forwardPE')):.1f}x"  if _fv2(_ti.get('forwardPE'))  else '—'),
                 ('EV/EBITDA',    f"{_fv2(_ti.get('enterpriseToEbitda')):.1f}x" if _fv2(_ti.get('enterpriseToEbitda')) else '—'),
                 ('P/B',          f"{_fv2(_ti.get('priceToBook')):.2f}x" if _fv2(_ti.get('priceToBook')) else '—'),
+                # — Per Share —
+                _sec('── PER SHARE ──'),
+                ('EPS (TTM)',     f"${_eps_v:.2f}"  if _eps_v else '—'),
+                ('Div / Share',  f"${_dps_v:.2f}" if _dps_v else 'None'),
+                # — Quality —
+                _sec('── QUALITY ──'),
                 ('Rev Growth',   f"{_rg_v*100:+.1f}%" if _rg_v else '—'),
                 ('Gross Mgn',    f"{_gm_v*100:.1f}%"  if _gm_v else '—'),
-                ('Net Margin',   f"{_nm_v*100:.1f}%"  if _nm_v else '—'),
                 ('Op Margin',    f"{_om_v*100:.1f}%"  if _om_v else '—'),
-                ('ROE',          f"{_roe_v*100:.1f}%"   if _roe_v else '—'),
-                ('Debt/Eq',      f"{_de_v:.2f}x"        if _de_v is not None else '—'),
+                ('Net Margin',   f"{_nm_v*100:.1f}%"  if _nm_v else '—'),
+                ('ROE',          f"{_roe_v*100:.1f}%"  if _roe_v else '—'),
+                ('ROIC',         f"{_roic_v*100:.1f}%" if _roic_v else '—'),
+                ('Debt/Eq',      f"{_de_v:.2f}x"       if _de_v is not None else '—'),
                 ('Cash Conv',    f"{_fv2(_ti.get('operatingCashflow'))/(_fv2(_ti.get('netIncomeToCommon')) or 1):.2f}x"
                                  if _fv2(_ti.get('operatingCashflow')) and _fv2(_ti.get('netIncomeToCommon')) else '—'),
+                # — DCF Inputs —
+                _sec('── DCF INPUTS ──'),
+                ('Inv Rate',     f"{_inv_rate_v*100:.1f}%" if _inv_rate_v else '—'),
+                ('Tax Rate',     f"{_taxr_v*100:.1f}%"     if _taxr_v else '—'),
+                # — 3yr Averages —
+                _sec('── 3YR AVERAGES ──'),
+                ('Avg Rev Growth',  f"{_avg_rev_g*100:+.1f}%pa" if _avg_rev_g is not None else '—'),
+                ('Avg Earn Growth', f"{_avg_earn_g*100:+.1f}%pa" if _avg_earn_g is not None else '—'),
+                ('Avg ROIC',        f"{_avg_roic*100:.1f}%"      if _avg_roic is not None else '—'),
+                ('Avg Inv Rate',    f"{_avg_inv*100:.1f}%"        if _avg_inv is not None else '—'),
+                # — Technicals —
+                _sec('── TECHNICALS ──'),
                 ('vs 50d MA',    _ma50_str),
                 ('vs 200d MA',   _ma200_str),
                 ('52w High',     _wk52h_str),
@@ -6457,12 +6607,17 @@ with tab_comp:
             _tgt_row = (f'<div style="font-size:0.7rem;color:#10B981;margin-top:4px">'
                         f'Analyst target: <strong>{_tgt:.2f}</strong></div>') if _tgt else ''
 
-            _rows_html = "".join(
-                f'<div style="display:flex;justify-content:space-between;'
-                f'padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
-                f'<span style="color:#64748B;font-size:0.72rem">{_l}</span>'
-                f'<span style="color:#E2E8F0;font-size:0.74rem;font-weight:600">{_v}</span></div>'
-                for _l, _v in _mets)
+            def _met_html(label, val):
+                # Section headers have an HTML span as value
+                if label.startswith('──'):
+                    return (f'<div style="padding:6px 0 2px;margin-top:4px">'
+                            f'<span style="color:#475569;font-size:0.6rem;font-weight:700;'
+                            f'letter-spacing:0.07em">{label}</span></div>')
+                return (f'<div style="display:flex;justify-content:space-between;'
+                        f'padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
+                        f'<span style="color:#64748B;font-size:0.72rem">{label}</span>'
+                        f'<span style="color:#E2E8F0;font-size:0.74rem;font-weight:600">{val}</span></div>')
+            _rows_html = "".join(_met_html(_l, _v) for _l, _v in _mets)
 
             # Factor badge
             _ff = _td.get('factor')
