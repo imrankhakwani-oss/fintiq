@@ -3580,11 +3580,16 @@ def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
         except Exception:
             _fin = _cf = None
         # ── Fama-French factor lookup ─────────────────────────
+        # Try requested period first, then fall back to other periods so we
+        # don't show "Not in universe" just because one period's JSON is missing.
         _factor = None
         try:
-            _ff_data, _ = _fetch_factor_data(ff_years)
             _tk_upper = ticker.upper()
-            _factor = next((s for s in _ff_data if s.get('ticker','').upper() == _tk_upper), None)
+            for _try_yr in [ff_years] + [y for y in [1, 2, 3] if y != ff_years]:
+                _ff_data, _ = _fetch_factor_data(_try_yr)
+                _factor = next((s for s in _ff_data if s.get('ticker','').upper() == _tk_upper), None)
+                if _factor:
+                    break
         except Exception:
             pass
         return {'ticker': ticker.upper(), 'info': _info, 'hist': _hist,
@@ -3738,10 +3743,14 @@ def _comp_ai(messages: list, system: str) -> str:
     import anthropic as _a
     try:
         _r = _a.Anthropic(api_key=_k).messages.create(
-            model="claude-sonnet-5", max_tokens=1200, system=system, messages=messages)
-        return next(b.text for b in _r.content if hasattr(b, 'text')).strip()
+            model="claude-sonnet-5", max_tokens=1500, system=system, messages=messages)
+        _texts = [b.text for b in _r.content if hasattr(b, 'text') and b.text]
+        if _texts:
+            return _texts[0].strip()
+        return "I didn't generate a response — please try sending your message again."
     except Exception as _e:
-        return f"Connection issue: {str(_e)[:120]}. Please try again."
+        _msg = str(_e) or type(_e).__name__
+        return f"Connection issue: {_msg[:120]}. Please try again."
 
 
 def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
@@ -6464,28 +6473,51 @@ with tab_comp:
             _cf_df  = _td.get('cashflow')
             _eps_v  = _fv2(_ti.get('trailingEps'))
             _dps_v  = _fv2(_ti.get('dividendRate'))
-            # Point-in-time ROIC: NOPAT / Invested Capital
-            _roic_v = None
+            # ROIC, Inv Rate, Tax Rate — computed from financials/cashflow DFs
+            # (yfinance info dict does NOT have ebit/effectiveTaxRate/capitalExpenditures)
+            _roic_v = _inv_rate_v = _taxr_v = None
             try:
-                _ebit   = _fv2(_ti.get('ebit'))
-                _tx_r   = _fv2(_ti.get('effectiveTaxRate'))
-                _eq     = _fv2(_ti.get('totalStockholderEquity') or _ti.get('bookValue'))
-                _debt   = _fv2(_ti.get('totalDebt'))
-                if _ebit and _tx_r and _eq:
-                    _nopat = _ebit * (1 - _tx_r)
-                    _ic    = (_eq or 0) + (_debt or 0)
-                    if _ic > 0: _roic_v = _nopat / _ic
+                if _fin_df is not None and not _fin_df.empty:
+                    # EBIT: try multiple key names
+                    _ebit_pt = None
+                    for _ek in ['EBIT', 'Operating Income', 'Normalized EBITDA']:
+                        if _ek in _fin_df.index:
+                            _ebit_pt = float(_fin_df.loc[_ek].iloc[0]); break
+                    # Tax rate: Tax Provision / Pretax Income
+                    _pretax_pt = None
+                    for _pk in ['Pretax Income', 'Income Before Tax', 'Pretax Income']:
+                        if _pk in _fin_df.index:
+                            _pretax_pt = float(_fin_df.loc[_pk].iloc[0]); break
+                    _tax_pt = None
+                    for _tk3 in ['Tax Provision', 'Income Tax Expense']:
+                        if _tk3 in _fin_df.index:
+                            _tax_pt = abs(float(_fin_df.loc[_tk3].iloc[0])); break
+                    if _pretax_pt and _tax_pt and abs(_pretax_pt) > 0:
+                        _taxr_v = _tax_pt / abs(_pretax_pt)
+                    # ROIC = NOPAT / Invested Capital
+                    if _ebit_pt and _taxr_v:
+                        _nopat_pt = _ebit_pt * (1 - min(_taxr_v, 0.5))
+                        _debt_pt  = _fv2(_ti.get('totalDebt')) or 0
+                        _bvps     = _fv2(_ti.get('bookValue')) or 0
+                        _shares   = _fv2(_ti.get('sharesOutstanding') or _ti.get('impliedSharesOutstanding')) or 1
+                        _eq_pt    = _bvps * _shares
+                        _ic_pt    = _debt_pt + _eq_pt
+                        if _ic_pt > 0: _roic_v = _nopat_pt / _ic_pt
             except Exception: pass
-            # Investment rate: CapEx / CFO
-            _inv_rate_v = None
+            # Investment rate from cashflow DF
             try:
-                _cfo_v  = _fv2(_ti.get('operatingCashflow'))
-                _capex_v = _fv2(_ti.get('capitalExpenditures'))
-                if _cfo_v and _capex_v and _cfo_v != 0:
-                    _inv_rate_v = abs(_capex_v) / abs(_cfo_v)
+                if _cf_df is not None and not _cf_df.empty:
+                    _capex_pt = None
+                    for _ck in ['Capital Expenditure', 'Capital Expenditures', 'Purchase Of Property Plant And Equipment']:
+                        if _ck in _cf_df.index:
+                            _capex_pt = abs(float(_cf_df.loc[_ck].iloc[0])); break
+                    _cfo_pt = None
+                    for _ok in ['Operating Cash Flow', 'Cash Flow From Continuing Operating Activities', 'Total Cash From Operating Activities']:
+                        if _ok in _cf_df.index:
+                            _cfo_pt = abs(float(_cf_df.loc[_ok].iloc[0])); break
+                    if _capex_pt and _cfo_pt and _cfo_pt > 0:
+                        _inv_rate_v = _capex_pt / _cfo_pt
             except Exception: pass
-            # Effective tax rate
-            _taxr_v = _fv2(_ti.get('effectiveTaxRate'))
 
             # ── 3-year averages from financials DataFrame ─────────
             _avg_rev_g = _avg_earn_g = _avg_roic = _avg_inv = None
