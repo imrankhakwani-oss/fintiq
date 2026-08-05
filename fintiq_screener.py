@@ -3316,10 +3316,14 @@ def _render_bulletin():
     #   17:00 — UK close       (London closes ~16:30, recap + US afternoon setup)
     #   21:00 — US close       (New York closes ~21:00, after-hours + Asia preview)
     _now_h = __import__('datetime').datetime.utcnow().hour
-    if   _now_h <  6: _slot = '0600'
-    elif _now_h < 12: _slot = '1200'
-    elif _now_h < 17: _slot = '1700'
-    else:             _slot = '2100'
+    if   _now_h <  6: _slot = '0600'; _next_slot = '06:00'
+    elif _now_h < 12: _slot = '1200'; _next_slot = '12:00'
+    elif _now_h < 17: _slot = '1700'; _next_slot = '17:00'
+    else:             _slot = '2100'; _next_slot = '21:00'
+    # Next update time
+    _slot_hrs = {'0600': 12, '1200': 17, '1700': 21, '2100': 6}
+    _next_h = _slot_hrs[_slot]
+    _next_slot_label = f"{_next_h:02d}:00 GMT{'  (+1d)' if _slot == '2100' else ''}"
     _b_key = __import__('datetime').datetime.utcnow().strftime('%Y%m%d') + _slot
     _api_key = _get_api_key()
 
@@ -3380,7 +3384,10 @@ def _render_bulletin():
                 text-transform:uppercase">Fintiq · Global Markets Intelligence</div>
     <div style="font-size:1.15rem;font-weight:800;color:#F1F5F9">⏰ {_b_session} Bulletin</div>
   </div>
-  <div style="font-size:0.9rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
+  <div style="text-align:right">
+    <div style="font-size:0.9rem;font-weight:700;color:#94A3B8">{_b_ts}</div>
+    <div style="font-size:0.62rem;color:#475569;margin-top:2px">Next update {_next_slot_label}</div>
+  </div>
 </div>""", unsafe_allow_html=True)
 
     # ── The Call — headline + bullets ────────────────────────────
@@ -3769,14 +3776,14 @@ Rules:
 • When suggesting stocks, ALWAYS match their stated geography. If UK: suggest LSE-listed stocks with .L tickers.
   If global: mix markets explicitly. NEVER default to US-only unless they asked for US stocks.
 • CRITICAL — TICKER FORMAT: Every time you mention a company, ALWAYS write it as "Company Name (TICKER)" e.g. "Palantir (PLTR)", "AstraZeneca (AZN.L)". Never mention a company without its ticker in brackets.
-• TRANSITION — when the user has confirmed or selected their stocks, end your reply with EXACTLY this block (fill in the stocks):
+• TRANSITION — the moment the user agrees to look at specific stocks (says "yes", "let's do those", "explore all", "sounds good", "go ahead with those", or names specific tickers), you MUST end your reply with EXACTLY this block:
 ---CONFIRM_FETCH---
 Stocks: Palantir (PLTR), Nvidia (NVDA), Rolls-Royce (RR.L)
 FF4 period: I'll default to 2 years — or would you prefer 1 year or 3 years?
 ---
-• Do NOT start fetching data yet — wait for user confirmation of the stock list.
-• CRITICAL — EXAMPLES vs SELECTIONS: When you mention companies as EXAMPLES or ILLUSTRATIONS during the discovery conversation (e.g. "for context, Johnson & Johnson (JNJ) is a conservative pick"), do NOT include them in the CONFIRM_FETCH block. Only put stocks the USER has explicitly chosen to analyse in the Stocks list.
-• CRITICAL — NEVER claim you cannot fetch data for a stock the user names. If the user asks to analyse a specific stock (e.g. "let's focus on Deckers"), respond with willingness to pull it up and output the ---CONFIRM_FETCH--- block with that ticker.
+• This block is MANDATORY the moment stocks are agreed. Do not delay it. Do not add more questions first. Output it at the end of the very reply where the user agrees.
+• CRITICAL — EXAMPLES vs SELECTIONS: Companies mentioned as EXAMPLES/ILLUSTRATIONS (e.g. "for context, Johnson & Johnson (JNJ) is a conservative pick") must NOT appear in the CONFIRM_FETCH block. Only include stocks the user has explicitly chosen to analyse.
+• CRITICAL — NEVER claim you cannot fetch data for a stock the user names. If the user asks to analyse a specific stock, output the ---CONFIRM_FETCH--- block with that ticker immediately.
 Geography context: {ctx.get('geography', 'not yet established — ask if unclear')}""",
 
         'confirm': f"""STAGE: Confirm & Fetch
@@ -6339,7 +6346,7 @@ with tab_comp:
                 # ── Mid-session: user names a new ticker not yet in cp_data ──
                 # Allows adding stocks after the confirm stage without starting over.
                 if _SS.cp_stage in ('fundamental', 'valuation', 'technical'):
-                    _new_user_tks = _comp_detect_ticker(_ui_input, [], _SS.cp_name_map)
+                    _new_user_tks = _comp_detect_ticker(_user_input, [], _SS.cp_name_map)
                     for _ntk in _new_user_tks[:5]:
                         if _ntk not in _SS.cp_data:
                             _ff_yr_mid = _SS.cp_ctx.get('ff_years', 2)
