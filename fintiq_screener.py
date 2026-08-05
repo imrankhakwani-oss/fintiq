@@ -3310,21 +3310,26 @@ def _make_bulletin_fallback() -> dict:
 @st.fragment
 def _render_bulletin():
     import json as _bj, os as _bos
-    # Four bulletin slots (all GMT) — published BEFORE each session so users can prepare:
-    #   06:00 — pre-UK open    (ready before London opens at 08:00)
-    #   12:00 — pre-US open    (ready before New York opens at ~14:30)
-    #   17:00 — UK close       (London closes ~16:30, recap + US afternoon setup)
-    #   21:00 — US close       (New York closes ~21:00, after-hours + Asia preview)
-    _now_h = __import__('datetime').datetime.utcnow().hour
-    if   _now_h <  6: _slot = '0600'; _next_slot = '06:00'
-    elif _now_h < 12: _slot = '1200'; _next_slot = '12:00'
-    elif _now_h < 17: _slot = '1700'; _next_slot = '17:00'
-    else:             _slot = '2100'; _next_slot = '21:00'
-    # Next update time
-    _slot_hrs = {'0600': 12, '1200': 17, '1700': 21, '2100': 6}
-    _next_h = _slot_hrs[_slot]
-    _next_slot_label = f"{_next_h:02d}:00 GMT{'  (+1d)' if _slot == '2100' else ''}"
-    _b_key = __import__('datetime').datetime.utcnow().strftime('%Y%m%d') + _slot
+    # Five bulletin windows (all GMT) — new bulletin at each boundary:
+    #   00:00–05:59  carry yesterday's 21:00 bulletin  → next update 06:00 today
+    #   06:00–11:59  pre-UK open bulletin              → next update 12:00
+    #   12:00–16:59  pre-US open bulletin              → next update 17:00
+    #   17:00–20:59  UK close / US afternoon bulletin  → next update 21:00
+    #   21:00–23:59  US close bulletin                 → next update 06:00 tomorrow
+    _now_dt = __import__('datetime').datetime.utcnow()
+    _now_h  = _now_dt.hour
+    if   _now_h < 6:
+        # Still running on yesterday's 21:00 bulletin
+        _yday = (_now_dt - __import__('datetime').timedelta(days=1)).strftime('%Y%m%d')
+        _slot = '2100'; _b_key = _yday + _slot; _next_slot_label = '06:00 GMT (today)'
+    elif _now_h < 12:
+        _slot = '0600'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '12:00 GMT'
+    elif _now_h < 17:
+        _slot = '1200'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '17:00 GMT'
+    elif _now_h < 21:
+        _slot = '1700'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '21:00 GMT'
+    else:
+        _slot = '2100'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '06:00 GMT (+1d)'
     _api_key = _get_api_key()
 
     if _api_key:
@@ -3743,14 +3748,22 @@ def _comp_ai(messages: list, system: str) -> str:
     import anthropic as _a
     try:
         _r = _a.Anthropic(api_key=_k).messages.create(
-            model="claude-sonnet-5", max_tokens=1500, system=system, messages=messages)
-        _texts = [b.text for b in _r.content if hasattr(b, 'text') and b.text]
-        if _texts:
-            return _texts[0].strip()
-        return "I didn't generate a response — please try sending your message again."
+            model="claude-sonnet-5", max_tokens=2000, system=system, messages=messages)
+        # Handle both old SDK (dicts) and new SDK (objects) response formats
+        _text = ''
+        for _b in _r.content:
+            if isinstance(_b, dict):
+                if _b.get('type') == 'text' and _b.get('text'):
+                    _text = _b['text']; break
+            elif getattr(_b, 'type', '') == 'text' and getattr(_b, 'text', ''):
+                _text = _b.text; break
+        if _text:
+            return _text.strip()
+        _stop = getattr(_r, 'stop_reason', 'unknown')
+        return f"No response generated (stop={_stop}) — please try again."
     except Exception as _e:
         _msg = str(_e) or type(_e).__name__
-        return f"Connection issue: {_msg[:120]}. Please try again."
+        return f"Connection issue ({_msg[:100]}) — please try again."
 
 
 def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
@@ -6027,7 +6040,7 @@ with tab_comp:
         _ts_lines.append("")
     _transcript_txt = "\n".join(_ts_lines)
 
-    _hc1, _hc2, _hc3, _hc4, _hc5, _hc6 = st.columns([3, 2, 2, 2, 2, 2])
+    _hc1, _hc2, _hc3, _hc4, _hc5, _hc6 = st.columns([3, 2, 2, 2, 2, 2], gap="small")
     with _hc1:
         st.markdown(
             '<div style="font-size:1.05rem;font-weight:700;color:#E2E8F0;padding-top:6px">'
@@ -6557,7 +6570,11 @@ with tab_comp:
                         if _tk2 in _fin_df.index:
                             _tax_row = _fin_df.loc[_tk2].iloc[:_cols].dropna()
                             break
-                    if _ebit_row is not None and _tax_row is not None and len(_ebit_row) >= 2:
+                    # Build invested capital from info dict (available for avg ROIC calc)
+                    _ic_avg = (_fv2(_ti.get('totalDebt')) or 0) + \
+                              ((_fv2(_ti.get('bookValue')) or 0) *
+                               (_fv2(_ti.get('sharesOutstanding') or _ti.get('impliedSharesOutstanding')) or 1))
+                    if _ebit_row is not None and _tax_row is not None and len(_ebit_row) >= 2 and _ic_avg > 0:
                         _roic_vals = []
                         for _ci2 in range(min(len(_ebit_row), len(_tax_row))):
                             try:
@@ -6565,8 +6582,7 @@ with tab_comp:
                                 _t = abs(float(_tax_row.iloc[_ci2]))
                                 _tr2 = (_t / abs(_e)) if _e != 0 else 0.25
                                 _nopat2 = _e * (1 - min(_tr2, 0.5))
-                                _ic2 = (_eq or 0) + (_debt or 0)
-                                if _ic2 > 0: _roic_vals.append(_nopat2 / _ic2)
+                                if _ic_avg > 0: _roic_vals.append(_nopat2 / _ic_avg)
                             except Exception: pass
                         if _roic_vals: _avg_roic = float(_np_c.mean(_roic_vals))
                     # Avg investment rate: capex / cfo from cashflow
