@@ -3573,7 +3573,8 @@ def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
 
 
 def _comp_data_summary(d: dict) -> str:
-    """Convert ticker data dict → compact text for Claude system prompt."""
+    """Convert ticker data dict → compact text for Claude system prompt.
+    Includes 3-5yr historical averages for DCF assumptions."""
     if d.get('error'):
         return f"{d['ticker']}: data unavailable ({d['error']})"
     _i = d.get('info', {})
@@ -3592,9 +3593,70 @@ def _comp_data_summary(d: dict) -> str:
     _tgt  = _f(_i.get('targetMeanPrice')); _rec = _f(_i.get('recommendationMean'))
     _na   = _i.get('numberOfAnalystOpinions', '')
     _beta = _f(_i.get('beta'))
+    _tax  = _f(_i.get('effectiveTaxRate')) or 0.21
     _from_hi = ((_pr - _hi) / _hi * 100) if _pr and _hi else None
+
+    # ── 3-5yr historical averages from financials ─────────────
+    _hist_block = ""
+    try:
+        _fin = d.get('financials')
+        _cf  = d.get('cashflow')
+        if _fin is not None and not _fin.empty:
+            import pandas as _pd_s
+            _cols = min(len(_fin.columns), 4)   # up to 4 years
+            _rev_hist, _oi_hist, _ni_hist, _capex_hist, _cfo_hist = [], [], [], [], []
+            for _c in _fin.columns[:_cols]:
+                _rv = _f(_fin.loc['Total Revenue', _c]) if 'Total Revenue' in _fin.index else None
+                _oi_v = _f(_fin.loc['Operating Income', _c]) if 'Operating Income' in _fin.index else None
+                _ni_v = _f(_fin.loc['Net Income', _c]) if 'Net Income' in _fin.index else None
+                if _rv:  _rev_hist.append(_rv)
+                if _oi_v and _rv: _oi_hist.append(_oi_v / _rv)
+                if _ni_v: _ni_hist.append(_ni_v)
+            if _cf is not None and not _cf.empty:
+                for _c in _cf.columns[:_cols]:
+                    _cfo_v = _f(_cf.loc['Operating Cash Flow', _c]) if 'Operating Cash Flow' in _cf.index else None
+                    _cap_v = _f(_cf.loc['Capital Expenditure', _c])  if 'Capital Expenditure'  in _cf.index else None
+                    if _cfo_v: _cfo_hist.append(_cfo_v)
+                    if _cap_v and _cfo_v and _cfo_v != 0: _capex_hist.append(abs(_cap_v) / _cfo_v)
+
+            # Revenue CAGR
+            _rev_cagr_str = ""
+            if len(_rev_hist) >= 2:
+                _r_cagr = ((_rev_hist[0] / _rev_hist[-1]) ** (1 / (len(_rev_hist) - 1)) - 1) * 100
+                _rev_cagr_str = f"{_r_cagr:+.1f}%pa ({len(_rev_hist)}yr CAGR)"
+
+            # Avg operating margin
+            _avg_om = (sum(_oi_hist) / len(_oi_hist) * 100) if _oi_hist else None
+
+            # ROIC proxy: NOPAT / (equity + debt)
+            _roic_str = ""
+            _eq = _f(_i.get('bookValue')) or 0
+            _shares = _f(_i.get('sharesOutstanding')) or 1
+            _total_eq = _eq * _shares
+            _total_debt = _f(_i.get('totalDebt')) or 0
+            _invested_cap = _total_eq + _total_debt
+            if _ni_hist and _invested_cap > 0:
+                _nopat = _ni_hist[0] * (1 - _tax)
+                _roic  = _nopat / _invested_cap * 100
+                _roic_str = f"{_roic:.1f}%"
+
+            # Avg investment rate (capex/CFO)
+            _avg_inv_rate = (sum(_capex_hist) / len(_capex_hist) * 100) if _capex_hist else None
+
+            _parts = []
+            if _rev_cagr_str: _parts.append(f"Revenue CAGR: {_rev_cagr_str}")
+            if _avg_om:        _parts.append(f"Avg Op Margin: {_avg_om:.1f}%")
+            if _roic_str:      _parts.append(f"ROIC (approx): {_roic_str}")
+            if _avg_inv_rate:  _parts.append(f"Avg Investment Rate: {_avg_inv_rate:.1f}%")
+            _parts.append(f"Tax rate (effective): {_tax*100:.1f}%")
+            _parts.append(f"D/E: {_de:.2f}x" if _de else "D/E: not available")
+            if _parts:
+                _hist_block = "Historical DCF inputs (" + str(_cols) + "yr avg): " + " | ".join(_parts)
+    except Exception:
+        pass
+
     _lines = [
-        f"── {d['ticker']} | {_i.get('longName','')} | {_i.get('sector','')} | {_i.get('exchange','')}",
+        f"── {d['ticker']} | {_i.get('longName','')} | {_i.get('sector','')} | {_i.get('industry','')} | {_i.get('exchange','')}",
         f"Price: {_pr:.2f} {_i.get('currency','')}" + (f" | 52wk {_lo:.2f}–{_hi:.2f}" if _lo and _hi else "") + (f" | {_from_hi:+.1f}% from high" if _from_hi else ""),
         f"Mkt cap: {'%.1fB'%(_cap/1e9) if _cap else '?'} | Beta: {_beta:.2f}" if _beta else f"Mkt cap: {'%.1fB'%(_cap/1e9) if _cap else '?'}",
         ("Valuation — " + " | ".join(filter(None, [
@@ -3607,6 +3669,7 @@ def _comp_data_summary(d: dict) -> str:
         f"Revenue: {'%.1fB'%(_rev/1e9) if _rev else '?'}" + (f" | growth {_rg*100:+.1f}%yoy" if _rg else ""),
         f"Margins — gross {_gm*100:.1f}% | operating {_om*100:.1f}% | net {_nm*100:.1f}%" if _gm and _om else "",
         f"ROE: {_roe*100:.1f}% | D/E: {_de:.2f}x | FCF: {'%.1fB'%(_fcf/1e9)}" if _roe and _de and _fcf else "",
+        _hist_block,
         f"Analyst consensus ({_na}): target {_tgt:.2f} | rating {_rec:.1f}/5 (1=StrongBuy)" if _tgt and _rec else "",
         f"Business: {_i.get('longBusinessSummary','')[:300]}..." if _i.get('longBusinessSummary') else "",
     ]
@@ -3709,35 +3772,86 @@ Proposed stocks: {ctx.get('proposed', 'see conversation above')}
 • CRITICAL — TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without its ticker.""",
 
         'fundamental': f"""STAGE: Fundamental Analysis
-You have live data above. Use it conversationally — never recite metrics as a table.
-GEOGRAPHY: User's market preference is {ctx.get('geography', 'not specified — respect whichever market their stocks are from')}.
-If data shows a UK/European/Asian stock, frame comparisons against that market's norms, not US benchmarks.
-• CRITICAL — TICKER FORMAT: Every time you mention a company, ALWAYS write it as "Company Name (TICKER)" e.g. "Nvidia (NVDA)", "Barclays (BARC.L)". Never mention a company without its ticker in brackets.
-• Lead with what's genuinely interesting or unusual — not a data dump
-• Cover business quality: competitive moat, revenue trajectory, margin quality, balance sheet
-• Fama-French lens: comment on size, value, profitability, investment factors naturally
-  (Note: FF4 factor scores above are from the US universe — flag this for non-US stocks)
-• Challenge if user is momentum-chasing: "You mentioned it's up 80% — I want to make sure we're evaluating the business, not the price action"
-• Compare to sector and regional peers where relevant
-• End: 'The quality picture is clear. The real question is whether the price reflects it. Shall we look at valuation?'""",
+You have live data above including historical DCF inputs. Use it conversationally — never dump raw numbers.
+GEOGRAPHY: User's market preference is {ctx.get('geography', 'not specified')}.
+Frame all comparisons against the relevant market norms — never US benchmarks for UK/EU/Asian stocks.
 
-        'valuation': f"""STAGE: Valuation (3-Phase DCF with McKinsey Continuing Value)
-The right panel shows DCF inputs and results. Reference them in conversation.
-• Ask the user what revenue growth rate they think is realistic — make them own the assumption
-• Challenge optimistic inputs: "That's on the high end — historically this business has grown at X%. What gives you confidence in that rate?"
-• Frame the result as a range not a point: "The DCF suggests intrinsic value of X–Y per share"
-• Monte Carlo: "Stress-testing 4,000 scenarios, 80% of outcomes land between X and Y — the stock at [price] sits [above/below/within] that range"
-• Margin of safety discussion: is the user paying for certainty or buying uncertainty?
-• End: 'Valuation sets the target. Technicals tell us about timing. Shall we look at the chart?'""",
+CRITICAL — TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without ticker.
+
+YOUR JOB IN THIS STAGE:
+1. Lead with the single most interesting/unusual thing about this business — not a data dump
+2. Cover competitive moat and what sustains it (or doesn't)
+3. Revenue trajectory: reference the historical CAGR from the data above. Is growth accelerating or decelerating?
+4. Margin quality: show historical operating margin trend. Is it expanding or compressing? Why?
+5. ROIC vs cost of capital: is the business creating or destroying value? Reference historical ROIC from data above.
+6. Balance sheet: D/E and interest coverage — can they fund growth without dilution?
+7. FAMA-FRENCH FACTOR ANALYSIS (MANDATORY): You MUST discuss the FF4 factor signal from the data above.
+   - State the signal (STRONG ALPHA / MARGINAL / AVOID) and what it means in plain English
+   - Explain the alpha, beta, SMB, HML, MOM loadings in context
+   - Flag: "This is US-calibrated data — treat directionally for non-US stocks. Updated weekly."
+   - If factor data unavailable: say so explicitly and explain why (not in universe)
+8. Compare to sector/industry peers: reference the sector context, typical margins and valuations for this industry
+9. Flag any behavioural biases in user reasoning (recency, momentum-chasing, anchoring)
+10. END with: "The quality picture is clear — let me take you through the valuation now." (this triggers next stage)""",
+
+        'valuation': f"""STAGE: Valuation — 3-Phase DCF + McKinsey Terminal Value + Monte Carlo
+You have live data including HISTORICAL AVERAGES (revenue CAGR, avg op margin, ROIC, investment rate, tax rate, D/E).
+
+YOUR JOB — BE PROACTIVE, NOT PASSIVE. Do not wait for the user to ask:
+
+STEP 1 — PRESENT HISTORICAL CONTEXT FIRST (in your opening message for this stage):
+Present these historical figures from the data above so the user has an informed baseline:
+- Revenue CAGR (3-4yr): X%
+- Average operating margin: X%
+- ROIC: X%
+- Average investment rate: X%
+- Effective tax rate: X% (treat as constant)
+- D/E ratio: X (treat as constant for WACC)
+Say: "These are your anchor points. Now let's think about what's realistic going forward."
+
+STEP 2 — ASK FOR ALL DCF ASSUMPTIONS IN ONE MESSAGE:
+Ask the user to confirm/adjust these assumptions for all three phases in a single structured ask:
+"To run the DCF I need your view on five inputs across three periods. I've pre-filled from historical data — push back on any you disagree with:
+
+Phase 1 (Yrs 1-3 — near term): Revenue growth __% | Operating margin __%
+Phase 2 (Yrs 4-7 — mid term): Revenue growth __% | Operating margin __%
+Phase 3 (Yrs 8-10 — long term): Revenue growth __% | Operating margin __%
+Investment rate: __% (how much of operating profit reinvested — from historical avg above)
+WACC: __% (your cost of capital assumption — I'd suggest X% based on beta and market)
+Terminal growth rate: __% (long-run GDP-like, typically 2-3%)
+
+Happy to discuss any of these before we run the numbers."
+
+STEP 3 — WHEN USER CONFIRMS:
+Run the DCF mentally and present:
+- Intrinsic value per share (RANGE, not point estimate)
+- Current price vs intrinsic value: premium/discount %
+- MONTE CARLO: "Stress-testing 4,000 scenarios with random variation in growth and margins — 80% of outcomes land between X and Y. The stock at [price] sits [above/below/within] that range."
+- WACC SENSITIVITY: Present a simple 3×3 grid in text: Low/Mid/High WACC × Low/Mid/High terminal growth → show implied value per share for each cell
+- Margin of safety discussion: how much buffer does the user have?
+
+STEP 4 — END: "Valuation sets the floor and ceiling. Technicals tell us about timing and entry. Let me show you the chart picture now." """,
 
         'technical': f"""STAGE: Technical Analysis
-Describe price action like a seasoned chartist — not a data table.
-• Describe the trend character (strength, momentum, distribution/accumulation patterns)
-• Identify key support/resistance levels and what they mean
-• Discuss entry zone options given their horizon
-• Mention upcoming catalysts: earnings, macro events relevant to this stock
-• Ask: "Given your [X]-month horizon and the setup we've discussed, where are you thinking on timing?"
-• End: "I think we have enough. Let me pull this together and we can finalise your watchlist."
+You have 1yr price history in the data above (open/high/low/close/volume). Use it.
+A CHART IS DISPLAYED below the chat for each stock — reference it explicitly.
+
+YOUR JOB — BE SPECIFIC, NOT GENERIC:
+1. TREND CHARACTER: Is the stock in a clear uptrend, downtrend, or consolidating? What does the slope tell you about momentum?
+2. KEY LEVELS: Identify the most important support and resistance levels from the 1yr range. Give actual price numbers.
+   - "Strong support around X — this has held twice in the last 6 months"
+   - "Resistance at Y — three failed attempts to break this level"
+3. MOVING AVERAGES: Is price above/below 50d MA and 200d MA? What does the MA crossover setup say?
+   (Use vs 50d MA and vs 200d MA data from the stock data above)
+4. MOMENTUM: Describe volume patterns and price acceleration/deceleration. Any divergence signals?
+5. 52-WEEK CONTEXT: Where does current price sit relative to the 52wk range? Near highs = breakout or exhaustion?
+6. ENTRY ZONE: Given the user's {ctx.get('investment_horizon', '1-3 month')} horizon, identify:
+   - Ideal entry zone (price level where risk/reward is best)
+   - Stop-loss reference point
+   - Target exit zone based on resistance
+7. CATALYSTS: What near-term events (earnings, macro, sector events) could trigger the move?
+8. Ask: "The chart suggests [summary]. Given your [horizon] horizon, does the entry zone make sense with your thesis?"
+9. END: "We've covered quality, value, and timing. Let me pull this together into your watchlist."
 Current watchlist: {_wl} ({len(_wl)}/{_max} slots)""",
 
         'finalise': f"""STAGE: Finalise Watchlist
@@ -6066,18 +6180,8 @@ with tab_comp:
                             _SS.cp_data[_ctk] = _comp_fetch(_ctk, ff_years=_ff_yr)
                     _SS.cp_stage = 'fundamental'
 
-                elif _cur_stage == 'fundamental' and any(
-                        p in _last_ast for p in ['look at valuation', 'what it\'s worth',
-                                                  'shall we look at', 'turn to valuation']):
-                    _SS.cp_stage = 'valuation'
-                elif _cur_stage == 'valuation' and any(
-                        p in _last_ast for p in ['look at the chart', 'technical', 'timing',
-                                                  'technicals tell us']):
-                    _SS.cp_stage = 'technical'
-                elif _cur_stage == 'technical' and any(
-                        p in _last_ast for p in ['finalise', 'finalize', 'watchlist',
-                                                  'pull this together']):
-                    _SS.cp_stage = 'finalise'
+                # Note: fundamental→valuation→technical→finalise transitions are handled
+                # in the post-reply block below (checking _reply, not _last_ast)
 
                 # ── Run DCF + Monte Carlo when entering valuation ─
                 if _SS.cp_stage == 'valuation':
@@ -6167,6 +6271,7 @@ with tab_comp:
 
                 # ── Check if reply triggers stage advance ─────────
                 # Also check for CONFIRM_FETCH in the reply itself
+                _reply_lower = _reply.lower()
                 if _SS.cp_stage == 'discovery' and '---CONFIRM_FETCH---' in _reply:
                     _cf_m2 = _re_stage.search(
                         r'---CONFIRM_FETCH---[\s\S]*?Stocks:\s*(.+?)(?:\n|FF4|$)', _reply)
@@ -6177,12 +6282,30 @@ with tab_comp:
                         _SS.cp_ctx['proposed_tickers'] = _prop_tks2[:5]
                     _SS.cp_stage = 'confirm'
                 elif _SS.cp_stage == 'discovery' and any(
-                    p in _reply for p in ['look at the fundamentals', 'give me a moment',
+                    p in _reply_lower for p in ['look at the fundamentals', 'give me a moment',
                                           'fundamentals properly', 'pull fundamentals',
                                           'pull the data', 'break down', 'dig into',
                                           'go deeper', 'let me pull', 'pull the numbers',
                                           'side by side', 'compare all']):
                     _SS.cp_stage = 'fundamental'
+                elif _SS.cp_stage == 'fundamental' and any(
+                    p in _reply_lower for p in ['quality picture is clear', 'take you through the valuation',
+                                                'turn to valuation', 'move to valuation',
+                                                'look at valuation', 'what it\'s worth',
+                                                'let me take you through', 'on to valuation']):
+                    _SS.cp_stage = 'valuation'
+                elif _SS.cp_stage == 'valuation' and any(
+                    p in _reply_lower for p in ['valuation sets the floor', 'technicals tell us about timing',
+                                                'show you the chart', 'look at the chart',
+                                                'chart picture now', 'technical picture',
+                                                'move to technicals', 'turn to technicals']):
+                    _SS.cp_stage = 'technical'
+                elif _SS.cp_stage == 'technical' and any(
+                    p in _reply_lower for p in ["covered quality, value, and timing",
+                                                'pull this together', 'finalise', 'finalize',
+                                                'let me summarise', 'let me summarize',
+                                                'build the report', 'put together a report']):
+                    _SS.cp_stage = 'finalise'
 
                 # ── Always: if fundamental stage and no data yet, scan & fetch ──
                 # Runs every turn so we catch tickers even if stage advanced silently
@@ -6425,12 +6548,42 @@ with tab_comp:
                 else:
                     st.markdown(_card_html, unsafe_allow_html=True)
 
-                # Technical chart in its own column
-                if _stage == 'technical' and _td.get('hist') is not None:
+                # Price chart — shown from valuation stage onwards
+                if _stage in ('valuation','technical','finalise','report') and _td.get('hist') is not None:
                     _h = _td['hist']
                     if not _h.empty:
-                        st.line_chart(_h['Close'].tail(180), use_container_width=True,
-                                      height=120, color="#10B981")
+                        import pandas as _pd_ch
+                        _ch_df = _h[['Close']].tail(252).copy()
+                        _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
+                        # Add MA50 and MA200
+                        _ch_df['MA50']  = _ch_df['Close'].rolling(50).mean()
+                        _ch_df['MA200'] = _ch_df['Close'].rolling(200).mean()
+                        st.caption(f"📈 {_tk} — 1yr price + MA50/MA200")
+                        st.line_chart(_ch_df, use_container_width=True, height=150,
+                                      color=["#10B981","#F59E0B","#6366F1"])
+
+                # WACC sensitivity table — shown in valuation stage
+                if _stage == 'valuation' and _an.get('mc'):
+                    _mc_v = _an['mc']
+                    # Build WACC × terminal growth sensitivity grid
+                    _wacc_vals = [0.07, 0.09, 0.11]
+                    _tg_vals   = [0.01, 0.02, 0.03]
+                    _base_ps   = _an.get('dcf_ps', _mc_v.get('p50', 0))
+                    if _base_ps:
+                        st.caption("🎲 WACC × Terminal Growth sensitivity (intrinsic value per share)")
+                        import pandas as _pd_wt
+                        _sens = {}
+                        for _wv in _wacc_vals:
+                            _row = {}
+                            for _tgv in _tg_vals:
+                                # Simple Gordon adjustment: multiply base DCF by ratio of (WACC-tg) factors
+                                _base_factor = (0.09 - 0.02)
+                                _adj_factor  = (_wv - _tgv)
+                                _adj_ps = _base_ps * (_base_factor / _adj_factor) if _adj_factor > 0 else _base_ps
+                                _row[f"TG {_tgv*100:.0f}%"] = round(_adj_ps, 2)
+                            _sens[f"WACC {_wv*100:.0f}%"] = _row
+                        _sens_df = _pd_wt.DataFrame(_sens).T
+                        st.dataframe(_sens_df, use_container_width=True)
 
     # Report download (shows below cards when report generated)
     if _stage == 'report' and _SS.cp_report:
