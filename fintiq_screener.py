@@ -3197,7 +3197,13 @@ def _make_bulletin(_cache_key: str) -> dict:
     )
 
     _api_key = _get_api_key()
-    import anthropic as _anth_b, time as _time_b
+    import anthropic as _anth_b, time as _time_b, os as _os_bm
+    _api_key = _os_bm.environ.get("ANTHROPIC_API_KEY", "")
+    if not _api_key:
+        try: _api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        except Exception: pass
+    if not _api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY not available inside _make_bulletin")
     _client = _anth_b.Anthropic(api_key=_api_key)
     for _attempt in range(3):
         try:
