@@ -3748,7 +3748,7 @@ def _comp_ai(messages: list, system: str) -> str:
     import anthropic as _a
     try:
         _r = _a.Anthropic(api_key=_k).messages.create(
-            model="claude-sonnet-5", max_tokens=3500, system=system, messages=messages)
+            model="claude-sonnet-5", max_tokens=5000, system=system, messages=messages)
         # Handle both old SDK (dicts) and new SDK (objects) response formats
         _text = ''
         for _b in _r.content:
@@ -3844,6 +3844,8 @@ YOUR JOB IN THIS STAGE:
         'valuation': f"""STAGE: Valuation — 3-Phase DCF + McKinsey Terminal Value + Monte Carlo
 You have live data including HISTORICAL AVERAGES (revenue CAGR, avg op margin, ROIC, investment rate, tax rate, D/E).
 
+LENGTH DISCIPLINE: Keep each reply under 400 words. Split across turns — do not dump everything at once. One stock at a time if multiple stocks.
+
 YOUR JOB — BE PROACTIVE, NOT PASSIVE. Do not wait for the user to ask:
 
 STEP 1 — PRESENT HISTORICAL CONTEXT FIRST (in your opening message for this stage):
@@ -3925,6 +3927,7 @@ CORE RULES (never break these):
 2. ONE question per response maximum
 3. Flag behavioural biases gently when you spot them
 4. No filler phrases ("great question!", "absolutely!", "certainly!")
+5. LENGTH: Keep each reply concise — under 400 words. Split long analyses across multiple turns rather than one giant block.
 5. Be concise — maximum 4 short paragraphs per response
 6. If asked directly "should I buy X?": "I'm here to help you think through the analysis — the decision is yours. What's your instinct on it, and why?"
 7. Every session ends: analysis for education, not financial advice
@@ -7911,7 +7914,7 @@ Return ONLY valid JSON (no markdown):
   "reasoning": "<3-paragraph explanation citing specific data points, how you adjusted vs smart defaults, and why>"
 }}"""
                             _resp = _ai_c.messages.create(
-                                model="claude-sonnet-5", max_tokens=1500,
+                                model="claude-sonnet-5", max_tokens=2000,
                                 messages=[{"role": "user", "content": _dcf_prompt}]
                             )
                             import json as _json
@@ -8755,7 +8758,7 @@ Be direct, analytical, and specific. Avoid generic statements. Write like you're
 """
                         _resp = _ai_client.messages.create(
                             model="claude-sonnet-5",
-                            max_tokens=2000,
+                            max_tokens=3000,
                             messages=[{"role":"user","content":_prompt}]
                         )
                         _commentary = _resp.content[0].text
