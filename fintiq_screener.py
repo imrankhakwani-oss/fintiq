@@ -3578,7 +3578,7 @@ def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
                   or _info.get('previousClose'))
         if not _price:
             return {'ticker': ticker, 'error': f'No price data for {ticker}'}
-        _hist = _tk.history(period="1y", interval="1d", auto_adjust=True)
+        _hist = _tk.history(period="5y", interval="1d", auto_adjust=True)
         try:
             _fin = _tk.financials
             _cf  = _tk.cashflow
@@ -3824,6 +3824,9 @@ Frame all comparisons against the relevant market norms — never US benchmarks 
 
 CRITICAL — TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without ticker.
 CRITICAL — NEW STOCK REQUESTS: If the user asks to analyse a stock not yet in your data, say "Pulling up [Company (TICKER)] now — give me a moment." The platform will fetch it automatically. NEVER say you cannot access data for a named stock.
+CRITICAL — COMPETITOR DATA: You CANNOT fetch live data for companies not in your current data set. If the user asks to compare peers, EITHER (a) ask them to add the peer tickers so the platform can fetch live data, OR (b) use directional general knowledge and flag it clearly as "directional, not live-verified — add [ticker] to the session for live numbers." NEVER promise to "queue up" or "pull" data you don't have. NEVER present unverified general knowledge as if it were live data.
+CRITICAL — HONEST DATA GAPS: If you don't have a data point, say so clearly and offer the best directional reasoning you can. Never fill data gaps with fabricated numbers.
+CRITICAL — PUSH BACK ON USER CONCLUSIONS: Don't simply agree with the user's thesis. Always ask: "What would make you wrong?" and "What's the bear case?" before the user moves to a watchlist decision.
 
 YOUR JOB IN THIS STAGE:
 1. Lead with the single most interesting/unusual thing about this business — not a data dump
@@ -3836,10 +3839,14 @@ YOUR JOB IN THIS STAGE:
    - State the signal (STRONG ALPHA / MARGINAL / AVOID) and what it means in plain English
    - Explain the alpha, beta, SMB, HML, MOM loadings in context
    - Flag: "This is US-calibrated data — treat directionally for non-US stocks. Updated weekly."
-   - If factor data unavailable: say so explicitly and explain why (not in universe)
-8. Compare to sector/industry peers: reference the sector context, typical margins and valuations for this industry
-9. Flag any behavioural biases in user reasoning (recency, momentum-chasing, anchoring)
-10. END with: "The quality picture is clear — let me take you through the valuation now." (this triggers next stage)""",
+   - If factor data unavailable: explain that the stock is not in the pre-screened factor universe (typically smaller/mid-caps or stocks that failed data quality filters), but DO NOT treat this as a negative signal. Instead, compute directional factor exposure from beta (market risk), market cap context (SMB), and P/B ratio (HML) as a qualitative substitute.
+   - NEVER simply say "not available" and move on — always give the user something analytical about factor exposure.
+8. Compare to sector/industry peers: reference the sector context, typical margins and valuations for this industry. If the user asks for live peer data you don't have, offer to add those tickers to the session.
+9. SHORT INTEREST & POSITIONING: Comment on short interest % (from data if available) — a heavily shorted stock has squeeze potential but also signals bearish informed money.
+10. FLAG NEXT EARNINGS: Mention the next earnings date if available in data — this is the most important near-term catalyst for any thesis.
+11. Flag any behavioural biases in user reasoning (recency, momentum-chasing, anchoring)
+12. STRESS-TEST THE THESIS: Before moving to valuation, explicitly ask "What would make this thesis wrong?" — don't let the user skip this.
+13. END with: "The quality picture is clear — let me take you through the valuation now." (this triggers next stage)""",
 
         'valuation': f"""STAGE: Valuation — 3-Phase DCF + McKinsey Terminal Value + Monte Carlo
 You have live data including HISTORICAL AVERAGES (revenue CAGR, avg op margin, ROIC, investment rate, tax rate, D/E).
@@ -6808,37 +6815,113 @@ with tab_comp:
                                 st.rerun()
 
                 # Price chart — shown from valuation stage onwards
-                if _stage in ('valuation','technical','finalise','report') and _td.get('hist') is not None:
-                    _h = _td['hist']
-                    if not _h.empty:
-                        import pandas as _pd_ch, plotly.graph_objects as _go_ch
-                        _ch_df = _h[['Close']].tail(252).copy()
+                if _stage in ('valuation','technical','finalise','report'):
+                    import pandas as _pd_ch, plotly.graph_objects as _go_ch
+                    from plotly.subplots import make_subplots as _msp
+                    import numpy as _np_ch
+                    # Period selector (persisted per ticker in session state)
+                    _per_key = f"_cht_per_{_tk}"
+                    _per_opts = ['1W','1M','3M','YTD','1Y','5Y']
+                    _per_cols = st.columns(len(_per_opts))
+                    for _pi, _po in enumerate(_per_opts):
+                        with _per_cols[_pi]:
+                            if st.button(_po, key=f"_pb_{_tk}_{_po}",
+                                         use_container_width=True,
+                                         type="primary" if _SS.get(_per_key,'1Y')==_po else "secondary"):
+                                _SS[_per_key] = _po
+                    _sel_per = _SS.get(_per_key, '1Y')
+                    # Fetch history for selected period (cached per ticker+period)
+                    _hist_cache_key = f"_hist_{_tk}_{_sel_per}"
+                    if _hist_cache_key not in _SS:
+                        try:
+                            import yfinance as _yf_ch
+                            _yf_per_map = {'1W':'5d','1M':'1mo','3M':'3mo','YTD':'ytd','1Y':'1y','5Y':'5y'}
+                            _raw_h = _yf_ch.Ticker(_tk).history(period=_yf_per_map[_sel_per], interval='1d', auto_adjust=True)
+                            _SS[_hist_cache_key] = _raw_h if not _raw_h.empty else _td.get('hist')
+                        except Exception:
+                            _SS[_hist_cache_key] = _td.get('hist')
+                    _h = _SS.get(_hist_cache_key) or _td.get('hist')
+                    if _h is not None and not _h.empty:
+                        _ch_df = _h[['Close']].copy()
                         _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
+                        _ch_df['MA20']  = _ch_df['Close'].rolling(20).mean()
                         _ch_df['MA50']  = _ch_df['Close'].rolling(50).mean()
                         _ch_df['MA200'] = _ch_df['Close'].rolling(200).mean()
-                        def _make_price_fig(_ht):
-                            _fig_c = _go_ch.Figure()
-                            _fig_c.add_trace(_go_ch.Scatter(x=_ch_df.index, y=_ch_df['Close'],
-                                name='Price', line=dict(color='#10B981', width=1.5), hovertemplate='%{y:.2f}'))
-                            _fig_c.add_trace(_go_ch.Scatter(x=_ch_df.index, y=_ch_df['MA50'],
-                                name='MA50', line=dict(color='#F59E0B', width=1, dash='dot'), hovertemplate='%{y:.2f}'))
-                            _fig_c.add_trace(_go_ch.Scatter(x=_ch_df.index, y=_ch_df['MA200'],
-                                name='MA200', line=dict(color='#6366F1', width=1, dash='dash'), hovertemplate='%{y:.2f}'))
-                            _fig_c.update_layout(
-                                height=_ht, margin=dict(l=0,r=0,t=4,b=0),
+                        # RSI
+                        _delta = _ch_df['Close'].diff()
+                        _gain = _delta.clip(lower=0).rolling(14).mean()
+                        _loss = (-_delta.clip(upper=0)).rolling(14).mean()
+                        _rs = _gain / _loss.replace(0, _np_ch.nan)
+                        _ch_df['RSI'] = 100 - 100 / (1 + _rs)
+                        # MACD
+                        _ema12 = _ch_df['Close'].ewm(span=12, adjust=False).mean()
+                        _ema26 = _ch_df['Close'].ewm(span=26, adjust=False).mean()
+                        _ch_df['MACD'] = _ema12 - _ema26
+                        _ch_df['Signal'] = _ch_df['MACD'].ewm(span=9, adjust=False).mean()
+                        _ch_df['Hist']   = _ch_df['MACD'] - _ch_df['Signal']
+                        def _build_chart(_df, _ht, _show_rsi, _show_macd):
+                            _rows = 1 + (1 if _show_rsi else 0) + (1 if _show_macd else 0)
+                            _row_h = [0.6] if _rows==1 else ([0.5,0.25,0.25] if _rows==3 else [0.6,0.4])
+                            _subplot_titles = [_tk] + (['RSI(14)'] if _show_rsi else []) + (['MACD(12,26,9)'] if _show_macd else [])
+                            _fig = _msp(rows=_rows, cols=1, shared_xaxes=True,
+                                        vertical_spacing=0.04, row_heights=_row_h,
+                                        subplot_titles=_subplot_titles)
+                            # Price + MAs
+                            _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Close'],
+                                name='Price', line=dict(color='#10B981',width=1.5),
+                                hovertemplate='%{x|%d %b %Y}<br>%{y:.2f}<extra></extra>'), row=1, col=1)
+                            _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA20'],
+                                name='MA20', line=dict(color='#F59E0B',width=1,dash='dot'),
+                                hovertemplate='MA20: %{y:.2f}<extra></extra>'), row=1, col=1)
+                            _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA50'],
+                                name='MA50', line=dict(color='#818CF8',width=1,dash='dot'),
+                                hovertemplate='MA50: %{y:.2f}<extra></extra>'), row=1, col=1)
+                            if len(_df) >= 200:
+                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA200'],
+                                    name='MA200', line=dict(color='#F472B6',width=1,dash='dash'),
+                                    hovertemplate='MA200: %{y:.2f}<extra></extra>'), row=1, col=1)
+                            _cur_row = 2
+                            if _show_rsi:
+                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['RSI'],
+                                    name='RSI', line=dict(color='#38BDF8',width=1.2),
+                                    hovertemplate='RSI: %{y:.1f}<extra></extra>'), row=_cur_row, col=1)
+                                _fig.add_hline(y=70, line_dash='dot', line_color='#ef4444', line_width=0.8, row=_cur_row, col=1)
+                                _fig.add_hline(y=30, line_dash='dot', line_color='#22c55e', line_width=0.8, row=_cur_row, col=1)
+                                _fig.update_yaxes(range=[0,100], row=_cur_row, col=1, tickfont=dict(size=8))
+                                _cur_row += 1
+                            if _show_macd:
+                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MACD'],
+                                    name='MACD', line=dict(color='#10B981',width=1.2),
+                                    hovertemplate='MACD: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Signal'],
+                                    name='Signal', line=dict(color='#F59E0B',width=1,dash='dot'),
+                                    hovertemplate='Signal: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                _bar_colors = ['#22c55e' if v >= 0 else '#ef4444' for v in _df['Hist'].fillna(0)]
+                                _fig.add_trace(_go_ch.Bar(x=_df.index, y=_df['Hist'],
+                                    name='Histogram', marker_color=_bar_colors, opacity=0.6,
+                                    hovertemplate='Hist: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                            _fig.update_layout(
+                                height=_ht, margin=dict(l=0,r=0,t=20,b=0),
                                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                font=dict(size=10, color='#94A3B8'),
-                                xaxis=dict(showgrid=False, tickfont=dict(size=9)),
-                                yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', tickfont=dict(size=9)),
-                                legend=dict(orientation='h', yanchor='bottom', y=1.02, font=dict(size=9)),
-                                showlegend=True)
-                            return _fig_c
-                        st.caption(f"📈 {_tk} — 1yr price + MA50/MA200 *(click ▼ to enlarge)*")
-                        st.plotly_chart(_make_price_fig(180), use_container_width=True,
-                                        config={"displayModeBar": False}, key=f"_cpcht_{_tk}")
-                        with st.expander("🔍 Enlarge chart"):
-                            st.plotly_chart(_make_price_fig(400), use_container_width=True,
-                                            config={"displayModeBar": True}, key=f"_cpcht_lg_{_tk}")
+                                font=dict(size=9, color='#94A3B8'),
+                                legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                                            font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
+                                hovermode='x unified', showlegend=True)
+                            _fig.update_xaxes(showgrid=False, tickfont=dict(size=8))
+                            _fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)',
+                                              tickfont=dict(size=8), row=1, col=1)
+                            return _fig
+                        # Mini chart (price + RSI only, compact)
+                        _mini_fig = _build_chart(_ch_df, 280, _show_rsi=True, _show_macd=False)
+                        st.plotly_chart(_mini_fig, use_container_width=True,
+                                        config={"displayModeBar": False}, key=f"_cpcht_{_tk}_{_sel_per}")
+                        # Full chart in expander (price + RSI + MACD)
+                        with st.expander("🔍 Full chart — RSI + MACD"):
+                            _full_fig = _build_chart(_ch_df, 550, _show_rsi=True, _show_macd=True)
+                            st.plotly_chart(_full_fig, use_container_width=True,
+                                            config={"displayModeBar": True,
+                                                    "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
+                                            key=f"_cpcht_full_{_tk}_{_sel_per}")
 
                 # WACC sensitivity table — shown in valuation stage
                 if _stage == 'valuation' and _an.get('mc'):
