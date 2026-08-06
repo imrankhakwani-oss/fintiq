@@ -3748,7 +3748,7 @@ def _comp_ai(messages: list, system: str) -> str:
     import anthropic as _a
     try:
         _r = _a.Anthropic(api_key=_k).messages.create(
-            model="claude-sonnet-5", max_tokens=2000, system=system, messages=messages)
+            model="claude-sonnet-5", max_tokens=3500, system=system, messages=messages)
         # Handle both old SDK (dicts) and new SDK (objects) response formats
         _text = ''
         for _b in _r.content:
@@ -6533,7 +6533,7 @@ with tab_comp:
             except Exception: pass
 
             # ── 3-year averages from financials DataFrame ─────────
-            _avg_rev_g = _avg_earn_g = _avg_roic = _avg_inv = None
+            _avg_rev_g = _avg_earn_g = _avg_roic = _avg_inv = _avg_op_m = None
             try:
                 if _fin_df is not None and not _fin_df.empty and _cf_df is not None:
                     import numpy as _np_c
@@ -6559,6 +6559,21 @@ with tab_comp:
                         _ni_rates = [((_ni_vals[i]/_ni_vals[i+1])-1)
                                      for i in range(len(_ni_vals)-1) if _ni_vals[i+1] != 0]
                         if _ni_rates: _avg_earn_g = float(_np_c.mean(_ni_rates))
+                    # Avg Operating Margin
+                    _op_row = None
+                    for _opk in ['Operating Income', 'EBIT']:
+                        if _opk in _fin_df.index:
+                            _op_row = _fin_df.loc[_opk].iloc[:_cols].dropna()
+                            break
+                    if _op_row is not None and _rev_row is not None and len(_op_row) >= 2:
+                        _op_margins = []
+                        for _oi in range(min(len(_op_row), len(_rev_row))):
+                            try:
+                                _rv = float(_rev_row.iloc[_oi])
+                                _op = float(_op_row.iloc[_oi])
+                                if _rv != 0: _op_margins.append(_op / _rv)
+                            except Exception: pass
+                        if _op_margins: _avg_op_m = float(_np_c.mean(_op_margins))
                     # Avg ROIC: EBIT*(1-tax) / (equity+debt) per year from fins
                     _ebit_row = None
                     for _ek in ['EBIT','Operating Income']:
@@ -6644,6 +6659,7 @@ with tab_comp:
                 _sec('── 3YR AVERAGES ──'),
                 ('Avg Rev Growth',  f"{_avg_rev_g*100:+.1f}%pa" if _avg_rev_g is not None else '—'),
                 ('Avg Earn Growth', f"{_avg_earn_g*100:+.1f}%pa" if _avg_earn_g is not None else '—'),
+                ('Avg Op Margin',   f"{_avg_op_m*100:.1f}%"      if _avg_op_m  is not None else '—'),
                 ('Avg ROIC',        f"{_avg_roic*100:.1f}%"      if _avg_roic is not None else '—'),
                 ('Avg Inv Rate',    f"{_avg_inv*100:.1f}%"        if _avg_inv is not None else '—'),
                 # — Technicals —
@@ -6764,19 +6780,62 @@ with tab_comp:
                 else:
                     st.markdown(_card_html, unsafe_allow_html=True)
 
+                # Remove stock button
+                if _stage in ('fundamental','valuation','technical'):
+                    if st.button(f"🗑 Remove {_tk}", key=f"_rm_{_tk}", use_container_width=True,
+                                 help="Remove this stock from the analysis"):
+                        _rm_confirm_key = f"_rm_confirm_{_tk}"
+                        if not _SS.get(_rm_confirm_key):
+                            _SS[_rm_confirm_key] = True
+                            st.rerun()
+                    _rm_confirm_key = f"_rm_confirm_{_tk}"
+                    if _SS.get(_rm_confirm_key):
+                        st.warning(f"Remove **{_tk}** from this session?")
+                        _rc1, _rc2 = st.columns(2)
+                        with _rc1:
+                            if st.button("Yes, remove", key=f"_rm_yes_{_tk}", type="primary"):
+                                _SS.cp_data.pop(_tk, None)
+                                _SS[_rm_confirm_key] = False
+                                _SS.cp_msgs.append({"role": "assistant",
+                                    "content": f"I've removed {_tk} from the analysis. We're now focusing on: {', '.join(k for k in _SS.cp_data if not _SS.cp_data[k].get('error', False))}."})
+                                st.rerun()
+                        with _rc2:
+                            if st.button("Cancel", key=f"_rm_no_{_tk}"):
+                                _SS[_rm_confirm_key] = False
+                                st.rerun()
+
                 # Price chart — shown from valuation stage onwards
                 if _stage in ('valuation','technical','finalise','report') and _td.get('hist') is not None:
                     _h = _td['hist']
                     if not _h.empty:
-                        import pandas as _pd_ch
+                        import pandas as _pd_ch, plotly.graph_objects as _go_ch
                         _ch_df = _h[['Close']].tail(252).copy()
                         _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
-                        # Add MA50 and MA200
                         _ch_df['MA50']  = _ch_df['Close'].rolling(50).mean()
                         _ch_df['MA200'] = _ch_df['Close'].rolling(200).mean()
-                        st.caption(f"📈 {_tk} — 1yr price + MA50/MA200")
-                        st.line_chart(_ch_df, use_container_width=True, height=150,
-                                      color=["#10B981","#F59E0B","#6366F1"])
+                        def _make_price_fig(_ht):
+                            _fig_c = _go_ch.Figure()
+                            _fig_c.add_trace(_go_ch.Scatter(x=_ch_df.index, y=_ch_df['Close'],
+                                name='Price', line=dict(color='#10B981', width=1.5), hovertemplate='%{y:.2f}'))
+                            _fig_c.add_trace(_go_ch.Scatter(x=_ch_df.index, y=_ch_df['MA50'],
+                                name='MA50', line=dict(color='#F59E0B', width=1, dash='dot'), hovertemplate='%{y:.2f}'))
+                            _fig_c.add_trace(_go_ch.Scatter(x=_ch_df.index, y=_ch_df['MA200'],
+                                name='MA200', line=dict(color='#6366F1', width=1, dash='dash'), hovertemplate='%{y:.2f}'))
+                            _fig_c.update_layout(
+                                height=_ht, margin=dict(l=0,r=0,t=4,b=0),
+                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                font=dict(size=10, color='#94A3B8'),
+                                xaxis=dict(showgrid=False, tickfont=dict(size=9)),
+                                yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', tickfont=dict(size=9)),
+                                legend=dict(orientation='h', yanchor='bottom', y=1.02, font=dict(size=9)),
+                                showlegend=True)
+                            return _fig_c
+                        st.caption(f"📈 {_tk} — 1yr price + MA50/MA200 *(click ▼ to enlarge)*")
+                        st.plotly_chart(_make_price_fig(180), use_container_width=True,
+                                        config={"displayModeBar": False}, key=f"_cpcht_{_tk}")
+                        with st.expander("🔍 Enlarge chart"):
+                            st.plotly_chart(_make_price_fig(400), use_container_width=True,
+                                            config={"displayModeBar": True}, key=f"_cpcht_lg_{_tk}")
 
                 # WACC sensitivity table — shown in valuation stage
                 if _stage == 'valuation' and _an.get('mc'):
@@ -6787,19 +6846,43 @@ with tab_comp:
                     _base_ps   = _an.get('dcf_ps', _mc_v.get('p50', 0))
                     if _base_ps:
                         st.caption("🎲 WACC × Terminal Growth sensitivity (intrinsic value per share)")
-                        import pandas as _pd_wt
-                        _sens = {}
+                        _cur_price = _fv2(_ti.get('currentPrice') or _ti.get('regularMarketPrice')) or 0
+                        _sens_rows = []
                         for _wv in _wacc_vals:
                             _row = {}
                             for _tgv in _tg_vals:
-                                # Simple Gordon adjustment: multiply base DCF by ratio of (WACC-tg) factors
                                 _base_factor = (0.09 - 0.02)
                                 _adj_factor  = (_wv - _tgv)
                                 _adj_ps = _base_ps * (_base_factor / _adj_factor) if _adj_factor > 0 else _base_ps
                                 _row[f"TG {_tgv*100:.0f}%"] = round(_adj_ps, 2)
-                            _sens[f"WACC {_wv*100:.0f}%"] = _row
-                        _sens_df = _pd_wt.DataFrame(_sens).T
-                        st.dataframe(_sens_df, use_container_width=True)
+                            _sens_rows.append((f"WACC {_wv*100:.0f}%", _row))
+                        # Render as styled HTML table (green=above price, red=below)
+                        _tg_hdrs = [f"TG {int(_tgv*100)}%" for _tgv in _tg_vals]
+                        _s_html = ['<table style="width:100%;border-collapse:collapse;font-size:0.78rem">']
+                        _s_html.append('<tr><th style="padding:4px 6px;text-align:left;color:#94A3B8;font-weight:600;border-bottom:1px solid #334155"></th>')
+                        for _th in _tg_hdrs:
+                            _s_html.append(f'<th style="padding:4px 6px;text-align:center;color:#94A3B8;font-weight:600;border-bottom:1px solid #334155">{_th}</th>')
+                        _s_html.append('</tr>')
+                        for _wlbl, _wrow in _sens_rows:
+                            _s_html.append(f'<tr><td style="padding:4px 6px;color:#CBD5E1;font-weight:600">{_wlbl}</td>')
+                            for _th in _tg_hdrs:
+                                _cell_v = _wrow.get(_th, 0)
+                                if _cur_price and _cell_v > _cur_price * 1.10:
+                                    _bg = '#14532d'; _fg = '#86efac'
+                                elif _cur_price and _cell_v > _cur_price:
+                                    _bg = '#166534'; _fg = '#bbf7d0'
+                                elif _cur_price and _cell_v < _cur_price * 0.90:
+                                    _bg = '#7f1d1d'; _fg = '#fca5a5'
+                                elif _cur_price and _cell_v < _cur_price:
+                                    _bg = '#991b1b'; _fg = '#fecaca'
+                                else:
+                                    _bg = '#1e293b'; _fg = '#CBD5E1'
+                                _s_html.append(f'<td style="padding:4px 6px;text-align:center;background:{_bg};color:{_fg};border-radius:3px">{_cell_v:.2f}</td>')
+                            _s_html.append('</tr>')
+                        _s_html.append('</table>')
+                        st.markdown(''.join(_s_html), unsafe_allow_html=True)
+                        if _cur_price:
+                            st.caption(f"Green = above current price ({_cur_price:.2f})  |  Red = below current price")
 
     # Report download (shows below cards when report generated)
     if _stage == 'report' and _SS.cp_report:
