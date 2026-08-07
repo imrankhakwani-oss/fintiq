@@ -3580,10 +3580,12 @@ def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
             return {'ticker': ticker, 'error': f'No price data for {ticker}'}
         _hist = _tk.history(period="5y", interval="1d", auto_adjust=True)
         try:
-            _fin = _tk.financials
-            _cf  = _tk.cashflow
+            _fin  = _tk.financials
+            _cf   = _tk.cashflow
+            _bs   = _tk.balance_sheet
+            _qfin = _tk.quarterly_financials
         except Exception:
-            _fin = _cf = None
+            _fin = _cf = _bs = _qfin = None
         # ── Fama-French factor lookup ─────────────────────────
         # Try requested period first, then fall back to other periods so we
         # don't show "Not in universe" just because one period's JSON is missing.
@@ -3598,10 +3600,252 @@ def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
         except Exception:
             pass
         return {'ticker': ticker.upper(), 'info': _info, 'hist': _hist,
-                'financials': _fin, 'cashflow': _cf, 'price': _price,
+                'financials': _fin, 'cashflow': _cf, 'balance_sheet': _bs,
+                'q_financials': _qfin, 'price': _price,
                 'factor': _factor, 'ff_years': ff_years, 'error': None}
     except Exception as _e:
         return {'ticker': ticker, 'error': str(_e)[:120]}
+
+
+def _comp_compute_tsr(d: dict) -> dict:
+    """
+    Compute Total Shareholder Return decomposition.
+    - Simple TSR: 1Y, 3Y, 5Y (price return + dividend yield)
+    - Annual Enhanced (last 3 FY): 3 buckets — Performance, Yield, Valuation re-rating
+    - Quarterly Traditional (last 4-6 Q): EPS growth + P/E change + div yield + interaction
+    Returns dict with 'simple', 'annual', 'quarterly' keys.
+    """
+    import numpy as _np_t, pandas as _pd_t
+    _res = {'simple': {}, 'annual': [], 'quarterly': [], 'error': None}
+    try:
+        _i    = d.get('info', {})
+        _hist = d.get('hist')
+        _fin  = d.get('financials')
+        _cf   = d.get('cashflow')
+        _bs   = d.get('balance_sheet')
+        _qfin = d.get('q_financials')
+        if _hist is None or _hist.empty:
+            _res['error'] = 'No price history'; return _res
+
+        def _fv(v):
+            try: return float(v) if v is not None else None
+            except: return None
+
+        _h = _hist.copy()
+        _h.index = _pd_t.to_datetime(_h.index).tz_localize(None)
+        _close = _h['Close']
+        _divs  = _h['Dividends'] if 'Dividends' in _h.columns else _pd_t.Series(0.0, index=_h.index)
+        _p_now = float(_close.iloc[-1])
+        _shares = _fv(_i.get('sharesOutstanding') or _i.get('impliedSharesOutstanding')) or 1e9
+
+        # ── 1. SIMPLE TSR ──────────────────────────────────────
+        def _simple(days, years):
+            if len(_close) < max(days, 2): return {}
+            _p0 = float(_close.iloc[-min(days, len(_close)-1)])
+            if _p0 <= 0: return {}
+            _d  = float(_divs.iloc[-min(days, len(_divs)):].sum())
+            _pr = (_p_now - _p0) / _p0
+            _dy = _d / _p0
+            _tsr = _pr + _dy
+            # Annualise for multi-year
+            if years > 1:
+                _ann = lambda x: (1+x)**(1/years)-1 if x is not None else None
+                return {'tsr': _ann(_tsr), 'price_return': _ann(_pr), 'div_yield': _dy/years, 'cumulative_tsr': _tsr}
+            return {'tsr': _tsr, 'price_return': _pr, 'div_yield': _dy}
+
+        _res['simple'] = {
+            '1y': _simple(252, 1),
+            '3y': _simple(756, 3),
+            '5y': _simple(1260, 5),
+        }
+
+        # ── 2. ANNUAL ENHANCED TSR ─────────────────────────────
+        # Uses EV as base to separate business performance from capital structure effects
+        if _fin is not None and not _fin.empty and _cf is not None and not _cf.empty:
+            def _row(df, *keys):
+                for k in keys:
+                    if df is not None and k in df.index: return df.loc[k]
+                return None
+
+            _rev_row  = _row(_fin, 'Total Revenue', 'Revenue')
+            _ebit_row = _row(_fin, 'EBIT', 'Operating Income')
+            _ni_row   = _row(_fin, 'Net Income', 'Net Income Common Stockholders')
+            _fcf_row  = _row(_cf,  'Free Cash Flow')
+            _div_row  = _row(_cf,  'Common Stock Dividend Paid', 'Cash Dividends Paid', 'Dividends Paid')
+            _debt_row = _row(_bs,  'Total Debt', 'Long Term Debt And Capital Lease Obligation') if _bs is not None else None
+            _cash_row = _row(_bs,  'Cash And Cash Equivalents', 'Cash Cash Equivalents And Short Term Investments') if _bs is not None else None
+
+            _fy_dates = sorted([c for c in _fin.columns if hasattr(c, 'year')], reverse=True)
+
+            for _fi in range(min(len(_fy_dates) - 1, 3)):
+                try:
+                    _dt1, _dt0 = _fy_dates[_fi], _fy_dates[_fi+1]
+
+                    def _price_at(dt):
+                        _idx = _close.index.searchsorted(_pd_t.Timestamp(dt))
+                        return float(_close.iloc[min(_idx, len(_close)-1)])
+
+                    _p1, _p0 = _price_at(_dt1), _price_at(_dt0)
+                    if _p0 <= 0: continue
+
+                    _div_yr = float(_divs.loc[_dt0:_dt1].sum()) if not _divs.loc[_dt0:_dt1].empty else 0.0
+                    _annual_tsr = (_p1 - _p0 + _div_yr) / _p0
+                    _price_ret  = (_p1 - _p0) / _p0
+                    _div_yield  = _div_yr / _p0
+
+                    def _col(row, dt):
+                        try:
+                            if row is None: return None
+                            if dt in row.index: return _fv(row[dt])
+                            return None
+                        except: return None
+
+                    _rev1  = _col(_rev_row, _dt1);   _rev0  = _col(_rev_row, _dt0)
+                    _ebit1 = _col(_ebit_row, _dt1);  _ebit0 = _col(_ebit_row, _dt0)
+                    _ni1   = _col(_ni_row, _dt1);    _ni0   = _col(_ni_row, _dt0)
+                    _fcf1  = _col(_fcf_row, _dt1)
+                    _divcf = abs(_col(_div_row, _dt1) or 0)
+                    _debt1 = abs(_col(_debt_row, _dt1) or 0)
+                    _debt0 = abs(_col(_debt_row, _dt0) or 0)
+                    _cash1 = abs(_col(_cash_row, _dt1) or 0)
+                    _cash0 = abs(_col(_cash_row, _dt0) or 0)
+
+                    _mcap0 = _p0 * _shares; _mcap1 = _p1 * _shares
+                    _ev0   = _mcap0 + _debt0 - _cash0
+                    _ev1   = _mcap1 + _debt1 - _cash1
+                    _ev0ps = _ev0 / _shares if _shares > 0 and _ev0 > 0 else None
+                    if not _ev0ps: continue
+
+                    # ── Performance bucket ──────────────────────
+                    # a. Sales growth per share / EV0_ps
+                    _a = ((_rev1 - _rev0) / _shares / _ev0ps) if _rev1 and _rev0 else None
+                    # b. Net investment drag = -ΔNet debt per share / EV0_ps
+                    _delta_net_debt_ps = ((_debt1 - _cash1) - (_debt0 - _cash0)) / _shares
+                    _b = -_delta_net_debt_ps / _ev0ps
+                    _c = (_a or 0) + _b  # net growth impact
+                    # d. Operating margin change contribution
+                    _om1 = _ebit1 / _rev1 if _ebit1 and _rev1 and _rev1 > 0 else None
+                    _om0 = _ebit0 / _rev0 if _ebit0 and _rev0 and _rev0 > 0 else None
+                    _d   = ((_om1 - _om0) * (_rev0 / _shares) / _ev0ps) if (_om1 is not None and _om0 is not None and _rev0) else None
+                    # e. Interaction: sales growth × margin change
+                    _e   = (_a * (_om1 - _om0)) if (_a is not None and _om1 is not None and _om0 is not None) else None
+                    _perf = (_c or 0) + (_d or 0) + (_e or 0)
+
+                    # ── Yield bucket ────────────────────────────
+                    # g. Earnings yield (EPS / EV0_ps — capital-structure-neutral)
+                    _eps0  = _ni0 / _shares if _ni0 else None
+                    _g     = _eps0 / _ev0ps if _eps0 else None
+                    # h. FCF yield
+                    _fcf_ps = _fcf1 / _shares if _fcf1 else None
+                    _h      = _fcf_ps / _ev0ps if _fcf_ps and _ev0ps else None
+                    _yield_bucket = (_g or 0) + (_h or 0)
+
+                    # ── Valuation bucket (residual) ─────────────
+                    # = actual TSR minus what performance and yield explain
+                    _val_bucket = _annual_tsr - _perf - _yield_bucket
+
+                    # ── Traditional decomposition for context ───
+                    _eps1_tr = _ni1 / _shares if _ni1 else None
+                    _eps0_tr = _ni0 / _shares if _ni0 else None
+                    _pe1 = _p1 / _eps1_tr if _eps1_tr and _eps1_tr > 0 else None
+                    _pe0 = _p0 / _eps0_tr if _eps0_tr and _eps0_tr > 0 else None
+                    _eps_g  = (_ni1 - _ni0) / abs(_ni0) if _ni0 and _ni1 and _ni0 != 0 else None
+                    _pe_ch  = (_pe1 - _pe0) / abs(_pe0) if _pe0 and _pe1 else None
+                    _inter  = (_eps_g * _pe_ch) if _eps_g is not None and _pe_ch is not None else None
+
+                    # EV/EBIT multiple change (unlevered valuation signal)
+                    _ev_ebit1 = _ev1 / _ebit1 if _ebit1 and _ebit1 > 0 else None
+                    _ev_ebit0 = _ev0 / _ebit0 if _ebit0 and _ebit0 > 0 else None
+                    _ev_ebit_ch = (_ev_ebit1 - _ev_ebit0) / abs(_ev_ebit0) if _ev_ebit0 and _ev_ebit1 else None
+
+                    _res['annual'].append({
+                        'year': str(_dt1.year) if hasattr(_dt1, 'year') else str(_dt1)[:4],
+                        'tsr': _annual_tsr,
+                        'price_return': _price_ret,
+                        'div_yield': _div_yield,
+                        # 3 bucket summary
+                        'performance': _perf,
+                        'yield_bucket': _yield_bucket,
+                        'valuation': _val_bucket,
+                        # Detail
+                        'sales_growth_contrib': _a,
+                        'invest_drag': _b,
+                        'margin_change_contrib': _d,
+                        'earnings_yield': _g,
+                        'fcf_yield': _h,
+                        # Traditional
+                        'eps_growth': _eps_g,
+                        'pe_change': _pe_ch,
+                        'interaction': _inter,
+                        'ev_ebit_change': _ev_ebit_ch,
+                        # Operating metrics
+                        'op_margin_start': _om0,
+                        'op_margin_end': _om1,
+                        'pe_start': _pe0,
+                        'pe_end': _pe1,
+                    })
+                except Exception:
+                    continue
+
+        # ── 3. QUARTERLY TRADITIONAL TSR ───────────────────────
+        if _qfin is not None and not _qfin.empty:
+            def _qrow(df, *keys):
+                for k in keys:
+                    if df is not None and k in df.index: return df.loc[k]
+                return None
+            _q_ni_row  = _qrow(_qfin, 'Net Income', 'Net Income Common Stockholders')
+            _q_dates   = sorted([c for c in _qfin.columns if hasattr(c, 'year')], reverse=True)
+
+            for _qi in range(min(len(_q_dates) - 1, 6)):
+                try:
+                    _qdt1, _qdt0 = _q_dates[_qi], _q_dates[_qi+1]
+
+                    def _qprice(dt):
+                        _idx = _close.index.searchsorted(_pd_t.Timestamp(dt))
+                        return float(_close.iloc[min(_idx, len(_close)-1)])
+
+                    _qp1, _qp0 = _qprice(_qdt1), _qprice(_qdt0)
+                    if _qp0 <= 0: continue
+                    _qdivs = float(_divs.loc[_qdt0:_qdt1].sum()) if not _divs.loc[_qdt0:_qdt1].empty else 0.0
+                    _qtsr  = (_qp1 - _qp0 + _qdivs) / _qp0
+                    _qdy   = _qdivs / _qp0
+                    _qpr   = (_qp1 - _qp0) / _qp0
+
+                    def _qcol(row, dt):
+                        try: return _fv(row[dt]) if row is not None and dt in row.index else None
+                        except: return None
+
+                    _qni1 = _qcol(_q_ni_row, _qdt1)
+                    _qni0 = _qcol(_q_ni_row, _qdt0)
+                    _qeps1 = _qni1 / _shares if _qni1 else None
+                    _qeps0 = _qni0 / _shares if _qni0 else None
+                    # Annualise quarterly EPS (×4) for P/E
+                    _qpe1 = _qp1 / (_qeps1 * 4) if _qeps1 and _qeps1 > 0 else None
+                    _qpe0 = _qp0 / (_qeps0 * 4) if _qeps0 and _qeps0 > 0 else None
+                    _qeps_g = (_qni1 - _qni0) / abs(_qni0) if _qni0 and _qni1 and _qni0 != 0 else None
+                    _qpe_ch = (_qpe1 - _qpe0) / abs(_qpe0) if _qpe0 and _qpe1 else None
+                    _qinter = (_qeps_g * _qpe_ch) if _qeps_g is not None and _qpe_ch is not None else None
+                    # Quarter label
+                    _qm = _qdt1.month if hasattr(_qdt1, 'month') else 1
+                    _qlbl = f"Q{(_qm-1)//3+1} {_qdt1.year if hasattr(_qdt1,'year') else ''}"
+
+                    _res['quarterly'].append({
+                        'period': _qlbl,
+                        'tsr': _qtsr,
+                        'price_return': _qpr,
+                        'div_yield': _qdy,
+                        'eps_growth': _qeps_g,
+                        'pe_change': _qpe_ch,
+                        'interaction': _qinter,
+                        'pe_start': _qpe0,
+                        'pe_end': _qpe1,
+                    })
+                except Exception:
+                    continue
+
+    except Exception as _te:
+        _res['error'] = str(_te)[:120]
+    return _res
 
 
 def _comp_data_summary(d: dict) -> str:
@@ -3723,6 +3967,43 @@ def _comp_data_summary(d: dict) -> str:
         _lines.append(_ff_line)
     else:
         _lines.append("Fama-French 4-Factor: not available for this ticker (non-US or not in universe)")
+
+    # ── TSR DECOMPOSITION SUMMARY FOR AI ─────────────────────
+    try:
+        _tsr = _comp_compute_tsr(d)
+        _tsr_lines = ["TSR DECOMPOSITION:"]
+        # Simple TSR
+        _s = _tsr.get('simple', {})
+        for _per, _lbl in [('1y','1yr'), ('3y','3yr ann.'), ('5y','5yr ann.')]:
+            _sv = _s.get(_per, {})
+            if _sv.get('tsr') is not None:
+                _tsr_lines.append(
+                    f"  Simple TSR {_lbl}: {_sv['tsr']*100:+.1f}% "
+                    f"(price {_sv.get('price_return',0)*100:+.1f}% + div {_sv.get('div_yield',0)*100:.1f}%)")
+        # Annual enhanced
+        if _tsr.get('annual'):
+            _tsr_lines.append("  Annual breakdown (enhanced — EV-based):")
+            for _yr in _tsr['annual']:
+                _tsr_lines.append(
+                    f"    {_yr['year']}: TSR {_yr['tsr']*100:+.1f}% = "
+                    f"Performance {_yr['performance']*100:+.1f}% + "
+                    f"Yield {_yr['yield_bucket']*100:+.1f}% + "
+                    f"Valuation re-rating {_yr['valuation']*100:+.1f}%"
+                    + (f" | Op margin: {_yr['op_margin_start']*100:.1f}%→{_yr['op_margin_end']*100:.1f}%" if _yr.get('op_margin_start') and _yr.get('op_margin_end') else "")
+                    + (f" | P/E: {_yr['pe_start']:.1f}x→{_yr['pe_end']:.1f}x" if _yr.get('pe_start') and _yr.get('pe_end') else ""))
+        # Quarterly traditional
+        if _tsr.get('quarterly'):
+            _tsr_lines.append("  Quarterly breakdown (traditional):")
+            for _q in _tsr['quarterly'][:4]:
+                _eg = f"{_q['eps_growth']*100:+.1f}%" if _q.get('eps_growth') is not None else '—'
+                _pc = f"{_q['pe_change']*100:+.1f}%" if _q.get('pe_change') is not None else '—'
+                _tsr_lines.append(
+                    f"    {_q['period']}: TSR {_q['tsr']*100:+.1f}% "
+                    f"(EPS growth {_eg} + P/E change {_pc} + div {_q['div_yield']*100:.1f}%)")
+        _lines.extend(_tsr_lines)
+    except Exception:
+        pass
+
     return "\n".join(l for l in _lines if l and l.strip())
 
 
@@ -4071,6 +4352,11 @@ CRITICAL — HONEST DATA GAPS: If you don't have a data point, say so clearly an
 CRITICAL — PUSH BACK ON USER CONCLUSIONS: Don't simply agree with the user's thesis. Always ask: "What would make you wrong?" and "What's the bear case?" before the user moves to a watchlist decision.
 
 YOUR JOB IN THIS STAGE:
+0. TSR DECOMPOSITION (do this first — it frames everything else):
+   - State the 1yr and 3yr annualised TSR from the data above. Is it above or below a reasonable benchmark (S&P 10%pa, FTSE 7%pa)?
+   - Identify the PRIMARY driver: was TSR driven by Performance (business improvement), Yield (FCF/dividends), or Valuation re-rating (P/E expansion)?
+   - CRITICAL INSIGHT: Only Performance-driven TSR is repeatable. Valuation re-rating mean-reverts. If TSR was mostly re-rating, the tailwind is gone. If TSR was mostly Performance, it reflects genuine quality.
+   - Reference quarterly TSR trend: is momentum improving or deteriorating quarter-on-quarter?
 1. Lead with the single most interesting/unusual thing about this business — not a data dump
 2. Cover competitive moat and what sustains it (or doesn't)
 3. Revenue trajectory: reference the historical CAGR from the data above. Is growth accelerating or decelerating?
@@ -4128,7 +4414,15 @@ Run the DCF mentally and present:
 - WACC SENSITIVITY: Present a simple 3×3 grid in text: Low/Mid/High WACC × Low/Mid/High terminal growth → show implied value per share for each cell
 - Margin of safety discussion: how much buffer does the user have?
 
-STEP 4 — END: "Valuation sets the floor and ceiling. Technicals tell us about timing and entry. Let me show you the chart picture now." """,
+STEP 4 — FORWARD TSR PROJECTION: Once DCF assumptions are agreed, translate them into an implied forward TSR:
+"Based on your assumptions, here is the implied forward TSR breakdown:
+- Performance contribution: [margin recovery × revenue growth = X%pa]
+- Yield contribution: [FCF yield at current price = Y%]
+- Valuation re-rating: [from X multiple to Y multiple over Z years = W%pa]
+- Implied total TSR: X%pa — compare this to [benchmark] to judge if the risk/reward is compelling."
+This grounds the DCF output in terms the user actually cares about: will this stock beat the market?
+
+STEP 5 — END: "Valuation sets the floor and ceiling. Technicals tell us about timing and entry. Let me show you the chart picture now." """,
 
         'technical': f"""STAGE: Technical Analysis
 You have 1yr price history in the data above (open/high/low/close/volume). Use it.
@@ -6926,7 +7220,29 @@ with tab_comp:
                 ('Avg Op Margin',   f"{_avg_op_m*100:.1f}%"      if _avg_op_m  is not None else '—'),
                 ('Avg ROIC',        f"{_avg_roic*100:.1f}%"      if _avg_roic is not None else '—'),
                 ('Avg Inv Rate',    f"{_avg_inv*100:.1f}%"        if _avg_inv is not None else '—'),
-                # — Technicals —
+                # — TSR —
+                _sec('── TOTAL SHAREHOLDER RETURN ──'),
+            ]
+
+            # Compute TSR and insert rows
+            _tsr_data = _comp_compute_tsr(_td)
+            _s_tsr = _tsr_data.get('simple', {})
+            def _tsr_pct(v):
+                return f"{v*100:+.1f}%" if v is not None else '—'
+            def _tsr_color(v):
+                if v is None: return '#94A3B8'
+                return '#22c55e' if v >= 0 else '#ef4444'
+            for _tp, _tlbl in [('1y','1 Year'), ('3y','3 Year (ann.)'), ('5y','5 Year (ann.)')]:
+                _tv = _s_tsr.get(_tp, {})
+                _ttsr = _tv.get('tsr')
+                if _ttsr is not None:
+                    _mets.append((_tlbl,
+                        f'<span style="color:{_tsr_color(_ttsr)};font-weight:700">{_tsr_pct(_ttsr)}</span>'
+                        f' <span style="font-size:0.65rem;color:#64748B">'
+                        f'(Δprice {_tsr_pct(_tv.get("price_return"))} + div {_tsr_pct(_tv.get("div_yield"))})</span>'))
+
+            # Technicals
+            _mets += [
                 _sec('── TECHNICALS ──'),
                 ('vs 50d MA',    _ma50_str),
                 ('vs 200d MA',   _ma200_str),
@@ -7043,6 +7359,146 @@ with tab_comp:
                     st.warning(f"{_tk}: data unavailable")
                 else:
                     st.markdown(_card_html, unsafe_allow_html=True)
+
+                # TSR deep-dive expander (always shown once data loaded)
+                if not _td.get('error'):
+                    with st.expander("📊 TSR Deep-Dive — Annual & Quarterly"):
+                        import plotly.graph_objects as _go_tsr
+                        _tsr_d = _comp_compute_tsr(_td)
+
+                        # ── WHY TSR MATTERS (brief explainer) ──
+                        st.markdown(
+                            '<div style="background:rgba(251,191,36,0.06);border-left:3px solid #FBBF24;'
+                            'padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:10px">'
+                            '<div style="font-size:0.72rem;color:#FBBF24;font-weight:700;margin-bottom:3px">WHY TOTAL SHAREHOLDER RETURN?</div>'
+                            '<div style="font-size:0.68rem;color:#94A3B8;line-height:1.5">'
+                            'TSR is the actual return you earned — price change plus dividends. Decomposing it tells you '
+                            '<em>why</em> you earned it: was it genuine business improvement, a valuation re-rating by the market, '
+                            'or just income? Only performance-driven TSR is repeatable. Multiple expansion eventually mean-reverts.'
+                            '</div></div>',
+                            unsafe_allow_html=True)
+
+                        # ── SIMPLE TSR TABLE ──
+                        _s = _tsr_d.get('simple', {})
+                        _srows = []
+                        for _tp, _tl in [('1y','1 Year'), ('3y','3 Year (ann.)'), ('5y','5 Year (ann.)')]:
+                            _sv = _s.get(_tp, {})
+                            if _sv.get('tsr') is not None:
+                                _srows.append((_tl, _sv['tsr'], _sv.get('price_return'), _sv.get('div_yield')))
+                        if _srows:
+                            _sh = ['<table style="width:100%;border-collapse:collapse;font-size:0.74rem;margin-bottom:10px">',
+                                   '<tr style="border-bottom:1px solid #334155">',
+                                   '<th style="text-align:left;padding:4px 6px;color:#64748B">Period</th>',
+                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Total TSR</th>',
+                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Price Return</th>',
+                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Div Yield</th>',
+                                   '</tr>']
+                            for _tl, _tv, _tp2, _td2 in _srows:
+                                _gc = '#22c55e' if _tv >= 0 else '#ef4444'
+                                _sh.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">'
+                                           f'<td style="padding:4px 6px;color:#CBD5E1">{_tl}</td>'
+                                           f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>'
+                                           f'<td style="padding:4px 6px;text-align:right;color:#94A3B8">{(_tp2 or 0)*100:+.1f}%</td>'
+                                           f'<td style="padding:4px 6px;text-align:right;color:#94A3B8">{(_td2 or 0)*100:.1f}%</td>'
+                                           f'</tr>')
+                            _sh.append('</table>')
+                            st.markdown(''.join(_sh), unsafe_allow_html=True)
+
+                        # ── ANNUAL ENHANCED — WATERFALL CHART ──
+                        _ann = _tsr_d.get('annual', [])
+                        if _ann:
+                            st.caption("Annual TSR — Enhanced Decomposition (EV-based · 3 buckets)")
+                            st.caption("Performance = sales growth + margin change − reinvestment drag  |  Yield = earnings + FCF  |  Valuation = market re-rating (P/E expansion/compression)")
+                            _yr_lbls = [a['year'] for a in _ann]
+                            _perf_vals = [a['performance']*100 for a in _ann]
+                            _yld_vals  = [a['yield_bucket']*100 for a in _ann]
+                            _val_vals  = [a['valuation']*100 for a in _ann]
+                            _tsr_vals  = [a['tsr']*100 for a in _ann]
+                            _fig_ann = _go_tsr.Figure()
+                            _fig_ann.add_trace(_go_tsr.Bar(name='Performance', x=_yr_lbls, y=_perf_vals,
+                                marker_color=['#22c55e' if v>=0 else '#ef4444' for v in _perf_vals], opacity=0.85))
+                            _fig_ann.add_trace(_go_tsr.Bar(name='Yield (FCF+Earnings)', x=_yr_lbls, y=_yld_vals,
+                                marker_color='#38BDF8', opacity=0.85))
+                            _fig_ann.add_trace(_go_tsr.Bar(name='Valuation Re-rating', x=_yr_lbls, y=_val_vals,
+                                marker_color=['#818CF8' if v>=0 else '#F472B6' for v in _val_vals], opacity=0.85))
+                            _fig_ann.add_trace(_go_tsr.Scatter(name='Total TSR', x=_yr_lbls, y=_tsr_vals,
+                                mode='markers+lines', marker=dict(size=8, color='#FBBF24'),
+                                line=dict(color='#FBBF24', width=2, dash='dot')))
+                            _fig_ann.add_hline(y=0, line_color='rgba(255,255,255,0.2)', line_width=1)
+                            _fig_ann.update_layout(
+                                barmode='relative', height=260,
+                                margin=dict(l=0,r=0,t=10,b=0),
+                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                font=dict(size=9, color='#94A3B8'),
+                                legend=dict(orientation='h', y=1.15, font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
+                                yaxis=dict(ticksuffix='%', gridcolor='rgba(255,255,255,0.05)'),
+                                xaxis=dict(showgrid=False))
+                            st.plotly_chart(_fig_ann, use_container_width=True,
+                                            config={"displayModeBar": False}, key=f"_tsr_ann_{_tk}")
+
+                            # Companion table showing annual detail
+                            _ah = ['<table style="width:100%;border-collapse:collapse;font-size:0.68rem;margin-top:6px">',
+                                   '<tr style="border-bottom:1px solid #334155">',
+                                   '<th style="text-align:left;padding:3px 5px;color:#64748B">Year</th>',
+                                   '<th style="text-align:right;padding:3px 5px;color:#22c55e">Perf</th>',
+                                   '<th style="text-align:right;padding:3px 5px;color:#38BDF8">Yield</th>',
+                                   '<th style="text-align:right;padding:3px 5px;color:#818CF8">Rating</th>',
+                                   '<th style="text-align:right;padding:3px 5px;color:#FBBF24">TSR</th>',
+                                   '<th style="text-align:right;padding:3px 5px;color:#94A3B8">P/E</th>',
+                                   '<th style="text-align:right;padding:3px 5px;color:#94A3B8">Op Mgn</th>',
+                                   '</tr>']
+                            for _a in _ann:
+                                _tc = '#22c55e' if _a['tsr'] >= 0 else '#ef4444'
+                                _pe_str = (f"{_a['pe_start']:.1f}x→{_a['pe_end']:.1f}x"
+                                           if _a.get('pe_start') and _a.get('pe_end') else '—')
+                                _om_str = (f"{_a['op_margin_start']*100:.1f}%→{_a['op_margin_end']*100:.1f}%"
+                                           if _a.get('op_margin_start') and _a.get('op_margin_end') else '—')
+                                _ah.append(
+                                    f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">'
+                                    f'<td style="padding:3px 5px;color:#CBD5E1;font-weight:600">{_a["year"]}</td>'
+                                    f'<td style="padding:3px 5px;text-align:right;color:#22c55e">{_a["performance"]*100:+.1f}%</td>'
+                                    f'<td style="padding:3px 5px;text-align:right;color:#38BDF8">{_a["yield_bucket"]*100:+.1f}%</td>'
+                                    f'<td style="padding:3px 5px;text-align:right;color:#818CF8">{_a["valuation"]*100:+.1f}%</td>'
+                                    f'<td style="padding:3px 5px;text-align:right;color:{_tc};font-weight:700">{_a["tsr"]*100:+.1f}%</td>'
+                                    f'<td style="padding:3px 5px;text-align:right;color:#94A3B8">{_pe_str}</td>'
+                                    f'<td style="padding:3px 5px;text-align:right;color:#94A3B8">{_om_str}</td>'
+                                    f'</tr>')
+                            _ah.append('</table>')
+                            st.markdown(''.join(_ah), unsafe_allow_html=True)
+
+                        # ── QUARTERLY TRADITIONAL ──
+                        _qtrs = _tsr_d.get('quarterly', [])
+                        if _qtrs:
+                            st.caption("Quarterly TSR — Traditional Decomposition  |  TSR = EPS growth + P/E change + dividend yield + interaction")
+                            _qlbls   = [q['period'] for q in reversed(_qtrs)]
+                            _qeps_v  = [(q.get('eps_growth') or 0)*100 for q in reversed(_qtrs)]
+                            _qpe_v   = [(q.get('pe_change') or 0)*100 for q in reversed(_qtrs)]
+                            _qdiv_v  = [(q.get('div_yield') or 0)*100 for q in reversed(_qtrs)]
+                            _qinter_v= [(q.get('interaction') or 0)*100 for q in reversed(_qtrs)]
+                            _qtsr_v  = [q['tsr']*100 for q in reversed(_qtrs)]
+                            _fig_q = _go_tsr.Figure()
+                            _fig_q.add_trace(_go_tsr.Bar(name='EPS Growth', x=_qlbls, y=_qeps_v,
+                                marker_color=['#22c55e' if v>=0 else '#ef4444' for v in _qeps_v], opacity=0.85))
+                            _fig_q.add_trace(_go_tsr.Bar(name='P/E Change', x=_qlbls, y=_qpe_v,
+                                marker_color='#818CF8', opacity=0.85))
+                            _fig_q.add_trace(_go_tsr.Bar(name='Div Yield', x=_qlbls, y=_qdiv_v,
+                                marker_color='#38BDF8', opacity=0.85))
+                            _fig_q.add_trace(_go_tsr.Bar(name='Interaction', x=_qlbls, y=_qinter_v,
+                                marker_color='#64748B', opacity=0.6))
+                            _fig_q.add_trace(_go_tsr.Scatter(name='Total TSR', x=_qlbls, y=_qtsr_v,
+                                mode='markers+lines', marker=dict(size=7, color='#FBBF24'),
+                                line=dict(color='#FBBF24', width=2, dash='dot')))
+                            _fig_q.add_hline(y=0, line_color='rgba(255,255,255,0.2)', line_width=1)
+                            _fig_q.update_layout(
+                                barmode='relative', height=240,
+                                margin=dict(l=0,r=0,t=10,b=0),
+                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                font=dict(size=9, color='#94A3B8'),
+                                legend=dict(orientation='h', y=1.15, font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
+                                yaxis=dict(ticksuffix='%', gridcolor='rgba(255,255,255,0.05)'),
+                                xaxis=dict(showgrid=False))
+                            st.plotly_chart(_fig_q, use_container_width=True,
+                                            config={"displayModeBar": False}, key=f"_tsr_q_{_tk}")
 
                 # Remove stock button
                 if _stage in ('fundamental','valuation','technical'):
