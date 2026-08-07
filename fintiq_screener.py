@@ -3740,27 +3740,269 @@ def _comp_monte_carlo(base: float, uncertainty: float = 0.35, n: int = 4000) -> 
     }
 
 
+def _comp_search_web(query: str, max_results: int = 5) -> str:
+    """Call Tavily search API. Returns formatted results string."""
+    import os as _os_tv, json as _json_tv
+    _tv_key = _os_tv.environ.get("TAVILY_API_KEY", "")
+    if not _tv_key:
+        try: _tv_key = st.secrets.get("TAVILY_API_KEY", "")
+        except Exception: pass
+    if not _tv_key:
+        return "Search unavailable — TAVILY_API_KEY not configured."
+    try:
+        import urllib.request as _ur, urllib.error as _ue
+        _payload = _json_tv.dumps({
+            "api_key": _tv_key,
+            "query": query,
+            "max_results": max_results,
+            "search_depth": "advanced",
+            "include_answer": True,
+            "include_raw_content": False
+        }).encode()
+        _req = _ur.Request(
+            "https://api.tavily.com/search",
+            data=_payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with _ur.urlopen(_req, timeout=15) as _resp:
+            _data = _json_tv.loads(_resp.read())
+        _out = []
+        if _data.get("answer"):
+            _out.append(f"Summary: {_data['answer']}\n")
+        for _r in _data.get("results", [])[:max_results]:
+            _out.append(f"[{_r.get('title','')}] {_r.get('url','')}\n{_r.get('content','')[:400]}\n")
+        return "\n".join(_out) if _out else "No results found."
+    except Exception as _e:
+        return f"Search error: {str(_e)[:100]}"
+
+
+def _comp_fetch_peers(tickers: list) -> str:
+    """Fetch key financials for a list of peer tickers via yfinance. Returns formatted string."""
+    import yfinance as _yf_p
+    _out = []
+    for _tk in tickers[:5]:  # cap at 5 to avoid slow responses
+        try:
+            _i = _yf_p.Ticker(_tk.upper()).info or {}
+            def _fv(k):
+                try: return float(_i.get(k)) if _i.get(k) is not None else None
+                except: return None
+            _om = _fv('operatingMargins'); _gm = _fv('grossMargins')
+            _nm = _fv('profitMargins');    _rev = _fv('totalRevenue')
+            _pe = _fv('trailingPE');       _tgt = _fv('targetMeanPrice')
+            _pr = _fv('currentPrice') or _fv('regularMarketPrice')
+            _cap = _fv('marketCap')
+            _name = _i.get('shortName', _tk)
+            _lines = [f"\n{_name} ({_tk.upper()}):"]
+            if _pr:   _lines.append(f"  Price: {_pr:.2f}")
+            if _cap:  _lines.append(f"  Mkt Cap: {'${:.1f}B'.format(_cap/1e9)}")
+            if _om:   _lines.append(f"  Op Margin: {_om*100:.1f}%")
+            if _gm:   _lines.append(f"  Gross Margin: {_gm*100:.1f}%")
+            if _nm:   _lines.append(f"  Net Margin: {_nm*100:.1f}%")
+            if _rev:  _lines.append(f"  Revenue: {'${:.1f}B'.format(_rev/1e9)}")
+            if _pe:   _lines.append(f"  P/E: {_pe:.1f}x")
+            if _tgt:  _lines.append(f"  Analyst Target: {_tgt:.2f}")
+            _out.append("\n".join(_lines))
+        except Exception as _e:
+            _out.append(f"\n{_tk}: fetch error ({str(_e)[:60]})")
+    return "\n".join(_out) if _out else "No peer data retrieved."
+
+
+def _comp_fetch_sec(ticker: str, form_type: str = "10-K") -> str:
+    """Fetch latest SEC filing summary for a ticker via EDGAR API (free)."""
+    import json as _js, urllib.request as _ur2
+    try:
+        _tk_upper = ticker.upper().strip()
+        # Get company CIK from EDGAR ticker lookup
+        _cik_url = f"https://efts.sec.gov/LATEST/search-index?q=%22{_tk_upper}%22&dateRange=custom&startdt=2020-01-01&forms={form_type}"
+        _search_url = f"https://efts.sec.gov/LATEST/search-index?q=%22{_tk_upper}%22&forms={form_type}&hits.hits.total.value=1"
+        # Use the EDGAR company search endpoint
+        _tickers_url = "https://www.sec.gov/files/company_tickers.json"
+        with _ur2.urlopen(_tickers_url, timeout=10) as _r:
+            _all = _js.loads(_r.read())
+        _cik = None
+        for _entry in _all.values():
+            if _entry.get('ticker', '').upper() == _tk_upper:
+                _cik = str(_entry['cik_str']).zfill(10)
+                break
+        if not _cik:
+            return f"CIK not found for {_tk_upper} on SEC EDGAR."
+        # Get recent filings
+        _subs_url = f"https://data.sec.gov/submissions/CIK{_cik}.json"
+        with _ur2.urlopen(_subs_url, timeout=10) as _r:
+            _subs = _js.loads(_r.read())
+        _name = _subs.get('name', _tk_upper)
+        _recent = _subs.get('filings', {}).get('recent', {})
+        _forms = _recent.get('form', [])
+        _dates = _recent.get('filingDate', [])
+        _accs  = _recent.get('accessionNumber', [])
+        # Find most recent matching form
+        for _fi, _fm in enumerate(_forms):
+            if _fm == form_type:
+                _date = _dates[_fi] if _fi < len(_dates) else 'unknown'
+                _acc  = _accs[_fi].replace('-','') if _fi < len(_accs) else ''
+                _url  = f"https://www.sec.gov/Archives/edgar/full-index/{_date[:4]}/{_date[5:7]}/{_acc}"
+                return (f"{_name} ({_tk_upper}) — Latest {form_type}\n"
+                        f"Filed: {_date}\n"
+                        f"Accession: {_accs[_fi]}\n"
+                        f"View: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={_cik}&type={form_type}&dateb=&owner=include&count=5\n"
+                        f"Note: Use search_web to find the actual financial highlights and MD&A commentary from this filing.")
+        return f"No {form_type} found for {_tk_upper} in recent EDGAR filings."
+    except Exception as _e:
+        return f"SEC EDGAR error: {str(_e)[:120]}"
+
+
+# Tool definitions for Claude tool use
+_COMP_TOOLS = [
+    {
+        "name": "search_web",
+        "description": (
+            "Search the live web for current information about stocks, companies, earnings, news, "
+            "analyst reports, competitor data, macro events, or any financial topic. "
+            "Use this when you need: current news about a company, recent earnings commentary, "
+            "analyst price target updates, competitor margin data, management commentary, "
+            "sector trends, or any information that may have changed recently. "
+            "Always search rather than relying on training data for current facts."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query. Be specific — include company name, ticker, and time period. E.g. 'Lululemon LULU operating margin 2025 2026 earnings call commentary'"
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Number of results to return (1-5). Default 4.",
+                    "default": 4
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "fetch_peer_financials",
+        "description": (
+            "Fetch live financial data (margins, revenue, P/E, analyst targets) for competitor or peer tickers. "
+            "Use when the user asks to compare a stock against peers or sector, or when you need live competitor margin data. "
+            "Returns current operating margin, gross margin, net margin, revenue, P/E, and analyst target for each ticker."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tickers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of peer ticker symbols to fetch. Max 5. E.g. ['NKE', 'DECK', 'UAA']"
+                }
+            },
+            "required": ["tickers"]
+        }
+    },
+    {
+        "name": "fetch_sec_filing",
+        "description": (
+            "Look up the most recent SEC 10-K (annual report) or 10-Q (quarterly report) filing for a US-listed company. "
+            "Returns filing date and EDGAR link. Then use search_web to get the actual financial highlights and MD&A commentary. "
+            "Use when the user wants to see what management said in the most recent report."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'LULU'"},
+                "form_type": {"type": "string", "enum": ["10-K", "10-Q"], "description": "10-K for annual, 10-Q for quarterly", "default": "10-K"}
+            },
+            "required": ["ticker"]
+        }
+    }
+]
+
+
+def _comp_execute_tool(tool_name: str, tool_input: dict) -> str:
+    """Execute a tool call and return result string."""
+    if tool_name == "search_web":
+        return _comp_search_web(tool_input.get("query",""), tool_input.get("max_results", 4))
+    elif tool_name == "fetch_peer_financials":
+        return _comp_fetch_peers(tool_input.get("tickers", []))
+    elif tool_name == "fetch_sec_filing":
+        return _comp_fetch_sec(tool_input.get("ticker",""), tool_input.get("form_type","10-K"))
+    return f"Unknown tool: {tool_name}"
+
+
 def _comp_ai(messages: list, system: str) -> str:
-    """Single Claude call for companion. Returns text response."""
+    """Claude call with tool use loop. Returns final text response."""
     _k = _get_api_key()
     if not _k:
         return "API key not configured — please set ANTHROPIC_API_KEY in Railway Variables."
     import anthropic as _a
+    _client = _a.Anthropic(api_key=_k)
+    _msgs = list(messages)  # don't mutate caller's list
     try:
-        _r = _a.Anthropic(api_key=_k).messages.create(
-            model="claude-sonnet-5", max_tokens=5000, system=system, messages=messages)
-        # Handle both old SDK (dicts) and new SDK (objects) response formats
-        _text = ''
-        for _b in _r.content:
-            if isinstance(_b, dict):
-                if _b.get('type') == 'text' and _b.get('text'):
-                    _text = _b['text']; break
-            elif getattr(_b, 'type', '') == 'text' and getattr(_b, 'text', ''):
-                _text = _b.text; break
-        if _text:
-            return _text.strip()
-        _stop = getattr(_r, 'stop_reason', 'unknown')
-        return f"No response generated (stop={_stop}) — please try again."
+        _max_rounds = 6  # prevent infinite tool loops
+        for _round in range(_max_rounds):
+            _r = _client.messages.create(
+                model="claude-sonnet-5",
+                max_tokens=5000,
+                system=system,
+                messages=_msgs,
+                tools=_COMP_TOOLS
+            )
+            # Collect text and tool_use blocks
+            _text_blocks = []
+            _tool_blocks = []
+            for _b in _r.content:
+                _btype = _b.get('type') if isinstance(_b, dict) else getattr(_b, 'type', '')
+                if _btype == 'text':
+                    _txt = _b.get('text','') if isinstance(_b, dict) else getattr(_b, 'text', '')
+                    if _txt: _text_blocks.append(_txt)
+                elif _btype == 'tool_use':
+                    _tool_blocks.append(_b)
+
+            _stop = getattr(_r, 'stop_reason', '') or ''
+
+            # If no tool calls or we've hit end_turn, return the text
+            if not _tool_blocks or _stop == 'end_turn':
+                _final = ' '.join(_text_blocks).strip()
+                if _final:
+                    return _final
+                if _stop == 'max_tokens':
+                    return "Response was too long — please ask me to continue or be more specific."
+                return f"No response generated (stop={_stop}) — please try again."
+
+            # Execute all tool calls and build the next message turn
+            # First, add the assistant message with its content (text + tool_use blocks)
+            _asst_content = []
+            for _tb in _text_blocks:
+                _asst_content.append({"type": "text", "text": _tb})
+            for _tb in _tool_blocks:
+                if isinstance(_tb, dict):
+                    _asst_content.append(_tb)
+                else:
+                    _asst_content.append({
+                        "type": "tool_use",
+                        "id": getattr(_tb, 'id', ''),
+                        "name": getattr(_tb, 'name', ''),
+                        "input": getattr(_tb, 'input', {})
+                    })
+            _msgs.append({"role": "assistant", "content": _asst_content})
+
+            # Execute each tool and collect results
+            _tool_results = []
+            for _tb in _tool_blocks:
+                if isinstance(_tb, dict):
+                    _tid = _tb.get('id',''); _tname = _tb.get('name',''); _tinput = _tb.get('input',{})
+                else:
+                    _tid = getattr(_tb, 'id',''); _tname = getattr(_tb, 'name',''); _tinput = getattr(_tb, 'input',{})
+                _result = _comp_execute_tool(_tname, _tinput)
+                _tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": _tid,
+                    "content": _result
+                })
+            _msgs.append({"role": "user", "content": _tool_results})
+
+        return "Reached maximum tool call rounds — please try again."
+
     except Exception as _e:
         _msg = str(_e) or type(_e).__name__
         return f"Connection issue ({_msg[:100]}) — please try again."
@@ -3929,13 +4171,25 @@ The research report is displayed in the right panel and available for download.
 
 You combine the perspectives of: a senior equity analyst, hedge fund analyst, quantitative researcher, and behavioural finance expert. You have deep markets knowledge and speak like a smart senior colleague — direct, substantive, no filler.
 
+TOOLS AVAILABLE — use them proactively:
+• search_web — search the live internet for news, earnings commentary, analyst reports, competitor data, macro events. USE THIS whenever you need current information rather than relying on training data. Always search before saying you "don't have" current data.
+• fetch_peer_financials — get live financial metrics for competitor tickers (margins, revenue, P/E, targets). USE THIS when the user asks about peers or sector comparison — don't guess, fetch it.
+• fetch_sec_filing — get the latest 10-K or 10-Q filing reference for any US stock, then use search_web for the actual content highlights.
+
+WHEN TO USE TOOLS:
+- User mentions a competitor or peer → fetch_peer_financials immediately
+- User asks about recent news, earnings, or analyst views → search_web immediately
+- User asks what management said in earnings → search_web("[company] earnings call transcript [most recent quarter]")
+- User asks about sector trends → search_web("[sector] outlook [current year]")
+- NEVER say "I don't have current data" without first trying search_web
+- NEVER give unverified general knowledge as fact — if uncertain, search first
+
 CORE RULES (never break these):
 1. EDUCATE and GUIDE — never advise. Say "the data suggests..." not "you should buy..."
 2. ONE question per response maximum
 3. Flag behavioural biases gently when you spot them
 4. No filler phrases ("great question!", "absolutely!", "certainly!")
 5. LENGTH: Keep each reply concise — under 400 words. Split long analyses across multiple turns rather than one giant block.
-5. Be concise — maximum 4 short paragraphs per response
 6. If asked directly "should I buy X?": "I'm here to help you think through the analysis — the decision is yours. What's your instinct on it, and why?"
 7. Every session ends: analysis for education, not financial advice
 
