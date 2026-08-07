@@ -3641,17 +3641,24 @@ def _comp_compute_tsr(d: dict) -> dict:
         # ── 1. SIMPLE TSR ──────────────────────────────────────
         def _simple(days, years):
             if len(_close) < max(days, 2): return {}
-            _p0 = float(_close.iloc[-min(days, len(_close)-1)])
+            _idx0 = -min(days, len(_close)-1)
+            _p0 = float(_close.iloc[_idx0])
             if _p0 <= 0: return {}
-            _d  = float(_divs.iloc[-min(days, len(_divs)):].sum())
+            _d  = float(_divs.iloc[_idx0:].sum())
             _pr = (_p_now - _p0) / _p0
             _dy = _d / _p0
             _tsr = _pr + _dy
-            # Annualise for multi-year
+            # Opening/closing date and price for transparent working
+            _date0 = str(_close.index[_idx0])[:10]
+            _date1 = str(_close.index[-1])[:10]
             if years > 1:
                 _ann = lambda x: (1+x)**(1/years)-1 if x is not None else None
-                return {'tsr': _ann(_tsr), 'price_return': _ann(_pr), 'div_yield': _dy/years, 'cumulative_tsr': _tsr}
-            return {'tsr': _tsr, 'price_return': _pr, 'div_yield': _dy}
+                return {'tsr': _ann(_tsr), 'price_return': _ann(_pr), 'div_yield': _dy/years,
+                        'cumulative_tsr': _tsr, 'open_price': _p0, 'close_price': _p_now,
+                        'dividends': _d, 'open_date': _date0, 'close_date': _date1}
+            return {'tsr': _tsr, 'price_return': _pr, 'div_yield': _dy,
+                    'open_price': _p0, 'close_price': _p_now,
+                    'dividends': _d, 'open_date': _date0, 'close_date': _date1}
 
         _res['simple'] = {
             '1y': _simple(252, 1),
@@ -7363,13 +7370,12 @@ with tab_comp:
                 # TSR deep-dive expander (always shown once data loaded)
                 if not _td.get('error'):
                     with st.expander("📊 TSR Deep-Dive — Annual & Quarterly"):
-                        import plotly.graph_objects as _go_tsr
                         _tsr_d = _comp_compute_tsr(_td)
 
-                        # ── WHY TSR MATTERS (brief explainer) ──
+                        # ── WHY TSR MATTERS ──
                         st.markdown(
                             '<div style="background:rgba(251,191,36,0.06);border-left:3px solid #FBBF24;'
-                            'padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:10px">'
+                            'padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:14px">'
                             '<div style="font-size:0.72rem;color:#FBBF24;font-weight:700;margin-bottom:3px">WHY TOTAL SHAREHOLDER RETURN?</div>'
                             '<div style="font-size:0.68rem;color:#94A3B8;line-height:1.5">'
                             'TSR is the actual return you earned — price change plus dividends. Decomposing it tells you '
@@ -7378,127 +7384,155 @@ with tab_comp:
                             '</div></div>',
                             unsafe_allow_html=True)
 
-                        # ── SIMPLE TSR TABLE ──
+                        # ── CALCULATION BASIS (transparent working) ──
                         _s = _tsr_d.get('simple', {})
-                        _srows = []
+                        _cb_rows = []
                         for _tp, _tl in [('1y','1 Year'), ('3y','3 Year (ann.)'), ('5y','5 Year (ann.)')]:
                             _sv = _s.get(_tp, {})
                             if _sv.get('tsr') is not None:
-                                _srows.append((_tl, _sv['tsr'], _sv.get('price_return'), _sv.get('div_yield')))
-                        if _srows:
-                            _sh = ['<table style="width:100%;border-collapse:collapse;font-size:0.74rem;margin-bottom:10px">',
+                                _cb_rows.append((_tl, _sv))
+                        if _cb_rows:
+                            _cb = ['<div style="margin-bottom:16px">',
+                                   '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">CALCULATION BASIS</div>',
+                                   '<table style="width:100%;border-collapse:collapse;font-size:0.71rem">',
                                    '<tr style="border-bottom:1px solid #334155">',
                                    '<th style="text-align:left;padding:4px 6px;color:#64748B">Period</th>',
-                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Total TSR</th>',
-                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Price Return</th>',
-                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Div Yield</th>',
+                                   '<th style="text-align:left;padding:4px 6px;color:#64748B">Opening Price</th>',
+                                   '<th style="text-align:left;padding:4px 6px;color:#64748B">Closing Price</th>',
+                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Dividends Paid</th>',
+                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Price Chg</th>',
+                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">= Total TSR</th>',
                                    '</tr>']
-                            for _tl, _tv, _tp2, _td2 in _srows:
-                                _gc = '#22c55e' if _tv >= 0 else '#ef4444'
-                                _sh.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">'
-                                           f'<td style="padding:4px 6px;color:#CBD5E1">{_tl}</td>'
-                                           f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>'
-                                           f'<td style="padding:4px 6px;text-align:right;color:#94A3B8">{(_tp2 or 0)*100:+.1f}%</td>'
-                                           f'<td style="padding:4px 6px;text-align:right;color:#94A3B8">{(_td2 or 0)*100:.1f}%</td>'
-                                           f'</tr>')
-                            _sh.append('</table>')
-                            st.markdown(''.join(_sh), unsafe_allow_html=True)
+                            for _tl, _sv in _cb_rows:
+                                _tsr_v = _sv.get('tsr', 0) or 0
+                                _pr_v  = _sv.get('price_return', 0) or 0
+                                _op    = _sv.get('open_price')
+                                _cl    = _sv.get('close_price')
+                                _divs  = _sv.get('dividends')
+                                _od    = _sv.get('open_date', '')
+                                _cd    = _sv.get('close_date', '')
+                                _op_str = f"${_op:.2f} ({_od})" if _op else '—'
+                                _cl_str = f"${_cl:.2f} ({_cd})" if _cl else '—'
+                                _div_str = f"${_divs:.2f}" if _divs is not None else '—'
+                                _gc  = '#22c55e' if _tsr_v >= 0 else '#ef4444'
+                                _prc = '#22c55e' if _pr_v  >= 0 else '#ef4444'
+                                _cb.append(
+                                    f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">'
+                                    f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">{_tl}</td>'
+                                    f'<td style="padding:4px 6px;color:#94A3B8">{_op_str}</td>'
+                                    f'<td style="padding:4px 6px;color:#94A3B8">{_cl_str}</td>'
+                                    f'<td style="padding:4px 6px;text-align:right;color:#94A3B8">{_div_str}</td>'
+                                    f'<td style="padding:4px 6px;text-align:right;color:{_prc}">{_pr_v*100:+.1f}%</td>'
+                                    f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tsr_v*100:+.1f}%</td>'
+                                    f'</tr>')
+                            _cb.append('</table></div>')
+                            st.markdown(''.join(_cb), unsafe_allow_html=True)
 
-                        # ── ANNUAL ENHANCED — WATERFALL CHART ──
+                        # ── ANNUAL ENHANCED DECOMPOSITION (table) ──
                         _ann = _tsr_d.get('annual', [])
                         if _ann:
-                            st.caption("Annual TSR — Enhanced Decomposition (EV-based · 3 buckets)")
-                            st.caption("Performance = sales growth + margin change − reinvestment drag  |  Yield = earnings + FCF  |  Valuation = market re-rating (P/E expansion/compression)")
-                            _yr_lbls = [a['year'] for a in _ann]
-                            _perf_vals = [a['performance']*100 for a in _ann]
-                            _yld_vals  = [a['yield_bucket']*100 for a in _ann]
-                            _val_vals  = [a['valuation']*100 for a in _ann]
-                            _tsr_vals  = [a['tsr']*100 for a in _ann]
-                            _fig_ann = _go_tsr.Figure()
-                            _fig_ann.add_trace(_go_tsr.Bar(name='Performance', x=_yr_lbls, y=_perf_vals,
-                                marker_color=['#22c55e' if v>=0 else '#ef4444' for v in _perf_vals], opacity=0.85))
-                            _fig_ann.add_trace(_go_tsr.Bar(name='Yield (FCF+Earnings)', x=_yr_lbls, y=_yld_vals,
-                                marker_color='#38BDF8', opacity=0.85))
-                            _fig_ann.add_trace(_go_tsr.Bar(name='Valuation Re-rating', x=_yr_lbls, y=_val_vals,
-                                marker_color=['#818CF8' if v>=0 else '#F472B6' for v in _val_vals], opacity=0.85))
-                            _fig_ann.add_trace(_go_tsr.Scatter(name='Total TSR', x=_yr_lbls, y=_tsr_vals,
-                                mode='markers+lines', marker=dict(size=8, color='#FBBF24'),
-                                line=dict(color='#FBBF24', width=2, dash='dot')))
-                            _fig_ann.add_hline(y=0, line_color='rgba(255,255,255,0.2)', line_width=1)
-                            _fig_ann.update_layout(
-                                barmode='relative', height=260,
-                                margin=dict(l=0,r=0,t=10,b=0),
-                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                font=dict(size=9, color='#94A3B8'),
-                                legend=dict(orientation='h', y=1.15, font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
-                                yaxis=dict(ticksuffix='%', gridcolor='rgba(255,255,255,0.05)'),
-                                xaxis=dict(showgrid=False))
-                            st.plotly_chart(_fig_ann, use_container_width=True,
-                                            config={"displayModeBar": False}, key=f"_tsr_ann_{_tk}")
-
-                            # Companion table showing annual detail
-                            _ah = ['<table style="width:100%;border-collapse:collapse;font-size:0.68rem;margin-top:6px">',
+                            _yr_hdrs = [str(_a['year']) for _a in _ann]
+                            _n_yrs = len(_ann)
+                            _at = ['<div style="margin-bottom:16px">',
+                                   '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">ANNUAL ENHANCED DECOMPOSITION</div>',
+                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">Performance = sales growth + reinvestment drag + margin change &nbsp;·&nbsp; Yield = earnings + FCF &nbsp;·&nbsp; Valuation = market re-rating (P/E expansion/compression)</div>',
+                                   '<table style="width:100%;border-collapse:collapse;font-size:0.7rem">',
                                    '<tr style="border-bottom:1px solid #334155">',
-                                   '<th style="text-align:left;padding:3px 5px;color:#64748B">Year</th>',
-                                   '<th style="text-align:right;padding:3px 5px;color:#22c55e">Perf</th>',
-                                   '<th style="text-align:right;padding:3px 5px;color:#38BDF8">Yield</th>',
-                                   '<th style="text-align:right;padding:3px 5px;color:#818CF8">Rating</th>',
-                                   '<th style="text-align:right;padding:3px 5px;color:#FBBF24">TSR</th>',
-                                   '<th style="text-align:right;padding:3px 5px;color:#94A3B8">P/E</th>',
-                                   '<th style="text-align:right;padding:3px 5px;color:#94A3B8">Op Mgn</th>',
-                                   '</tr>']
-                            for _a in _ann:
-                                _tc = '#22c55e' if _a['tsr'] >= 0 else '#ef4444'
-                                _pe_str = (f"{_a['pe_start']:.1f}x→{_a['pe_end']:.1f}x"
-                                           if _a.get('pe_start') and _a.get('pe_end') else '—')
-                                _om_str = (f"{_a['op_margin_start']*100:.1f}%→{_a['op_margin_end']*100:.1f}%"
-                                           if _a.get('op_margin_start') and _a.get('op_margin_end') else '—')
-                                _ah.append(
-                                    f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">'
-                                    f'<td style="padding:3px 5px;color:#CBD5E1;font-weight:600">{_a["year"]}</td>'
-                                    f'<td style="padding:3px 5px;text-align:right;color:#22c55e">{_a["performance"]*100:+.1f}%</td>'
-                                    f'<td style="padding:3px 5px;text-align:right;color:#38BDF8">{_a["yield_bucket"]*100:+.1f}%</td>'
-                                    f'<td style="padding:3px 5px;text-align:right;color:#818CF8">{_a["valuation"]*100:+.1f}%</td>'
-                                    f'<td style="padding:3px 5px;text-align:right;color:{_tc};font-weight:700">{_a["tsr"]*100:+.1f}%</td>'
-                                    f'<td style="padding:3px 5px;text-align:right;color:#94A3B8">{_pe_str}</td>'
-                                    f'<td style="padding:3px 5px;text-align:right;color:#94A3B8">{_om_str}</td>'
-                                    f'</tr>')
-                            _ah.append('</table>')
-                            st.markdown(''.join(_ah), unsafe_allow_html=True)
+                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:190px">Line item</th>']
+                            for _yh in _yr_hdrs:
+                                _at.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_yh}</th>')
+                            _at.append('</tr>')
 
-                        # ── QUARTERLY TRADITIONAL ──
+                            _ann_row_defs = [
+                                ('Sales growth contribution',   'sales_growth_contrib',  None,      False),
+                                ('Reinvestment drag',           'invest_drag',            None,      False),
+                                ('Net growth impact',           '__net_growth__',         None,      False),
+                                ('Change in operating margin',  'margin_change_contrib',  None,      False),
+                                ('Sales × margin interaction',  'interaction',            '#94A3B8', False),
+                                ('TSR from Performance',        'performance',            None,      True),
+                                ('__sep__',                     None,                     None,      False),
+                                ('Earnings yield',              'earnings_yield',         '#38BDF8', False),
+                                ('FCF yield',                   'fcf_yield',              '#38BDF8', False),
+                                ('TSR from Yield',              'yield_bucket',           '#38BDF8', True),
+                                ('__sep__',                     None,                     None,      False),
+                                ('Valuation re-rating (P/E ∆)', 'valuation',             '#818CF8', True),
+                                ('__sep__',                     None,                     None,      False),
+                                ('TOTAL TSR',                   'tsr',                    None,      True),
+                                ('__sep__',                     None,                     None,      False),
+                                ('  P/E (open → close)',        '__pe__',                 '#64748B', False),
+                                ('  Op. Margin (open → close)', '__om__',                '#64748B', False),
+                            ]
+
+                            for _rl, _rk, _rc, _rb in _ann_row_defs:
+                                if _rl == '__sep__':
+                                    _at.append(f'<tr><td colspan="{1+_n_yrs}" style="padding:1px 0;border-bottom:1px solid #1e293b"></td></tr>')
+                                    continue
+                                _is_total = _rl == 'TOTAL TSR'
+                                _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
+                                _at.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
+                                           f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
+                                for _a in _ann:
+                                    if _rk == '__net_growth__':
+                                        _v = (_a.get('sales_growth_contrib') or 0) + (_a.get('invest_drag') or 0)
+                                    elif _rk == '__pe__':
+                                        _ps, _pe = _a.get('pe_start'), _a.get('pe_end')
+                                        _cell = f'{_ps:.1f}x → {_pe:.1f}x' if _ps and _pe else '—'
+                                        _at.append(f'<td style="padding:4px 6px;text-align:right;color:#64748B">{_cell}</td>')
+                                        continue
+                                    elif _rk == '__om__':
+                                        _os2, _oe2 = _a.get('op_margin_start'), _a.get('op_margin_end')
+                                        _cell = f'{_os2*100:.1f}% → {_oe2*100:.1f}%' if _os2 and _oe2 else '—'
+                                        _at.append(f'<td style="padding:4px 6px;text-align:right;color:#64748B">{_cell}</td>')
+                                        continue
+                                    else:
+                                        _v = _a.get(_rk)
+                                    if _v is None:
+                                        _at.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
+                                    else:
+                                        _c = _rc or ('#22c55e' if _v >= 0 else '#ef4444')
+                                        _w = 'font-weight:700;' if _rb else ''
+                                        _at.append(f'<td style="padding:4px 6px;text-align:right;color:{_c};{_w}">{_v*100:+.1f}%</td>')
+                                _at.append('</tr>')
+                            _at.append('</table></div>')
+                            st.markdown(''.join(_at), unsafe_allow_html=True)
+
+                        # ── QUARTERLY TRADITIONAL DECOMPOSITION (table) ──
                         _qtrs = _tsr_d.get('quarterly', [])
                         if _qtrs:
-                            st.caption("Quarterly TSR — Traditional Decomposition  |  TSR = EPS growth + P/E change + dividend yield + interaction")
-                            _qlbls   = [q['period'] for q in reversed(_qtrs)]
-                            _qeps_v  = [(q.get('eps_growth') or 0)*100 for q in reversed(_qtrs)]
-                            _qpe_v   = [(q.get('pe_change') or 0)*100 for q in reversed(_qtrs)]
-                            _qdiv_v  = [(q.get('div_yield') or 0)*100 for q in reversed(_qtrs)]
-                            _qinter_v= [(q.get('interaction') or 0)*100 for q in reversed(_qtrs)]
-                            _qtsr_v  = [q['tsr']*100 for q in reversed(_qtrs)]
-                            _fig_q = _go_tsr.Figure()
-                            _fig_q.add_trace(_go_tsr.Bar(name='EPS Growth', x=_qlbls, y=_qeps_v,
-                                marker_color=['#22c55e' if v>=0 else '#ef4444' for v in _qeps_v], opacity=0.85))
-                            _fig_q.add_trace(_go_tsr.Bar(name='P/E Change', x=_qlbls, y=_qpe_v,
-                                marker_color='#818CF8', opacity=0.85))
-                            _fig_q.add_trace(_go_tsr.Bar(name='Div Yield', x=_qlbls, y=_qdiv_v,
-                                marker_color='#38BDF8', opacity=0.85))
-                            _fig_q.add_trace(_go_tsr.Bar(name='Interaction', x=_qlbls, y=_qinter_v,
-                                marker_color='#64748B', opacity=0.6))
-                            _fig_q.add_trace(_go_tsr.Scatter(name='Total TSR', x=_qlbls, y=_qtsr_v,
-                                mode='markers+lines', marker=dict(size=7, color='#FBBF24'),
-                                line=dict(color='#FBBF24', width=2, dash='dot')))
-                            _fig_q.add_hline(y=0, line_color='rgba(255,255,255,0.2)', line_width=1)
-                            _fig_q.update_layout(
-                                barmode='relative', height=240,
-                                margin=dict(l=0,r=0,t=10,b=0),
-                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                font=dict(size=9, color='#94A3B8'),
-                                legend=dict(orientation='h', y=1.15, font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
-                                yaxis=dict(ticksuffix='%', gridcolor='rgba(255,255,255,0.05)'),
-                                xaxis=dict(showgrid=False))
-                            st.plotly_chart(_fig_q, use_container_width=True,
-                                            config={"displayModeBar": False}, key=f"_tsr_q_{_tk}")
+                            _q_disp = list(reversed(_qtrs))  # most recent left
+                            _qt = ['<div style="margin-bottom:10px">',
+                                   '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">QUARTERLY TRADITIONAL DECOMPOSITION</div>',
+                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = EPS growth + P/E change + dividend yield + (EPS × P/E interaction) &nbsp;·&nbsp; quarterly, not annualised</div>',
+                                   '<table style="width:100%;border-collapse:collapse;font-size:0.7rem">',
+                                   '<tr style="border-bottom:1px solid #334155">',
+                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:150px">Component</th>']
+                            for _q in _q_disp:
+                                _qt.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_q["period"]}</th>')
+                            _qt.append('</tr>')
+
+                            _q_row_defs = [
+                                ('EPS Growth',     'eps_growth',  None,      False),
+                                ('P/E Change',     'pe_change',   '#818CF8', False),
+                                ('Dividend Yield', 'div_yield',   '#38BDF8', False),
+                                ('Interaction',    'interaction',  '#94A3B8', False),
+                                ('TOTAL TSR',      'tsr',          None,      True),
+                            ]
+                            for _rl, _rk, _rc, _rb in _q_row_defs:
+                                _is_total = _rl == 'TOTAL TSR'
+                                _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
+                                _qt.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
+                                           f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
+                                for _q in _q_disp:
+                                    _v = _q.get(_rk)
+                                    if _v is None:
+                                        _qt.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
+                                    else:
+                                        _c = _rc or ('#22c55e' if _v >= 0 else '#ef4444')
+                                        _w = 'font-weight:700;' if _rb else ''
+                                        _qt.append(f'<td style="padding:4px 6px;text-align:right;color:{_c};{_w}">{_v*100:+.1f}%</td>')
+                                _qt.append('</tr>')
+                            _qt.append('</table></div>')
+                            st.markdown(''.join(_qt), unsafe_allow_html=True)
 
                 # Remove stock button
                 if _stage in ('fundamental','valuation','technical'):
