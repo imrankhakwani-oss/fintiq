@@ -7873,7 +7873,9 @@ Senior users: add your own questions at the bottom of the conversation.
                                 _SS[_hist_cache_key] = _raw_h if not _raw_h.empty else _td.get('hist')
                             except Exception:
                                 _SS[_hist_cache_key] = _td.get('hist')
-                        _h = _SS.get(_hist_cache_key) or _td.get('hist')
+                        _h = _SS.get(_hist_cache_key)
+                        if _h is None:
+                            _h = _td.get('hist')
                         if _h is not None and not _h.empty:
                             _ch_df = _h[['Close']].copy()
                             _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
