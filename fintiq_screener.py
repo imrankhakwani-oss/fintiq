@@ -6556,11 +6556,47 @@ with tab_comp:
     if 'cp_report'    not in _SS: _SS.cp_report    = None
     if 'cp_new_ticks' not in _SS: _SS.cp_new_ticks = []
 
+    # ── Auto-restore from /tmp when session is blank (tab refresh / reconnect) ──
+    _TMP_SESSION_PATH = '/tmp/fintiq_session.json'
+    if not _SS.cp_msgs and not _SS.get('cp_auto_restore_checked'):
+        _SS['cp_auto_restore_checked'] = True
+        try:
+            import json as _jr, os as _osr, time as _tr
+            if _osr.path.exists(_TMP_SESSION_PATH):
+                if _tr.time() - _osr.path.getmtime(_TMP_SESSION_PATH) < 86400:
+                    with open(_TMP_SESSION_PATH, 'r', encoding='utf-8') as _fj:
+                        _sv2 = _jr.load(_fj)
+                    if _sv2.get('v') == 1 and _sv2.get('msgs'):
+                        _SS.cp_msgs    = _sv2['msgs']
+                        _SS.cp_stage   = _sv2.get('stage', 'discovery')
+                        _SS.cp_ctx     = _sv2.get('ctx', {})
+                        _SS.cp_ctx.setdefault('watchlist', [])
+                        _SS.cp_analyses = _sv2.get('analyses', {})
+                        for _rtk in _sv2.get('tickers', []):
+                            if _rtk not in _SS.cp_data:
+                                _SS.cp_data[_rtk] = _comp_fetch(_rtk)
+                        _SS['cp_auto_restored'] = True
+        except Exception:
+            pass
+
     _MAX_STOCKS = 5
     _SS.cp_ctx.setdefault('max_stocks', _MAX_STOCKS)
     _SS.cp_ctx.setdefault('watchlist', [])
     _stage = _SS.cp_stage
     _wl    = _SS.cp_ctx.get('watchlist', [])
+
+    # ── Auto-restore banner ──────────────────────────────────────
+    if _SS.get('cp_auto_restored'):
+        import datetime as _dt_ar
+        try:
+            import os as _osar2, time as _tar2
+            _age_s = int(_tar2.time() - _osar2.path.getmtime(_TMP_SESSION_PATH))
+            _age_str = (f"{_age_s//3600}h {(_age_s%3600)//60}m" if _age_s >= 3600
+                        else f"{_age_s//60}m" if _age_s >= 60 else f"{_age_s}s")
+        except Exception:
+            _age_str = "recently"
+        st.info(f"💾 **Session restored** — {len(_SS.cp_msgs)} messages, stage: **{_SS.cp_stage.upper()}** (saved {_age_str} ago). Use **🔄 New Session** to start fresh.", icon=None)
+        _SS['cp_auto_restored'] = False
 
     # ════════════════════════════════════════════════════════════
     # OPENING MESSAGE — generate BEFORE header so download button
@@ -6617,45 +6653,51 @@ with tab_comp:
         _ts_lines.append("")
     _transcript_txt = "\n".join(_ts_lines)
 
-    _hc1, _hc2, _hc3, _hc4, _hc5, _hc6 = st.columns([3, 2, 2, 2, 2, 2], gap="small")
+    # Compact header: title + stage badge + icon-only toolbar
+    _hc1, _hc2, _hc3, _hc4, _hc5, _hc6 = st.columns([4, 2, 1, 1, 1, 1], gap="small")
     with _hc1:
         st.markdown(
-            '<div style="font-size:1.05rem;font-weight:700;color:#E2E8F0;padding-top:6px">'
-            '🤖 AI Investment Companion</div>', unsafe_allow_html=True)
-    with _hc2:
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:6px;padding-top:8px">'
-            f'<span style="font-size:1rem">{_sico}</span>'
-            f'<span style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;'
-            f'color:{_scol};text-transform:uppercase">{_slbl}</span>'
+            f'<div style="display:flex;align-items:center;gap:10px;padding-top:4px">'
+            f'<span style="font-size:1.1rem;font-weight:700;color:#E2E8F0">🤖 AI Equity Analyst</span>'
+            f'<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.08em;'
+            f'color:{_scol};background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:20px;'
+            f'border:1px solid {_scol}40">{_sico} {_slbl}</span>'
             f'</div>', unsafe_allow_html=True)
+    with _hc2:
+        st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)  # spacer
     with _hc3:
         st.download_button(
-            "⬇️ Save Chat",
+            "⬇️",
             data=_session_json,
             file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
             mime="application/json",
             use_container_width=True,
             key="cp_dl_chat",
-            help="Download session — upload this file later to resume exactly where you left off")
+            help="Save chat — download session to resume later")
     with _hc4:
         st.download_button(
-            "📄 Transcript",
+            "📄",
             data=_transcript_txt,
             file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
             mime="text/plain",
             use_container_width=True,
             key="cp_dl_transcript",
-            help="Download readable plain-text transcript of this conversation")
+            help="Download plain-text transcript")
     with _hc5:
-        if st.button("📂 Resume", use_container_width=True, key="cp_resume_btn",
-                     help="Upload a saved session file to continue a previous conversation"):
+        if st.button("📂", use_container_width=True, key="cp_resume_btn",
+                     help="Resume — upload a saved session file"):
             _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
     with _hc6:
-        if st.button("🔄 New Session", use_container_width=True, key="cp_reset"):
+        if st.button("🔄", use_container_width=True, key="cp_reset",
+                     help="New Session — clear everything and start fresh"):
             for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses',
-                       'cp_report','cp_new_ticks','cp_show_resume','cp_name_map']:
+                       'cp_report','cp_new_ticks','cp_show_resume','cp_name_map',
+                       'cp_auto_restore_checked']:
                 if _k in _SS: del _SS[_k]
+            try:
+                import os as _osrst
+                if _osrst.path.exists(_TMP_SESSION_PATH): _osrst.remove(_TMP_SESSION_PATH)
+            except Exception: pass
             st.rerun()
 
     # ── Resume upload panel ───────────────────────────────────
@@ -6691,7 +6733,7 @@ with tab_comp:
     # ════════════════════════════════════════════════════════════
     # CHAT — full width, taller
     # ════════════════════════════════════════════════════════════
-    _chat_container = st.container(height=380)
+    _chat_container = st.container(height=520)
     with _chat_container:
         for _m in _SS.cp_msgs:
             with st.chat_message(_m["role"],
@@ -6957,9 +6999,96 @@ with tab_comp:
                 r'---CONFIRM_FETCH---.*?(?:---|$)',
                 '', _reply, flags=_re_strip.DOTALL).strip()
             _SS.cp_msgs.append({"role": "assistant", "content": _display_reply or _reply})
+
+            # ── Auto-save session to /tmp for reconnect restore ────
+            try:
+                import json as _jsav, os as _osav
+                with open(_TMP_SESSION_PATH, 'w', encoding='utf-8') as _fsav:
+                    _jsav.dump({
+                        'v': 1,
+                        'stage': _SS.cp_stage,
+                        'ctx':   _SS.cp_ctx,
+                        'tickers': list(_SS.cp_data.keys()),
+                        'analyses': {k: {ak: av for ak, av in av.items() if ak != 'mc'}
+                                     for k, av in _SS.cp_analyses.items()},
+                        'msgs':  _SS.cp_msgs,
+                    }, _fsav, ensure_ascii=False)
+            except Exception:
+                pass
+
             st.rerun()
 
     st.caption("Guided analysis · Educational only · Not financial advice")
+
+    # ════════════════════════════════════════════════════════════
+    # ANALYST PLAYBOOK — pre-loaded hedge fund questions by stage
+    # ════════════════════════════════════════════════════════════
+    with st.expander("📋 Analyst Playbook — How a Hedge Fund Analyst Thinks About a Stock"):
+        st.markdown("""
+<div style="font-size:0.72rem;color:#64748B;margin-bottom:12px">
+Not sure what to ask? These are the questions a professional equity analyst works through systematically.
+Copy any question, replace <strong>[Company]</strong> with your stock's name, and paste it into the chat above.
+Senior users: add your own questions at the bottom of the conversation.
+</div>""", unsafe_allow_html=True)
+
+        _pb_stages = [
+            ("🔎 Stage 1 — Business Quality & Moat", [
+                "What does [Company] actually do, and how does it make money? Explain the business model simply.",
+                "What is [Company]'s competitive moat — cost advantage, network effects, switching costs, or brand? How durable is it?",
+                "Who are [Company]'s 3 main competitors? Compare their gross margins, revenue growth, and market share.",
+                "Is [Company]'s revenue recurring (subscriptions, contracts) or transactional? What does that mean for earnings predictability?",
+                "What does the Fama-French factor analysis tell us about [Company]'s risk-adjusted return history?",
+                "What would make me wrong on [Company]? What are the 2-3 things that could permanently impair this business?",
+            ]),
+            ("💰 Stage 2 — Valuation", [
+                "Walk me through a DCF for [Company] using conservative, base, and bull case revenue growth assumptions.",
+                "What is [Company] trading at on EV/EBITDA, P/E, and P/FCF versus its 5-year average and versus sector peers?",
+                "At the current price, what growth rate is the market implying for [Company]? Is that realistic?",
+                "What is the margin of safety — how much could the business disappoint and the stock still be reasonably priced?",
+                "Run a WACC sensitivity: what does intrinsic value look like at 7%, 9%, and 11% discount rates?",
+                "What is the Graham Number for [Company], and what does it tell us about whether it's speculative or value-priced?",
+            ]),
+            ("📈 Stage 3 — Technical & Timing", [
+                "Where is [Company] trading relative to its 50-day and 200-day moving averages? What does that signal?",
+                "What is the RSI for [Company] right now — is it overbought, oversold, or neutral?",
+                "Where are the key support and resistance levels for [Company]? What would a good entry zone look like?",
+                "Is [Company] in a downtrend, uptrend, or base formation? What technical pattern is setting up?",
+                "What is the short interest for [Company]? Could a short squeeze be a catalyst?",
+            ]),
+            ("⚡ Stage 4 — Catalysts & Risk", [
+                "When is [Company]'s next earnings date, and what does the market expect? What would a positive or negative surprise look like?",
+                "What specific catalysts could close the gap between [Company]'s current price and intrinsic value in the next 6-12 months?",
+                "What are the biggest macro risks to [Company] — interest rates, FX, regulation, commodity prices?",
+                "Has management been buying or selling [Company] shares recently? What does insider activity suggest?",
+                "What is [Company]'s track record on guidance — do they beat, miss, or hit targets? How credible is management?",
+            ]),
+            ("✅ Stage 5 — Decision", [
+                "Summarise the full investment case for [Company]: quality, value, timing, and the key catalyst.",
+                "Given everything we've covered on [Company], what is the probability-weighted expected return over my investment horizon?",
+                "What position size in [Company] would be appropriate given my risk appetite and portfolio concentration?",
+                "What would cause me to sell [Company]? Define the exit criteria before I buy.",
+                "Add [Company] to my watchlist and generate a one-page research summary.",
+            ]),
+        ]
+
+        for _pb_title, _pb_qs in _pb_stages:
+            st.markdown(
+                f'<div style="font-size:0.72rem;font-weight:700;color:#FBBF24;margin:12px 0 6px">{_pb_title}</div>',
+                unsafe_allow_html=True)
+            _pb_html = ['<div style="font-size:0.71rem;line-height:1.8;color:#94A3B8">']
+            for _q in _pb_qs:
+                _pb_html.append(
+                    f'<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" '
+                    f'title="Copy this question and paste into the chat above">'
+                    f'<span style="color:#475569;margin-right:6px">›</span>{_q}</div>')
+            _pb_html.append('</div>')
+            st.markdown(''.join(_pb_html), unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:0.65rem;color:#334155;margin-top:10px;padding-top:8px;border-top:1px solid #1e293b">'
+            '💡 Tip: Work through the stages in order. Each stage builds on the last — '
+            'you cannot time a stock you don\'t understand, and you cannot value a stock whose moat you haven\'t stress-tested.'
+            '</div>', unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════════
     # STOCK CARDS — below chat, one card per tracked company
@@ -7268,20 +7397,76 @@ with tab_comp:
                 ('52w High',     _wk52h_str),
             ]
 
-            # Add MC range if available
-            _mc_row = ''
+            # ── Valuation estimate section ────────────────────────
+            # Graham Number = sqrt(22.5 × EPS × BVPS) — no-assumptions intrinsic value
+            _bvps   = _fv2(_ti.get('bookValue'))
+            _graham = None
+            if _eps_v and _bvps and _eps_v > 0 and _bvps > 0:
+                import math as _math_g
+                _graham = _math_g.sqrt(22.5 * _eps_v * _bvps)
+            # 52-week range
+            _52w_lo = _fv2(_ti.get('fiftyTwoWeekLow'))
+            _52w_hi = _fv2(_ti.get('fiftyTwoWeekHigh'))
+            _range_str = (f"${_52w_lo:.2f} – ${_52w_hi:.2f}"
+                          if _52w_lo and _52w_hi else '—')
+            _range_pos = None
+            if _52w_lo and _52w_hi and _pr and _52w_hi > _52w_lo:
+                _range_pos = (_pr - _52w_lo) / (_52w_hi - _52w_lo) * 100
+            # Analyst consensus
+            _tgt          = _fv2(_ti.get('targetMeanPrice'))
+            _tgt_low      = _fv2(_ti.get('targetLowPrice'))
+            _tgt_high     = _fv2(_ti.get('targetHighPrice'))
+            _num_analysts = _fv2(_ti.get('numberOfAnalystOpinions'))
+            _rec_mean     = _fv2(_ti.get('recommendationMean'))  # 1=Strong Buy … 5=Sell
+            _rec_map = {1:'Strong Buy',2:'Buy',3:'Hold',4:'Underperform',5:'Sell'}
+            _rec_lbl  = ''
+            if _rec_mean:
+                _rec_lbl = _rec_map.get(round(_rec_mean), f"{_rec_mean:.1f}")
+            _tgt_upside = ((_tgt - _pr) / _pr) if _tgt and _pr else None
+
+            # Build valuation estimate metric rows
+            _val_est_rows = [_sec('── VALUATION ESTIMATES ──')]
+            if _graham:
+                _gv_c = '#22c55e' if _graham > (_pr or 0) else '#ef4444'
+                _val_est_rows.append(('Graham Number',
+                    f'<span style="color:{_gv_c};font-weight:700">${_graham:.2f}</span>'
+                    f' <span style="font-size:0.63rem;color:#64748B">(√22.5×EPS×BV)</span>'))
+            if _tgt:
+                _up_c = '#22c55e' if (_tgt_upside or 0) >= 0 else '#ef4444'
+                _tgt_str = f'${_tgt:.2f}'
+                if _tgt_upside is not None:
+                    _tgt_str += f' <span style="color:{_up_c};font-size:0.7rem">({_tgt_upside*100:+.1f}%)</span>'
+                if _rec_lbl:
+                    _tgt_str += f' <span style="font-size:0.63rem;color:#64748B">· {_rec_lbl}'
+                    if _num_analysts: _tgt_str += f' ({int(_num_analysts)})'
+                    _tgt_str += '</span>'
+                _val_est_rows.append(('Analyst Target', _tgt_str))
+            if _tgt_low and _tgt_high:
+                _val_est_rows.append(('Analyst Range', f'${_tgt_low:.2f} – ${_tgt_high:.2f}'))
+            # DCF estimate (shown when available from valuation stage)
+            _dcf_est = _an.get('dcf_ps')
+            if _dcf_est:
+                _dcf_c = '#22c55e' if _dcf_est > (_pr or 0) else '#ef4444'
+                _dcf_up = ((_dcf_est - _pr) / _pr) if _pr else None
+                _dcf_str = f'<span style="color:{_dcf_c};font-weight:700">${_dcf_est:.2f}</span>'
+                if _dcf_up is not None:
+                    _dcf_str += f' <span style="font-size:0.7rem;color:{_dcf_c}">({_dcf_up*100:+.1f}%)</span>'
+                _val_est_rows.append(('Fintiq DCF Est.', _dcf_str))
             if _an.get('mc'):
-                _mc = _an['mc']
-                _mc_row = (f'<div style="margin-top:8px;padding:8px;background:rgba(139,92,246,0.08);'
-                           f'border-radius:6px;border:1px solid rgba(139,92,246,0.2)">'
-                           f'<div style="font-size:0.65rem;color:#8B5CF6;font-weight:700;margin-bottom:4px">DCF · MC RANGE</div>'
-                           f'<div style="font-size:0.72rem;color:#A78BFA">'
-                           f'Bear {_mc["p25"]:.2f} · Base {_mc["p50"]:.2f} · Bull {_mc["p75"]:.2f}'
-                           f'</div></div>')
-            # Add analyst target if available
-            _tgt = _fv2(_ti.get('targetMeanPrice'))
-            _tgt_row = (f'<div style="font-size:0.7rem;color:#10B981;margin-top:4px">'
-                        f'Analyst target: <strong>{_tgt:.2f}</strong></div>') if _tgt else ''
+                _mc_v2 = _an['mc']
+                _val_est_rows.append(('MC Bear/Base/Bull',
+                    f'${_mc_v2["p25"]:.2f} / ${_mc_v2["p50"]:.2f} / ${_mc_v2["p75"]:.2f}'))
+            _val_est_rows.append(('52w Range', _range_str))
+            if _range_pos is not None:
+                _rp_c = '#22c55e' if _range_pos >= 50 else '#F59E0B' if _range_pos >= 25 else '#ef4444'
+                _val_est_rows.append(('Range Position',
+                    f'<span style="color:{_rp_c};font-weight:700">{_range_pos:.0f}%</span>'
+                    f' <span style="font-size:0.63rem;color:#64748B">(0%=52w low, 100%=52w high)</span>'))
+            _mets += _val_est_rows
+
+            # MC/target now handled in valuation estimate section — clear old rows
+            _mc_row  = ''
+            _tgt_row = ''
 
             def _met_html(label, val):
                 # Section headers have an HTML span as value
@@ -7401,13 +7586,13 @@ with tab_comp:
                         if _ann:
                             _yr_hdrs = [str(_a['year']) for _a in _ann]
                             _n_yrs = len(_ann)
-                            _at = ['<div style="margin-bottom:16px">',
+                            _at = ['<div style="margin-bottom:16px;overflow-x:auto">',
                                    '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">ANNUAL ENHANCED DECOMPOSITION</div>',
                                    '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over the fiscal year (FY start → FY end price). '
                                    'Decomposition below explains <em>why</em> shareholders earned that return.</div>',
-                                   '<table style="width:100%;border-collapse:collapse;font-size:0.7rem">',
+                                   '<table style="width:100%;border-collapse:collapse;font-size:0.68rem;white-space:nowrap">',
                                    '<tr style="border-bottom:1px solid #334155">',
-                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:190px">Line item</th>']
+                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:140px;white-space:normal">Line item</th>']
                             for _yh in _yr_hdrs:
                                 _at.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_yh}</th>')
                             _at.append('</tr>')
@@ -7504,12 +7689,12 @@ with tab_comp:
                         _qtrs = _tsr_d.get('quarterly', [])
                         if _qtrs:
                             _q_disp = list(reversed(_qtrs))  # most recent left
-                            _qt = ['<div style="margin-bottom:10px">',
+                            _qt = ['<div style="margin-bottom:10px;overflow-x:auto">',
                                    '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">QUARTERLY TRADITIONAL DECOMPOSITION</div>',
                                    '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over each quarter (start → end price). Decomposition = EPS growth + P/E change + dividend yield + interaction.</div>',
-                                   '<table style="width:100%;border-collapse:collapse;font-size:0.7rem">',
+                                   '<table style="width:100%;border-collapse:collapse;font-size:0.68rem;white-space:nowrap">',
                                    '<tr style="border-bottom:1px solid #334155">',
-                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:150px">Component</th>']
+                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:120px;white-space:normal">Component</th>']
                             for _q in _q_disp:
                                 _qt.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_q["period"]}</th>')
                             _qt.append('</tr>')
@@ -7595,114 +7780,115 @@ with tab_comp:
                                 _SS[_rm_confirm_key] = False
                                 st.rerun()
 
-                # Price chart — shown from valuation stage onwards
-                if _stage in ('valuation','technical','finalise','report'):
-                    import pandas as _pd_ch, plotly.graph_objects as _go_ch
-                    from plotly.subplots import make_subplots as _msp
-                    import numpy as _np_ch
-                    # Period selector (persisted per ticker in session state)
-                    _per_key = f"_cht_per_{_tk}"
-                    _per_opts = ['1W','1M','3M','YTD','1Y','5Y']
-                    _per_cols = st.columns(len(_per_opts))
-                    for _pi, _po in enumerate(_per_opts):
-                        with _per_cols[_pi]:
-                            if st.button(_po, key=f"_pb_{_tk}_{_po}",
-                                         use_container_width=True,
-                                         type="primary" if _SS.get(_per_key,'1Y')==_po else "secondary"):
-                                _SS[_per_key] = _po
-                    _sel_per = _SS.get(_per_key, '1Y')
-                    # Fetch history for selected period (cached per ticker+period)
-                    _hist_cache_key = f"_hist_{_tk}_{_sel_per}"
-                    if _hist_cache_key not in _SS:
-                        try:
-                            import yfinance as _yf_ch
-                            _yf_per_map = {'1W':'5d','1M':'1mo','3M':'3mo','YTD':'ytd','1Y':'1y','5Y':'5y'}
-                            _raw_h = _yf_ch.Ticker(_tk).history(period=_yf_per_map[_sel_per], interval='1d', auto_adjust=True)
-                            _SS[_hist_cache_key] = _raw_h if not _raw_h.empty else _td.get('hist')
-                        except Exception:
-                            _SS[_hist_cache_key] = _td.get('hist')
-                    _h = _SS.get(_hist_cache_key) or _td.get('hist')
-                    if _h is not None and not _h.empty:
-                        _ch_df = _h[['Close']].copy()
-                        _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
-                        _ch_df['MA20']  = _ch_df['Close'].rolling(20).mean()
-                        _ch_df['MA50']  = _ch_df['Close'].rolling(50).mean()
-                        _ch_df['MA200'] = _ch_df['Close'].rolling(200).mean()
-                        # RSI
-                        _delta = _ch_df['Close'].diff()
-                        _gain = _delta.clip(lower=0).rolling(14).mean()
-                        _loss = (-_delta.clip(upper=0)).rolling(14).mean()
-                        _rs = _gain / _loss.replace(0, _np_ch.nan)
-                        _ch_df['RSI'] = 100 - 100 / (1 + _rs)
-                        # MACD
-                        _ema12 = _ch_df['Close'].ewm(span=12, adjust=False).mean()
-                        _ema26 = _ch_df['Close'].ewm(span=26, adjust=False).mean()
-                        _ch_df['MACD'] = _ema12 - _ema26
-                        _ch_df['Signal'] = _ch_df['MACD'].ewm(span=9, adjust=False).mean()
-                        _ch_df['Hist']   = _ch_df['MACD'] - _ch_df['Signal']
-                        def _build_chart(_df, _ht, _show_rsi, _show_macd):
-                            _rows = 1 + (1 if _show_rsi else 0) + (1 if _show_macd else 0)
-                            _row_h = [0.6] if _rows==1 else ([0.5,0.25,0.25] if _rows==3 else [0.6,0.4])
-                            _subplot_titles = [_tk] + (['RSI(14)'] if _show_rsi else []) + (['MACD(12,26,9)'] if _show_macd else [])
-                            _fig = _msp(rows=_rows, cols=1, shared_xaxes=True,
-                                        vertical_spacing=0.04, row_heights=_row_h,
-                                        subplot_titles=_subplot_titles)
-                            # Price + MAs
-                            _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Close'],
-                                name='Price', line=dict(color='#10B981',width=1.5),
-                                hovertemplate='%{x|%d %b %Y}<br>%{y:.2f}<extra></extra>'), row=1, col=1)
-                            _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA20'],
-                                name='MA20', line=dict(color='#F59E0B',width=1,dash='dot'),
-                                hovertemplate='MA20: %{y:.2f}<extra></extra>'), row=1, col=1)
-                            _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA50'],
-                                name='MA50', line=dict(color='#818CF8',width=1,dash='dot'),
-                                hovertemplate='MA50: %{y:.2f}<extra></extra>'), row=1, col=1)
-                            if len(_df) >= 200:
-                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA200'],
-                                    name='MA200', line=dict(color='#F472B6',width=1,dash='dash'),
-                                    hovertemplate='MA200: %{y:.2f}<extra></extra>'), row=1, col=1)
-                            _cur_row = 2
-                            if _show_rsi:
-                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['RSI'],
-                                    name='RSI', line=dict(color='#38BDF8',width=1.2),
-                                    hovertemplate='RSI: %{y:.1f}<extra></extra>'), row=_cur_row, col=1)
-                                _fig.add_hline(y=70, line_dash='dot', line_color='#ef4444', line_width=0.8, row=_cur_row, col=1)
-                                _fig.add_hline(y=30, line_dash='dot', line_color='#22c55e', line_width=0.8, row=_cur_row, col=1)
-                                _fig.update_yaxes(range=[0,100], row=_cur_row, col=1, tickfont=dict(size=8))
-                                _cur_row += 1
-                            if _show_macd:
-                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MACD'],
-                                    name='MACD', line=dict(color='#10B981',width=1.2),
-                                    hovertemplate='MACD: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
-                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Signal'],
-                                    name='Signal', line=dict(color='#F59E0B',width=1,dash='dot'),
-                                    hovertemplate='Signal: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
-                                _bar_colors = ['#22c55e' if v >= 0 else '#ef4444' for v in _df['Hist'].fillna(0)]
-                                _fig.add_trace(_go_ch.Bar(x=_df.index, y=_df['Hist'],
-                                    name='Histogram', marker_color=_bar_colors, opacity=0.6,
-                                    hovertemplate='Hist: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
-                            _fig.update_layout(
-                                height=_ht, margin=dict(l=0,r=0,t=20,b=0),
-                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                font=dict(size=9, color='#94A3B8'),
-                                legend=dict(orientation='h', yanchor='bottom', y=1.02,
-                                            font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
-                                hovermode='x unified', showlegend=True)
-                            _fig.update_xaxes(showgrid=False, tickfont=dict(size=8))
-                            _fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)',
-                                              tickfont=dict(size=8), row=1, col=1)
-                            return _fig
-                        # Mini chart (price + RSI only, compact)
-                        _mini_fig = _build_chart(_ch_df, 280, _show_rsi=True, _show_macd=False)
-                        st.plotly_chart(_mini_fig, use_container_width=True,
-                                        config={"displayModeBar": False}, key=f"_cpcht_{_tk}_{_sel_per}")
-                        # Full chart in expander (price + RSI + MACD)
-                        with st.expander("🔍 Full chart — RSI + MACD"):
-                            _full_fig = _build_chart(_ch_df, 550, _show_rsi=True, _show_macd=True)
-                            st.plotly_chart(_full_fig, use_container_width=True,
-                                            config={"displayModeBar": True,
-                                                    "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
-                                            key=f"_cpcht_full_{_tk}_{_sel_per}")
+                # Price chart — always available once data loaded, inside expander
+                if not _td.get('error'):
+                    with st.expander("📈 Price & Technical Analysis"):
+                        import pandas as _pd_ch, plotly.graph_objects as _go_ch
+                        from plotly.subplots import make_subplots as _msp
+                        import numpy as _np_ch
+                        if _stage in ('discovery', 'confirm', 'fundamental'):
+                            st.caption("Chart available — technical interpretation unlocked at valuation stage.")
+                        # Period selector
+                        _per_key = f"_cht_per_{_tk}"
+                        _per_opts = ['1W','1M','3M','YTD','1Y','5Y']
+                        _per_cols = st.columns(len(_per_opts))
+                        for _pi, _po in enumerate(_per_opts):
+                            with _per_cols[_pi]:
+                                if st.button(_po, key=f"_pb_{_tk}_{_po}",
+                                             use_container_width=True,
+                                             type="primary" if _SS.get(_per_key,'1Y')==_po else "secondary"):
+                                    _SS[_per_key] = _po
+                        _sel_per = _SS.get(_per_key, '1Y')
+                        # Fetch history for selected period
+                        _hist_cache_key = f"_hist_{_tk}_{_sel_per}"
+                        if _hist_cache_key not in _SS:
+                            try:
+                                import yfinance as _yf_ch
+                                _yf_per_map = {'1W':'5d','1M':'1mo','3M':'3mo','YTD':'ytd','1Y':'1y','5Y':'5y'}
+                                _raw_h = _yf_ch.Ticker(_tk).history(period=_yf_per_map[_sel_per], interval='1d', auto_adjust=True)
+                                _SS[_hist_cache_key] = _raw_h if not _raw_h.empty else _td.get('hist')
+                            except Exception:
+                                _SS[_hist_cache_key] = _td.get('hist')
+                        _h = _SS.get(_hist_cache_key) or _td.get('hist')
+                        if _h is not None and not _h.empty:
+                            _ch_df = _h[['Close']].copy()
+                            _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
+                            _ch_df['MA20']  = _ch_df['Close'].rolling(20).mean()
+                            _ch_df['MA50']  = _ch_df['Close'].rolling(50).mean()
+                            _ch_df['MA200'] = _ch_df['Close'].rolling(200).mean()
+                            _delta = _ch_df['Close'].diff()
+                            _gain  = _delta.clip(lower=0).rolling(14).mean()
+                            _loss  = (-_delta.clip(upper=0)).rolling(14).mean()
+                            _rs    = _gain / _loss.replace(0, _np_ch.nan)
+                            _ch_df['RSI']    = 100 - 100 / (1 + _rs)
+                            _ema12 = _ch_df['Close'].ewm(span=12, adjust=False).mean()
+                            _ema26 = _ch_df['Close'].ewm(span=26, adjust=False).mean()
+                            _ch_df['MACD']   = _ema12 - _ema26
+                            _ch_df['Signal'] = _ch_df['MACD'].ewm(span=9, adjust=False).mean()
+                            _ch_df['Hist']   = _ch_df['MACD'] - _ch_df['Signal']
+
+                            def _build_chart(_df, _ht, _show_rsi, _show_macd):
+                                _rows  = 1 + (1 if _show_rsi else 0) + (1 if _show_macd else 0)
+                                _row_h = [0.6] if _rows==1 else ([0.5,0.25,0.25] if _rows==3 else [0.6,0.4])
+                                _sp_t  = [_tk] + (['RSI(14)'] if _show_rsi else []) + (['MACD(12,26,9)'] if _show_macd else [])
+                                _fig   = _msp(rows=_rows, cols=1, shared_xaxes=True,
+                                              vertical_spacing=0.04, row_heights=_row_h, subplot_titles=_sp_t)
+                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Close'],
+                                    name='Price', line=dict(color='#10B981',width=1.5),
+                                    hovertemplate='%{x|%d %b %Y}<br>%{y:.2f}<extra></extra>'), row=1, col=1)
+                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA20'],
+                                    name='MA20', line=dict(color='#F59E0B',width=1,dash='dot'),
+                                    hovertemplate='MA20: %{y:.2f}<extra></extra>'), row=1, col=1)
+                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA50'],
+                                    name='MA50', line=dict(color='#818CF8',width=1,dash='dot'),
+                                    hovertemplate='MA50: %{y:.2f}<extra></extra>'), row=1, col=1)
+                                if len(_df) >= 200:
+                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA200'],
+                                        name='MA200', line=dict(color='#F472B6',width=1,dash='dash'),
+                                        hovertemplate='MA200: %{y:.2f}<extra></extra>'), row=1, col=1)
+                                _cur_row = 2
+                                if _show_rsi:
+                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['RSI'],
+                                        name='RSI', line=dict(color='#38BDF8',width=1.2),
+                                        hovertemplate='RSI: %{y:.1f}<extra></extra>'), row=_cur_row, col=1)
+                                    _fig.add_hline(y=70, line_dash='dot', line_color='#ef4444', line_width=0.8, row=_cur_row, col=1)
+                                    _fig.add_hline(y=30, line_dash='dot', line_color='#22c55e', line_width=0.8, row=_cur_row, col=1)
+                                    _fig.update_yaxes(range=[0,100], row=_cur_row, col=1, tickfont=dict(size=8))
+                                    _cur_row += 1
+                                if _show_macd:
+                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MACD'],
+                                        name='MACD', line=dict(color='#10B981',width=1.2),
+                                        hovertemplate='MACD: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Signal'],
+                                        name='Signal', line=dict(color='#F59E0B',width=1,dash='dot'),
+                                        hovertemplate='Signal: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                    _bar_colors = ['#22c55e' if v >= 0 else '#ef4444' for v in _df['Hist'].fillna(0)]
+                                    _fig.add_trace(_go_ch.Bar(x=_df.index, y=_df['Hist'],
+                                        name='Histogram', marker_color=_bar_colors, opacity=0.6,
+                                        hovertemplate='Hist: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                _fig.update_layout(
+                                    height=_ht, margin=dict(l=0,r=0,t=20,b=0),
+                                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                    font=dict(size=9, color='#94A3B8'),
+                                    legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                                                font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
+                                    hovermode='x unified', showlegend=True)
+                                _fig.update_xaxes(showgrid=False, tickfont=dict(size=8))
+                                _fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)',
+                                                  tickfont=dict(size=8), row=1, col=1)
+                                return _fig
+
+                            # Price + RSI (default view)
+                            _mini_fig = _build_chart(_ch_df, 320, _show_rsi=True, _show_macd=False)
+                            st.plotly_chart(_mini_fig, use_container_width=True,
+                                            config={"displayModeBar": False}, key=f"_cpcht_{_tk}_{_sel_per}")
+                            # Full chart with MACD in sub-expander
+                            with st.expander("➕ Show MACD"):
+                                _full_fig = _build_chart(_ch_df, 550, _show_rsi=True, _show_macd=True)
+                                st.plotly_chart(_full_fig, use_container_width=True,
+                                                config={"displayModeBar": True,
+                                                        "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
+                                                key=f"_cpcht_full_{_tk}_{_sel_per}")
 
                 # WACC sensitivity table — shown in valuation stage
                 if _stage == 'valuation' and _an.get('mc'):
