@@ -3770,6 +3770,12 @@ def _comp_compute_tsr(d: dict) -> dict:
                         'tsr': _annual_tsr,
                         'price_return': _price_ret,
                         'div_yield': _div_yield,
+                        # Calculation basis (FY-aligned prices for transparent working)
+                        'fy_start_date': str(_dt0)[:10],
+                        'fy_start_price': _p0,
+                        'fy_end_date': str(_dt1)[:10],
+                        'fy_end_price': _p1,
+                        'fy_dividends': _div_yr,
                         # 3 bucket summary
                         'performance': _perf,
                         'yield_bucket': _yield_bucket,
@@ -3841,6 +3847,12 @@ def _comp_compute_tsr(d: dict) -> dict:
                         'tsr': _qtsr,
                         'price_return': _qpr,
                         'div_yield': _qdy,
+                        # Calculation basis (quarter-aligned prices)
+                        'q_start_date': str(_qdt0)[:10],
+                        'q_start_price': _qp0,
+                        'q_end_date': str(_qdt1)[:10],
+                        'q_end_price': _qp1,
+                        'q_dividends': _qdivs,
                         'eps_growth': _qeps_g,
                         'pe_change': _qpe_ch,
                         'interaction': _qinter,
@@ -7384,50 +7396,6 @@ with tab_comp:
                             '</div></div>',
                             unsafe_allow_html=True)
 
-                        # ── CALCULATION BASIS (transparent working) ──
-                        _s = _tsr_d.get('simple', {})
-                        _cb_rows = []
-                        for _tp, _tl in [('1y','1 Year'), ('3y','3 Year (ann.)'), ('5y','5 Year (ann.)')]:
-                            _sv = _s.get(_tp, {})
-                            if _sv.get('tsr') is not None:
-                                _cb_rows.append((_tl, _sv))
-                        if _cb_rows:
-                            _cb = ['<div style="margin-bottom:16px">',
-                                   '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">CALCULATION BASIS</div>',
-                                   '<table style="width:100%;border-collapse:collapse;font-size:0.71rem">',
-                                   '<tr style="border-bottom:1px solid #334155">',
-                                   '<th style="text-align:left;padding:4px 6px;color:#64748B">Period</th>',
-                                   '<th style="text-align:left;padding:4px 6px;color:#64748B">Opening Price</th>',
-                                   '<th style="text-align:left;padding:4px 6px;color:#64748B">Closing Price</th>',
-                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Dividends Paid</th>',
-                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">Price Chg</th>',
-                                   '<th style="text-align:right;padding:4px 6px;color:#64748B">= Total TSR</th>',
-                                   '</tr>']
-                            for _tl, _sv in _cb_rows:
-                                _tsr_v = _sv.get('tsr', 0) or 0
-                                _pr_v  = _sv.get('price_return', 0) or 0
-                                _op    = _sv.get('open_price')
-                                _cl    = _sv.get('close_price')
-                                _divs  = _sv.get('dividends')
-                                _od    = _sv.get('open_date', '')
-                                _cd    = _sv.get('close_date', '')
-                                _op_str = f"${_op:.2f} ({_od})" if _op else '—'
-                                _cl_str = f"${_cl:.2f} ({_cd})" if _cl else '—'
-                                _div_str = f"${_divs:.2f}" if _divs is not None else '—'
-                                _gc  = '#22c55e' if _tsr_v >= 0 else '#ef4444'
-                                _prc = '#22c55e' if _pr_v  >= 0 else '#ef4444'
-                                _cb.append(
-                                    f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">'
-                                    f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">{_tl}</td>'
-                                    f'<td style="padding:4px 6px;color:#94A3B8">{_op_str}</td>'
-                                    f'<td style="padding:4px 6px;color:#94A3B8">{_cl_str}</td>'
-                                    f'<td style="padding:4px 6px;text-align:right;color:#94A3B8">{_div_str}</td>'
-                                    f'<td style="padding:4px 6px;text-align:right;color:{_prc}">{_pr_v*100:+.1f}%</td>'
-                                    f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tsr_v*100:+.1f}%</td>'
-                                    f'</tr>')
-                            _cb.append('</table></div>')
-                            st.markdown(''.join(_cb), unsafe_allow_html=True)
-
                         # ── ANNUAL ENHANCED DECOMPOSITION (table) ──
                         _ann = _tsr_d.get('annual', [])
                         if _ann:
@@ -7435,13 +7403,49 @@ with tab_comp:
                             _n_yrs = len(_ann)
                             _at = ['<div style="margin-bottom:16px">',
                                    '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">ANNUAL ENHANCED DECOMPOSITION</div>',
-                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">Performance = sales growth + reinvestment drag + margin change &nbsp;·&nbsp; Yield = earnings + FCF &nbsp;·&nbsp; Valuation = market re-rating (P/E expansion/compression)</div>',
+                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over the fiscal year (FY start → FY end price). '
+                                   'Decomposition below explains <em>why</em> shareholders earned that return.</div>',
                                    '<table style="width:100%;border-collapse:collapse;font-size:0.7rem">',
                                    '<tr style="border-bottom:1px solid #334155">',
                                    '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:190px">Line item</th>']
                             for _yh in _yr_hdrs:
                                 _at.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_yh}</th>')
                             _at.append('</tr>')
+
+                            # ── Calculation basis rows (FY-aligned prices) ──
+                            _basis_rows = [
+                                ('Opening price (FY start)', 'fy_start_price', 'fy_start_date', '$'),
+                                ('Closing price (FY end)',   'fy_end_price',   'fy_end_date',   '$'),
+                                ('Dividends paid in FY',     'fy_dividends',   None,            '$'),
+                            ]
+                            for _bl, _bk, _dk, _pfx in _basis_rows:
+                                _at.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">'
+                                           f'<td style="padding:3px 6px;color:#64748B;font-style:italic">{_bl}</td>')
+                                for _a in _ann:
+                                    _bv = _a.get(_bk)
+                                    _dv = _a.get(_dk, '') if _dk else ''
+                                    if _bv is None:
+                                        _at.append('<td style="padding:3px 6px;text-align:right;color:#334155">—</td>')
+                                    else:
+                                        _bstr = f'{_pfx}{_bv:.2f}' + (f'<br><span style="font-size:0.6rem;color:#334155">{_dv}</span>' if _dv else '')
+                                        _at.append(f'<td style="padding:3px 6px;text-align:right;color:#94A3B8;line-height:1.4">{_bstr}</td>')
+                                _at.append('</tr>')
+
+                            # ── Actual TSR from prices ──
+                            _at.append(f'<tr style="border-bottom:2px solid #334155;background:rgba(255,255,255,0.02)">'
+                                       f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">= Actual TSR (price + div)</td>')
+                            for _a in _ann:
+                                _tv = _a.get('tsr')
+                                if _tv is None:
+                                    _at.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
+                                else:
+                                    _gc = '#22c55e' if _tv >= 0 else '#ef4444'
+                                    _at.append(f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>')
+                            _at.append('</tr>')
+
+                            # ── Separator + decomposition label ──
+                            _at.append(f'<tr><td colspan="{1+_n_yrs}" style="padding:6px 6px 2px;color:#475569;font-size:0.62rem;font-style:italic">'
+                                       f'Decomposition — explains the TSR above through financial statement drivers:</td></tr>')
 
                             _ann_row_defs = [
                                 ('Sales growth contribution',   'sales_growth_contrib',  None,      False),
@@ -7457,7 +7461,7 @@ with tab_comp:
                                 ('__sep__',                     None,                     None,      False),
                                 ('Valuation re-rating (P/E ∆)', 'valuation',             '#818CF8', True),
                                 ('__sep__',                     None,                     None,      False),
-                                ('TOTAL TSR',                   'tsr',                    None,      True),
+                                ('TOTAL (decomposed — must = Actual TSR)', 'tsr',         None,      True),
                                 ('__sep__',                     None,                     None,      False),
                                 ('  P/E (open → close)',        '__pe__',                 '#64748B', False),
                                 ('  Op. Margin (open → close)', '__om__',                '#64748B', False),
@@ -7467,7 +7471,7 @@ with tab_comp:
                                 if _rl == '__sep__':
                                     _at.append(f'<tr><td colspan="{1+_n_yrs}" style="padding:1px 0;border-bottom:1px solid #1e293b"></td></tr>')
                                     continue
-                                _is_total = _rl == 'TOTAL TSR'
+                                _is_total = 'TOTAL' in _rl
                                 _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
                                 _at.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
                                            f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
@@ -7502,7 +7506,7 @@ with tab_comp:
                             _q_disp = list(reversed(_qtrs))  # most recent left
                             _qt = ['<div style="margin-bottom:10px">',
                                    '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">QUARTERLY TRADITIONAL DECOMPOSITION</div>',
-                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = EPS growth + P/E change + dividend yield + (EPS × P/E interaction) &nbsp;·&nbsp; quarterly, not annualised</div>',
+                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over each quarter (start → end price). Decomposition = EPS growth + P/E change + dividend yield + interaction.</div>',
                                    '<table style="width:100%;border-collapse:collapse;font-size:0.7rem">',
                                    '<tr style="border-bottom:1px solid #334155">',
                                    '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:150px">Component</th>']
@@ -7510,15 +7514,48 @@ with tab_comp:
                                 _qt.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_q["period"]}</th>')
                             _qt.append('</tr>')
 
+                            # Calculation basis rows for quarterly
+                            for _bl, _bk, _dk in [
+                                ('Opening price', 'q_start_price', 'q_start_date'),
+                                ('Closing price', 'q_end_price',   'q_end_date'),
+                                ('Dividends',     'q_dividends',   None),
+                            ]:
+                                _qt.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.02)">'
+                                           f'<td style="padding:3px 6px;color:#64748B;font-style:italic">{_bl}</td>')
+                                for _q in _q_disp:
+                                    _bv = _q.get(_bk)
+                                    _dv = _q.get(_dk, '') if _dk else ''
+                                    if _bv is None:
+                                        _qt.append('<td style="padding:3px 6px;text-align:right;color:#334155">—</td>')
+                                    else:
+                                        _bstr = f'${_bv:.2f}' + (f'<br><span style="font-size:0.6rem;color:#334155">{_dv}</span>' if _dv else '')
+                                        _qt.append(f'<td style="padding:3px 6px;text-align:right;color:#94A3B8;line-height:1.4">{_bstr}</td>')
+                                _qt.append('</tr>')
+
+                            # Actual TSR row
+                            _qt.append(f'<tr style="border-bottom:2px solid #334155;background:rgba(255,255,255,0.02)">'
+                                       f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">= Actual TSR</td>')
+                            for _q in _q_disp:
+                                _tv = _q.get('tsr')
+                                if _tv is None:
+                                    _qt.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
+                                else:
+                                    _gc = '#22c55e' if _tv >= 0 else '#ef4444'
+                                    _qt.append(f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>')
+                            _qt.append('</tr>')
+
+                            _qt.append(f'<tr><td colspan="{1+len(_q_disp)}" style="padding:5px 6px 2px;color:#475569;font-size:0.62rem;font-style:italic">'
+                                       f'Decomposition — explains the above TSR through EPS and P/E changes:</td></tr>')
+
                             _q_row_defs = [
                                 ('EPS Growth',     'eps_growth',  None,      False),
                                 ('P/E Change',     'pe_change',   '#818CF8', False),
                                 ('Dividend Yield', 'div_yield',   '#38BDF8', False),
                                 ('Interaction',    'interaction',  '#94A3B8', False),
-                                ('TOTAL TSR',      'tsr',          None,      True),
+                                ('TOTAL (decomposed)', 'tsr',     None,      True),
                             ]
                             for _rl, _rk, _rc, _rb in _q_row_defs:
-                                _is_total = _rl == 'TOTAL TSR'
+                                _is_total = _rb
                                 _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
                                 _qt.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
                                            f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
