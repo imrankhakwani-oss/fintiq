@@ -6731,26 +6731,90 @@ with tab_comp:
                 st.error(f"Could not load session: {_ue}")
 
     # ════════════════════════════════════════════════════════════
-    # CHAT — full width, taller
+    # CHAT — landing canvas when fresh, bubbles when active
     # ════════════════════════════════════════════════════════════
-    _chat_container = st.container(height=520)
-    with _chat_container:
-        for _m in _SS.cp_msgs:
-            with st.chat_message(_m["role"],
-                                 avatar="🤖" if _m["role"] == "assistant" else "👤"):
-                st.markdown(_m["content"])
+    _has_user_msgs = any(m['role'] == 'user' for m in _SS.cp_msgs)
 
-    # Chat input
+    # Handle suggestion chip clicks (inject as user message on next rerun)
+    _user_input = None
+    _pending_sug = _SS.pop('cp_pending_sug', None)
+    if _pending_sug:
+        _user_input = _pending_sug
+
+    if not _has_user_msgs and not _pending_sug:
+        # ── LANDING STATE — clean canvas ──────────────────────
+        st.markdown("""
+<style>
+div[data-testid="stChatInput"] > div {
+    border: 1px solid rgba(201,168,76,0.5) !important;
+    border-radius: 14px !important;
+    background: rgba(13,31,53,0.8) !important;
+    padding: 4px 8px !important;
+    font-size: 0.9rem !important;
+}
+</style>
+<div style="text-align:center;padding:40px 10% 0">
+  <div style="font-size:1.8rem;font-weight:800;color:#E2E8F0;margin-bottom:8px;line-height:1.3">
+    What would you like to analyse today?
+  </div>
+  <div style="font-size:0.82rem;color:#475569;margin-bottom:28px">
+    Fintiq AI works through your stocks like a hedge fund analyst —
+    business quality · valuation · technical timing · catalyst
+  </div>
+</div>""", unsafe_allow_html=True)
+
+        # AI opening message in a clean pill
+        if _SS.cp_msgs:
+            _open_msg = _SS.cp_msgs[0]['content']
+            st.markdown(
+                f'<div style="max-width:660px;margin:0 auto 24px;background:rgba(255,255,255,0.03);'
+                f'border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:16px 20px;'
+                f'font-size:0.84rem;color:#CBD5E1;line-height:1.6">'
+                f'<span style="font-size:0.7rem;color:#64748B;display:block;margin-bottom:6px">🤖 Fintiq AI</span>'
+                f'{_open_msg}</div>',
+                unsafe_allow_html=True)
+
+        # Suggestion chips — 2×2 grid
+        _suggestions = [
+            ("📊 Analyse a stock",        "I want to do a full analysis of Apple (AAPL)"),
+            ("⚖️ Compare two companies",  "Compare Lululemon (LULU) with Nike (NKE) on fundamentals and valuation"),
+            ("🇬🇧 UK market ideas",       "I'm looking for undervalued stocks in the UK FTSE 100"),
+            ("🧭 Walk me through it",     "I'm new to equity analysis — walk me through how to analyse a stock step by step"),
+        ]
+        _sg1, _sg2 = st.columns(2, gap="small")
+        for _si, (_slbl, _sval) in enumerate(_suggestions):
+            _scol = _sg1 if _si % 2 == 0 else _sg2
+            with _scol:
+                if st.button(_slbl, key=f"_sug_{_si}", use_container_width=True,
+                             help=_sval):
+                    _SS['cp_pending_sug'] = _sval
+                    st.rerun()
+
+        st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
+
+    else:
+        # ── ACTIVE STATE — chat bubble layout ─────────────────
+        _chat_container = st.container(height=520)
+        with _chat_container:
+            for _m in _SS.cp_msgs:
+                with st.chat_message(_m["role"],
+                                     avatar="🤖" if _m["role"] == "assistant" else "👤"):
+                    st.markdown(_m["content"])
+
+    # ── Chat input (always rendered — Streamlit pins it to bottom) ──
     st.markdown("""
     <style>
     div[data-testid="stChatInput"] > div {
-        border: 1px solid #C9A84C !important;
-        border-radius: 8px !important;
-        background: rgba(201,168,76,0.05) !important;
+        border: 1px solid rgba(201,168,76,0.5) !important;
+        border-radius: 14px !important;
+        background: rgba(13,31,53,0.6) !important;
     }
     </style>""", unsafe_allow_html=True)
-    if _user_input := st.chat_input("Type your message…", key="cp_input"):
+    _typed_input = st.chat_input("Ask about a stock, a sector, or a comparison…", key="cp_input")
+    if _typed_input:
+        _user_input = _typed_input
 
+    if _user_input:
             # Add user message
             _SS.cp_msgs.append({"role": "user", "content": _user_input})
 
