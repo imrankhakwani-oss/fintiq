@@ -6653,52 +6653,26 @@ with tab_comp:
         _ts_lines.append("")
     _transcript_txt = "\n".join(_ts_lines)
 
-    # Compact header: title + stage badge + icon-only toolbar
-    _hc1, _hc2, _hc3, _hc4, _hc5, _hc6 = st.columns([4, 2, 1, 1, 1, 1], gap="small")
-    with _hc1:
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:10px;padding-top:4px">'
-            f'<span style="font-size:1.1rem;font-weight:700;color:#E2E8F0">🤖 AI Equity Analyst</span>'
-            f'<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.08em;'
-            f'color:{_scol};background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:20px;'
-            f'border:1px solid {_scol}40">{_sico} {_slbl}</span>'
-            f'</div>', unsafe_allow_html=True)
-    with _hc2:
-        st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)  # spacer
-    with _hc3:
-        st.download_button(
-            "⬇️",
-            data=_session_json,
-            file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
-            mime="application/json",
-            use_container_width=True,
-            key="cp_dl_chat",
-            help="Save chat — download session to resume later")
-    with _hc4:
-        st.download_button(
-            "📄",
-            data=_transcript_txt,
-            file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-            mime="text/plain",
-            use_container_width=True,
-            key="cp_dl_transcript",
-            help="Download plain-text transcript")
-    with _hc5:
-        if st.button("📂", use_container_width=True, key="cp_resume_btn",
-                     help="Resume — upload a saved session file"):
-            _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
-    with _hc6:
-        if st.button("🔄", use_container_width=True, key="cp_reset",
-                     help="New Session — clear everything and start fresh"):
-            for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses',
-                       'cp_report','cp_new_ticks','cp_show_resume','cp_name_map',
-                       'cp_auto_restore_checked']:
-                if _k in _SS: del _SS[_k]
-            try:
-                import os as _osrst
-                if _osrst.path.exists(_TMP_SESSION_PATH): _osrst.remove(_TMP_SESSION_PATH)
-            except Exception: pass
-            st.rerun()
+    # ── Header — title + stage badge only ────────────────────────
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:12px;padding:6px 0 2px">'
+        f'<span style="font-size:1.25rem;font-weight:800;color:#E2E8F0;letter-spacing:-0.01em">🤖 AI Equity Analyst</span>'
+        f'<span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;'
+        f'color:{_scol};background:linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03));'
+        f'padding:3px 10px;border-radius:20px;border:1px solid {_scol}60;'
+        f'box-shadow:0 0 8px {_scol}20">{_sico} {_slbl}</span>'
+        f'</div>', unsafe_allow_html=True)
+
+    # ── Reset button (kept for new session — hidden in toolbar below) ──
+    def _do_reset():
+        for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses',
+                   'cp_report','cp_new_ticks','cp_show_resume','cp_name_map',
+                   'cp_auto_restore_checked']:
+            if _k in _SS: del _SS[_k]
+        try:
+            import os as _osrst
+            if _osrst.path.exists(_TMP_SESSION_PATH): _osrst.remove(_TMP_SESSION_PATH)
+        except Exception: pass
 
     # ── Resume upload panel ───────────────────────────────────
     if _SS.get('cp_show_resume'):
@@ -7149,6 +7123,28 @@ Senior users: add your own questions at the bottom of the conversation.
   &nbsp;&nbsp;<em style="color:#475569">· Stock cards appear here as we analyse each company</em>
 </span>
 </div>""", unsafe_allow_html=True)
+
+    # ── Session toolbar — below steps bar ────────────────────────
+    _tb1, _tb2, _tb3, _tb4, _tb_sp = st.columns([1, 1, 1, 1, 8], gap="small")
+    with _tb1:
+        st.download_button("⬇️ Save", data=_session_json,
+            file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json", use_container_width=True,
+            key="cp_dl_chat", help="Save chat — download session to resume later")
+    with _tb2:
+        st.download_button("📄 Log", data=_transcript_txt,
+            file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+            mime="text/plain", use_container_width=True,
+            key="cp_dl_transcript", help="Download plain-text transcript")
+    with _tb3:
+        if st.button("📂 Resume", use_container_width=True, key="cp_resume_btn",
+                     help="Resume — upload a saved session file"):
+            _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
+    with _tb4:
+        if st.button("🔄 New", use_container_width=True, key="cp_reset",
+                     help="New Session — clear everything and start fresh"):
+            _do_reset()
+            st.rerun()
 
     elif _SS.cp_data:
         _tickers_to_show = list(_SS.cp_data.keys())[:5]   # cap at 5
