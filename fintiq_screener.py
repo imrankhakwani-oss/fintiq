@@ -4446,7 +4446,7 @@ YOUR JOB IN THIS STAGE:
         'valuation': f"""STAGE: Valuation — 3-Phase DCF + McKinsey Terminal Value + Monte Carlo
 You have live data including HISTORICAL AVERAGES (revenue CAGR, avg op margin, ROIC, investment rate, tax rate, D/E).
 
-LENGTH DISCIPLINE: Keep each reply under 400 words. Split across turns — do not dump everything at once. One stock at a time if multiple stocks.
+LENGTH DISCIPLINE: Keep Steps 1 and 2 under 300 words. Step 3 (DCF output) MUST be split across exactly two turns — never attempt to produce the full DCF in one reply. In your first Step 3 reply, say: "I'll present this in two parts — base case first." Second turn: scenarios + probability weights + WACC grid. This split is mandatory — do not squeeze the full output into one reply or you will truncate and the user will never see the key numbers.
 
 YOUR JOB — BE PROACTIVE, NOT PASSIVE. Do not wait for the user to ask:
 
@@ -4473,20 +4473,23 @@ Terminal growth rate: __% (long-run GDP-like, typically 2-3%)
 
 Happy to discuss any of these before we run the numbers."
 
-STEP 3 — WHEN USER CONFIRMS:
-Run the DCF mentally and present:
-- Intrinsic value per share (RANGE, not point estimate)
-- Current price vs intrinsic value: premium/discount %
-- MONTE CARLO: "Stress-testing 4,000 scenarios with random variation in growth and margins — 80% of outcomes land between X and Y. The stock at [price] sits [above/below/within] that range."
-- WACC SENSITIVITY: Present a simple 3×3 grid in text: Low/Mid/High WACC × Low/Mid/High terminal growth → show implied value per share for each cell
-- Margin of safety discussion: how much buffer does the user have?
-- BULL / BASE / BEAR SCENARIOS (MANDATORY): After presenting the base-case DCF, always present three explicit scenarios with probability weights that sum to 100%:
-  "Here are the three scenarios I'm weighting:
-   🟢 Bull case (X% probability): [key assumption e.g. margin expansion to Y%] → implies £Z per share
-   ⚪ Base case (Y% probability): [current assumptions] → implies £W per share
-   🔴 Bear case (Z% probability): [downside e.g. revenue misses, margin compression] → implies £V per share
-   Probability-weighted expected value: £[X*Z + Y*W + Z*V / 100] vs current price of £[price] = [upside/downside]%"
+STEP 3 — WHEN USER CONFIRMS (SPLIT INTO TWO TURNS — MANDATORY):
+
+TURN 3A — BASE CASE ONLY (produce this first, then stop and say "Continuing with scenarios and WACC sensitivity in my next reply →"):
+- State assumptions clearly: "Running with: Phase 1 X%/Y% margin, Phase 2 X%/Y%, Phase 3 X%/Y%, WACC Z%, TGR W%"
+- Intrinsic value per share (RANGE, not point estimate): "Base case intrinsic value: $X–$Y per share"
+- Current price vs intrinsic value: "At $[price], the stock trades at [X% premium / X% discount] to base case"
+- MONTE CARLO: "Stress-testing 4,000 scenarios — 80% of outcomes land between $X and $Y. The stock at $[price] sits [above/below/within] that range."
+
+TURN 3B — SCENARIOS + WACC GRID (produce this in the next reply):
+- BULL / BASE / BEAR SCENARIOS (MANDATORY):
+  "🟢 Bull case (X% probability): [key assumption e.g. margin expansion to Y%] → implies $Z per share
+   ⚪ Base case (Y% probability): [current assumptions] → implies $W per share
+   🔴 Bear case (Z% probability): [downside e.g. revenue misses, margin compression] → implies $V per share
+   Probability-weighted expected value: $[X*Z + Y*W + Z*V / 100] vs current price of $[price] = [upside/downside]%"
   Probabilities should reflect genuine conviction — do not default to 33/33/33 unless truly uncertain.
+- WACC SENSITIVITY: Simple 3×3 grid in text: Low/Mid/High WACC × Low/Mid/High terminal growth → implied value per share
+- Margin of safety: how much buffer does the user have if their base case is wrong by 20%?
 
 STEP 4 — FORWARD TSR PROJECTION: Once DCF assumptions are agreed, translate them into an implied forward TSR:
 "Based on your assumptions, here is the implied forward TSR breakdown:
@@ -4555,14 +4558,29 @@ Current watchlist: {_wl} ({len(_wl)}/{_max} stocks maximum)
 • Summarise each stock: one-line quality verdict + valuation view + entry logic + key risk
 • Ask if user wants changes — any additions, removals, or replacements
 • Enforce the discipline: if user wants more than {_max}, explain "A concentrated watchlist forces conviction — let's keep the strongest {_max}"
-• KILL-SWITCH (MANDATORY — do this for every stock): Before finalising, explicitly state what would change the thesis:
+
+• FUNDAMENTAL vs TECHNICAL MATRIX (MANDATORY — produce this for every stock before the kill-switch):
+  Map each stock onto a 3×3 grid using the Investment Scorecard (fundamental strength) and Technical Setup Score (/50) from earlier stages.
+  Fundamental: Strong = Scorecard 4.0–5.0 | Neutral = 3.0–3.9 | Weak = <3.0
+  Technical:   Good = Setup Score 38–50 | Neutral = 30–37 | Poor = <30
+  Output as a table:
+  "**Fundamental vs Technical Matrix — [Ticker]**
+  | | Good Technical Setup | Neutral Technical | Poor Technical Setup |
+  |---|---|---|---|
+  | Strong Fundamentals | ✅ Strong Buy — ideal alignment | 🟡 Buy on Dip — wait for entry | ⏳ Hold — thesis intact, timing off |
+  | Neutral Fundamentals | 🟡 Trade — momentum only, tight stop | ⚪ Watchlist — no edge yet | ❌ Avoid — neither supports entry |
+  | Weak Fundamentals | ⚠️ Short candidate — technicals rolling | 🔴 Short — deteriorating on both axes | 🔴 Strong Short — full alignment |
+  **[Ticker] sits at: [Fundamental strength] × [Technical setup] → [Action label]**
+  This is your decision anchor — fundamentals tell you what to own, technicals tell you when."
+
+• KILL-SWITCH (MANDATORY — do this for every stock after the matrix):
   "Kill-switch conditions for [ticker] — exit or reassess if:
    📋 Thesis break: [e.g. revenue growth drops below X%, management changes, competitive moat narrows]
    📉 Price stop: [the structural support level from technical analysis — not a % loss]
    ⏱️ Time stop: [if X hasn't happened by Y date, the thesis hasn't played out — reassess]
    This is what changes our mind — not a bad day, but a genuine thesis failure."
 • When satisfied: "Ready to generate your research report?"
-• The report will include: thesis per stock, valuation range, entry logic, key risks, kill-switch conditions, disclaimer""",
+• The report will include: thesis per stock, valuation range, entry logic, key risks, F/T matrix position, kill-switch conditions, disclaimer""",
 
         'report': """STAGE: Report Generated
 The research report is displayed in the right panel and available for download.
@@ -4821,6 +4839,116 @@ def _comp_generate_report(watchlist: list, data: dict, ctx: dict, analyses: dict
 </div>
 </body>
 </html>"""
+
+
+
+def _comp_generate_report_pdf(watchlist: list, data: dict, ctx: dict, analyses: dict) -> bytes | None:
+    """Generate a clean PDF research report using reportlab. Returns bytes or None on failure."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm
+        from reportlab.lib import colors
+        from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                        Table, TableStyle, HRFlowable)
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER
+        import io
+        from datetime import datetime as _dt
+
+        _buf = io.BytesIO()
+        _doc = SimpleDocTemplate(_buf, pagesize=A4,
+                                  leftMargin=2*cm, rightMargin=2*cm,
+                                  topMargin=2*cm, bottomMargin=2*cm)
+        _styles = getSampleStyleSheet()
+
+        # ── Custom styles ──
+        _h1 = ParagraphStyle('H1', parent=_styles['Heading1'], fontSize=18, textColor=colors.HexColor('#1E3A5F'), spaceAfter=4)
+        _h2 = ParagraphStyle('H2', parent=_styles['Heading2'], fontSize=13, textColor=colors.HexColor('#1E3A5F'), spaceBefore=14, spaceAfter=4)
+        _h3 = ParagraphStyle('H3', parent=_styles['Heading3'], fontSize=11, textColor=colors.HexColor('#374151'), spaceBefore=8, spaceAfter=3)
+        _body = ParagraphStyle('Body', parent=_styles['Normal'], fontSize=9, leading=14, textColor=colors.HexColor('#1F2937'))
+        _muted = ParagraphStyle('Muted', parent=_styles['Normal'], fontSize=8, textColor=colors.HexColor('#6B7280'), leading=12)
+        _badge = ParagraphStyle('Badge', parent=_styles['Normal'], fontSize=9, textColor=colors.HexColor('#1D4ED8'), leading=12)
+
+        _story = []
+        _now = _dt.now().strftime("%d %B %Y, %H:%M GMT")
+
+        # ── Header ──
+        _story.append(Paragraph("Fintiq Research Report", _h1))
+        _story.append(Paragraph(f"Generated {_now} · AI Investment Companion", _muted))
+        _story.append(Spacer(1, 8))
+        _horizon = ctx.get('investment_horizon', 'Not specified')
+        _risk    = ctx.get('risk_appetite', 'Not specified')
+        _story.append(Paragraph(f"<b>Horizon:</b> {_horizon} &nbsp;·&nbsp; <b>Risk appetite:</b> {_risk}", _body))
+        _story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#FBBF24'), spaceAfter=12))
+
+        # ── Stock cards ──
+        for _tk in watchlist:
+            _d    = data.get(_tk, {})
+            _info = _d.get('info', {}) if not _d.get('error') else {}
+            _an   = analyses.get(_tk, {})
+            _pr   = _d.get('price', '—')
+            _name = _info.get('longName', _tk)
+            _sect = _info.get('sector', '—')
+            _tgt  = _info.get('targetMeanPrice', '—')
+            _pe   = _info.get('trailingPE', '—')
+            _dcf  = _an.get('dcf_str', '—')
+            _mc_lo= _an.get('mc_p25', '—')
+            _mc_hi= _an.get('mc_p75', '—')
+            _thesis  = _an.get('thesis', 'See conversation for full analysis.')
+            _entry   = _an.get('entry', '—')
+            _risk_txt= _an.get('key_risk', '—')
+
+            _mc_str = f"${_mc_lo:.2f} – ${_mc_hi:.2f}" if isinstance(_mc_lo, float) else "—"
+            _pe_str = f"{_pe:.1f}x" if isinstance(_pe, float) else str(_pe)
+            _pr_str = f"{_pr:.2f}" if isinstance(_pr, float) else str(_pr)
+            _tgt_str = f"{_tgt:.2f}" if isinstance(_tgt, float) else str(_tgt)
+
+            _story.append(Paragraph(f"{_tk} — {_name}", _h2))
+            _story.append(Paragraph(f"<i>{_sect}</i>", _muted))
+            _story.append(Spacer(1, 6))
+
+            # Metrics table
+            _tdata = [
+                ["Current Price", "Analyst Target", "Trailing P/E", "DCF Value", "Monte Carlo (P25–P75)"],
+                [_pr_str, _tgt_str, _pe_str, _dcf, _mc_str],
+            ]
+            _tbl = Table(_tdata, colWidths=[3.2*cm, 3.2*cm, 3.2*cm, 3.2*cm, 4.4*cm])
+            _tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#EFF6FF')),
+                ('TEXTCOLOR',  (0,0), (-1,0), colors.HexColor('#1D4ED8')),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE',   (0,0), (-1,-1), 8),
+                ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')]),
+                ('BOX',        (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
+                ('INNERGRID',  (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
+                ('TOPPADDING', (0,0), (-1,-1), 5),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ]))
+            _story.append(_tbl)
+            _story.append(Spacer(1, 8))
+
+            for _label, _text in [("Investment Thesis", _thesis), ("Entry Logic", _entry), ("Key Risk", _risk_txt)]:
+                if _text and _text != '—':
+                    _story.append(Paragraph(f"<b>{_label}</b>", _h3))
+                    _story.append(Paragraph(str(_text)[:1200], _body))
+                    _story.append(Spacer(1, 4))
+
+            _story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#E5E7EB'), spaceAfter=10))
+
+        # ── Disclaimer ──
+        _story.append(Spacer(1, 10))
+        _disc = ("This report was produced by Fintiq's AI Investment Companion through a structured analytical "
+                 "conversation covering business quality, valuation (3-phase DCF), and technical analysis. "
+                 "All data sourced from Yahoo Finance at time of analysis. Past performance does not guarantee "
+                 "future results. Fintiq is not authorised or regulated by the FCA. This is not financial advice.")
+        _story.append(Paragraph(_disc, _muted))
+
+        _doc.build(_story)
+        return _buf.getvalue()
+    except Exception:
+        return None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -6139,72 +6267,6 @@ _BRIEF_INSTRUMENTS = [
     ("^TNX",     "10Y Treasury",   "Yield %"),
 ]
 
-@st.cache_data(ttl=300)
-def _old_fetch_brief_data(tickers: list[str]) -> dict:
-    """Fetch latest price + % change for a list of tickers."""
-    out = {}
-    for sym in tickers:
-        try:
-            ti = yf.Ticker(sym).fast_info
-            price = getattr(ti, "last_price", None)
-            prev  = getattr(ti, "previous_close", None)
-            if price and prev and prev != 0:
-                chg    = price - prev
-                chg_pct = chg / prev * 100
-            else:
-                chg = chg_pct = None
-            out[sym] = {"price": price, "chg": chg, "chg_pct": chg_pct}
-        except Exception:
-            out[sym] = {"price": None, "chg": None, "chg_pct": None}
-    return out
-
-@st.cache_data(ttl=3600)
-def _old_fetch_econ_calendar() -> list:
-    """Fetch economic calendar from FMP for next 5 days."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    end   = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
-    try:
-        url = f"{FMP_BASE}/v3/economic_calendar?from={today}&to={end}&apikey={FMP_KEY}"
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            return [e for e in data if e.get("impact") in ("High", "Medium")] if data else []
-    except Exception:
-        pass
-    return []
-
-@st.cache_data(ttl=600)
-def _old_fetch_market_news() -> list:
-    """Fetch market news from FMP general news endpoint."""
-    try:
-        url = f"{FMP_BASE}/v4/general_news?page=0&apikey={FMP_KEY}"
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, list) and data:
-                return data[:8]
-    except Exception:
-        pass
-    # Fallback: yfinance news (handle both old and new schema)
-    try:
-        raw = yf.Ticker("^GSPC").news or []
-        out = []
-        for n in raw[:8]:
-            # new yfinance schema nests under 'content'
-            c = n.get("content", n)
-            title = c.get("title", n.get("title", ""))
-            url_  = (c.get("canonicalUrl", {}).get("url")
-                     or c.get("clickThroughUrl", {}).get("url")
-                     or n.get("link", "#"))
-            pub   = (c.get("provider", {}).get("displayName")
-                     or n.get("publisher", ""))
-            dt    = c.get("pubDate", "") or ""
-            if title:
-                out.append({"title": title, "url": url_, "site": pub,
-                            "publishedDate": dt})
-        return out
-    except Exception:
-        return []
 
 @st.cache_data(ttl=3600)
 def _fetch_vix_chart():
@@ -6389,35 +6451,7 @@ def _brief_card(sym, label, flag, price, chg_pct):
         f'</div>'
     )
 
-def _old_risk_sentiment(vix, gold_pct, dxy_pct):
-    """OLD duplicate — superseded by version defined before tabs."""
-    score = 0
-    if vix is not None:
-        if vix < 15:   score += 2
-        elif vix < 20: score += 1
-        elif vix > 25: score -= 1
-        elif vix > 30: score -= 2
-    if gold_pct is not None:
-        if gold_pct > 0.5:  score -= 1   # gold up = risk-off
-        elif gold_pct < -0.5: score += 1
-    if dxy_pct is not None:
-        if dxy_pct > 0.3:  score -= 1   # dollar up = risk-off
-        elif dxy_pct < -0.3: score += 1
-    if score >= 2:
-        return "🟢 Risk-On", "#22C55E", "Markets in risk-on mode — appetite for equities is strong."
-    elif score >= 0:
-        return "🟡 Neutral", "#F59E0B", "Mixed signals — proceed with selective conviction."
-    else:
-        return "🔴 Risk-Off", "#EF4444", "Risk-off environment — caution warranted, check your stops."
-
-if False:  # Brief tab removed — replaced by Home tab bulletin section
-    st.markdown(
-        '<div style="display:flex;align-items:center;gap:10px;padding:2px 0 6px 0">'
-        '<span style="font-size:0.95rem;font-weight:700;color:#F1F5F9">🌍 Morning Market Intelligence Briefing</span>'
-        '</div>', unsafe_allow_html=True)
-
-    # ── Fetch all data ────────────────────────────────────────
-    _all_syms  = [s for s,_,_,_ in _BRIEF_INDICES] + [s for s,_,_ in _BRIEF_INSTRUMENTS]
+if False:  # Dead block — Brief tab removed; replaced by Home tab bulletin. Safe to delete later.
     _brief_col, _econ_col = st.columns([3, 1])
 
     with _brief_col:
@@ -7161,6 +7195,11 @@ Senior users: add your own questions at the bottom of the conversation.
                 "Is [Company]'s revenue recurring (subscriptions, contracts) or transactional? What does that mean for earnings predictability?",
                 "What does the Fama-French factor analysis tell us about [Company]'s risk-adjusted return history?",
                 "What would make me wrong on [Company]? What are the 2-3 things that could permanently impair this business?",
+                "What is [Company]'s ROIC trend over the last 5 years — is the moat strengthening or eroding?",
+                "What is [Company]'s FCF conversion rate (FCF ÷ net income)? Is earnings quality high or is there a gap?",
+                "Break down [Company]'s revenue and margin by segment. Which segment drives profit, which is drag, and where is growth coming from?",
+                "How is management compensated — are their incentives (bonuses, equity grants) aligned with long-term shareholder value?",
+                "What does consensus expect for [Company]'s next 12 months — and where do you think consensus is wrong?",
             ]),
             ("💰 Stage 2 — Valuation", [
                 "Walk me through a DCF for [Company] using conservative, base, and bull case revenue growth assumptions.",
@@ -7169,13 +7208,15 @@ Senior users: add your own questions at the bottom of the conversation.
                 "What is the margin of safety — how much could the business disappoint and the stock still be reasonably priced?",
                 "Run a WACC sensitivity: what does intrinsic value look like at 7%, 9%, and 11% discount rates?",
                 "What is the Graham Number for [Company], and what does it tell us about whether it's speculative or value-priced?",
+                "What does [Company]'s net debt / EBITDA and interest coverage ratio look like? Can they fund growth without diluting shareholders?",
             ]),
             ("📈 Stage 3 — Technical & Timing", [
                 "Where is [Company] trading relative to its 50-day and 200-day moving averages? What does that signal?",
                 "What is the RSI for [Company] right now — is it overbought, oversold, or neutral?",
-                "Where are the key support and resistance levels for [Company]? What would a good entry zone look like?",
+                "Where are the key support and resistance levels for [Company]? What would a good entry zone look like for both long and short?",
                 "Is [Company] in a downtrend, uptrend, or base formation? What technical pattern is setting up?",
                 "What is the short interest for [Company]? Could a short squeeze be a catalyst?",
+                "What is the options market implying for [Company]'s next move — what is the implied volatility and expected move into earnings?",
             ]),
             ("⚡ Stage 4 — Catalysts & Risk", [
                 "When is [Company]'s next earnings date, and what does the market expect? What would a positive or negative surprise look like?",
@@ -7189,7 +7230,7 @@ Senior users: add your own questions at the bottom of the conversation.
                 "Given everything we've covered on [Company], what is the probability-weighted expected return over my investment horizon?",
                 "What position size in [Company] would be appropriate given my risk appetite and portfolio concentration?",
                 "What would cause me to sell [Company]? Define the exit criteria before I buy.",
-                "Add [Company] to my watchlist and generate a one-page research summary.",
+                "Add [Company] to my watchlist with clear entry, exit, and stop prices for both long and short, and generate a research summary.",
             ]),
         ]
 
@@ -8084,12 +8125,28 @@ Senior users: add your own questions at the bottom of the conversation.
 
     # Report download (shows below cards when report generated)
     if _stage == 'report' and _SS.cp_report:
-        st.download_button(
-            "⬇️ Download Research Report (HTML)",
-            data=_SS.cp_report,
-            file_name=f"fintiq_research_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.html",
-            mime="text/html",
-            use_container_width=True)
+        _ts = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')
+        _dl_col1, _dl_col2 = st.columns(2)
+        with _dl_col1:
+            st.download_button(
+                "⬇️ Download Research Report (HTML)",
+                data=_SS.cp_report,
+                file_name=f"fintiq_research_{_ts}.html",
+                mime="text/html",
+                use_container_width=True)
+        with _dl_col2:
+            _pdf_bytes = _comp_generate_report_pdf(
+                _SS.cp_ctx.get('watchlist', []),
+                _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses)
+            if _pdf_bytes:
+                st.download_button(
+                    "📄 Download Research Report (PDF)",
+                    data=_pdf_bytes,
+                    file_name=f"fintiq_research_{_ts}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True)
+            else:
+                st.caption("PDF unavailable — install reportlab on the server")
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1 — FUNDAMENTAL SCREEN
