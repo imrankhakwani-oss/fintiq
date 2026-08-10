@@ -7031,6 +7031,28 @@ div[data-testid="stChatInput"] > div {
 
     st.caption("Guided analysis · Educational only · Not financial advice")
 
+    # ── Session toolbar ───────────────────────────────────────────
+    _tb1, _tb2, _tb3, _tb4, _tb_sp = st.columns([1, 1, 1, 1, 8], gap="small")
+    with _tb1:
+        st.download_button("⬇️ Save", data=_session_json,
+            file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json", use_container_width=True,
+            key="cp_dl_chat", help="Save chat — download session to resume later")
+    with _tb2:
+        st.download_button("📄 Log", data=_transcript_txt,
+            file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+            mime="text/plain", use_container_width=True,
+            key="cp_dl_transcript", help="Download plain-text transcript")
+    with _tb3:
+        if st.button("📂 Resume", use_container_width=True, key="cp_resume_btn",
+                     help="Resume — upload a saved session file"):
+            _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
+    with _tb4:
+        if st.button("🔄 New", use_container_width=True, key="cp_reset",
+                     help="New Session — clear everything and start fresh"):
+            _do_reset()
+            st.rerun()
+
     # ════════════════════════════════════════════════════════════
     # ANALYST PLAYBOOK — pre-loaded hedge fund questions by stage
     # ════════════════════════════════════════════════════════════
@@ -7123,28 +7145,6 @@ Senior users: add your own questions at the bottom of the conversation.
   &nbsp;&nbsp;<em style="color:#475569">· Stock cards appear here as we analyse each company</em>
 </span>
 </div>""", unsafe_allow_html=True)
-
-    # ── Session toolbar — below steps bar ────────────────────────
-    _tb1, _tb2, _tb3, _tb4, _tb_sp = st.columns([1, 1, 1, 1, 8], gap="small")
-    with _tb1:
-        st.download_button("⬇️ Save", data=_session_json,
-            file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
-            mime="application/json", use_container_width=True,
-            key="cp_dl_chat", help="Save chat — download session to resume later")
-    with _tb2:
-        st.download_button("📄 Log", data=_transcript_txt,
-            file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-            mime="text/plain", use_container_width=True,
-            key="cp_dl_transcript", help="Download plain-text transcript")
-    with _tb3:
-        if st.button("📂 Resume", use_container_width=True, key="cp_resume_btn",
-                     help="Resume — upload a saved session file"):
-            _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
-    with _tb4:
-        if st.button("🔄 New", use_container_width=True, key="cp_reset",
-                     help="New Session — clear everything and start fresh"):
-            _do_reset()
-            st.rerun()
 
     elif _SS.cp_data:
         _tickers_to_show = list(_SS.cp_data.keys())[:5]   # cap at 5
