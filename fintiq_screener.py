@@ -3079,10 +3079,10 @@ def _risk_sentiment(vix, gold_pct, dxy_pct):
 def _get_api_key() -> str:
     """Read ANTHROPIC_API_KEY from env or st.secrets — whichever is available."""
     import os as _os_k
-    _key = _os_k.environ.get("ANTHROPIC_API_KEY", "")
+    _key = _os_k.environ.get("ANTHROPIC_API_KEY", "").strip().replace("\n", "").replace("\r", "")
     if not _key:
         try:
-            _key = st.secrets.get("ANTHROPIC_API_KEY", "")
+            _key = str(st.secrets.get("ANTHROPIC_API_KEY", "")).strip().replace("\n", "").replace("\r", "")
         except Exception:
             pass
     return _key or ""
@@ -3208,8 +3208,8 @@ def _make_bulletin(_cache_key: str) -> dict:
     for _attempt in range(3):
         try:
             _resp = _client.messages.create(
-                model="claude-sonnet-5",
-                max_tokens=8000,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=4000,
                 messages=[{"role": "user", "content": _prompt}]
             )
             _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
@@ -3365,8 +3365,9 @@ def _render_bulletin():
                                 except: pass
                     except Exception:
                         pass  # /tmp write failure is non-fatal
-                except Exception:
+                except Exception as _bull_err:
                     st.session_state[_ss_key] = _make_bulletin_fallback()
+                    st.session_state['_bulletin_last_error'] = str(_bull_err)
 
         _bulletin = st.session_state[_ss_key]
     else:
@@ -3559,7 +3560,11 @@ def _render_bulletin():
 </div>""", unsafe_allow_html=True)
 
     if _bulletin.get("fallback"):
-        st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
+        _bull_err_msg = st.session_state.get('_bulletin_last_error', '')
+        if _bull_err_msg:
+            st.caption(f"⚠️ Bulletin error: {_bull_err_msg[:200]}")
+        else:
+            st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
     st.markdown('<div style="margin-bottom:20px"></div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
