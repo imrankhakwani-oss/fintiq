@@ -1852,6 +1852,7 @@ st.markdown("""
   @media (max-width: 768px) {
     .fiq-stat-grid  { grid-template-columns: 1fr 1fr !important; }
     .fiq-3col-grid  { grid-template-columns: 1fr !important; }
+    .fiq-dash-grid  { grid-template-columns: 1fr !important; }
   }
 
   /* ── Small phones (≤400px) ── */
@@ -3592,11 +3593,11 @@ def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
         except Exception:
             _fin = _cf = _bs = _qfin = None
         # ── Fama-French factor lookup ─────────────────────────
-        # Try requested period first, then fall back to other periods so we
-        # don't show "Not in universe" just because one period's JSON is missing.
+        # 1. Try pre-screened JSON (fast, covers S&P 500 / FTSE 100 universe)
+        # 2. Fall back to on-demand OLS regression from Kenneth French daily factors
         _factor = None
+        _tk_upper = ticker.upper()
         try:
-            _tk_upper = ticker.upper()
             for _try_yr in [ff_years] + [y for y in [1, 2, 3] if y != ff_years]:
                 _ff_data, _ = _fetch_factor_data(_try_yr)
                 _factor = next((s for s in _ff_data if s.get('ticker','').upper() == _tk_upper), None)
@@ -3604,6 +3605,15 @@ def _comp_fetch(ticker: str, ff_years: int = 2) -> dict:
                     break
         except Exception:
             pass
+        # On-demand OLS fallback — fires for any ticker not in the pre-screened JSON
+        if _factor is None:
+            try:
+                _ols_result = _compute_ff4_ols(_hist, years=ff_years)
+                if _ols_result:
+                    _ols_result['ticker'] = _tk_upper
+                    _factor = _ols_result
+            except Exception:
+                pass
         return {'ticker': ticker.upper(), 'info': _info, 'hist': _hist,
                 'financials': _fin, 'cashflow': _cf, 'balance_sheet': _bs,
                 'q_financials': _qfin, 'price': _price,
@@ -3895,6 +3905,19 @@ def _comp_data_summary(d: dict) -> str:
     _beta = _f(_i.get('beta'))
     _tax  = _f(_i.get('effectiveTaxRate')) or 0.21
     _from_hi = ((_pr - _hi) / _hi * 100) if _pr and _hi else None
+    _short_pct = _f(_i.get('shortPercentOfFloat'))
+    # earningsDate: yfinance returns a list of timestamps
+    _earn_date = None
+    try:
+        _ed_raw = _i.get('earningsDate') or _i.get('earningsTimestamp')
+        if isinstance(_ed_raw, list) and _ed_raw:
+            import datetime as _dt_ed
+            _earn_date = _dt_ed.datetime.fromtimestamp(float(_ed_raw[0])).strftime('%d %b %Y')
+        elif isinstance(_ed_raw, (int, float)) and _ed_raw:
+            import datetime as _dt_ed
+            _earn_date = _dt_ed.datetime.fromtimestamp(float(_ed_raw)).strftime('%d %b %Y')
+    except Exception:
+        pass
 
     # ── 3-5yr historical averages from financials ─────────────
     _hist_block = ""
@@ -3971,6 +3994,8 @@ def _comp_data_summary(d: dict) -> str:
         f"ROE: {_roe*100:.1f}% | D/E: {_de:.2f}x | FCF: {'%.1fB'%(_fcf/1e9)}" if _roe and _de and _fcf else "",
         _hist_block,
         f"Analyst consensus ({_na}): target {_tgt:.2f} | rating {_rec:.1f}/5 (1=StrongBuy)" if _tgt and _rec else "",
+        f"Next earnings: {_earn_date}" if _earn_date else "Next earnings: not available",
+        f"Short interest: {_short_pct*100:.1f}% of float" if _short_pct else "Short interest: not available",
         f"Business: {_i.get('longBusinessSummary','')[:300]}..." if _i.get('longBusinessSummary') else "",
     ]
     # ── Fama-French 4-factor block ────────────────────────────
@@ -3980,8 +4005,9 @@ def _comp_data_summary(d: dict) -> str:
         _sig_lbl = _sig_map.get(_ff.get('signal',''), _ff.get('signal','').upper())
         _a_sign  = '+' if _ff.get('alpha', 0) >= 0 else ''
         _ff_yr_lbl = f"{d.get('ff_years', 2)}yr"
+        _ff_src = " [on-demand OLS]" if _ff.get('source') == 'on-demand OLS' else " [pre-screened]"
         _ff_line = (
-            f"Fama-French 4-Factor ({_ff_yr_lbl} OLS): Signal={_sig_lbl} | "
+            f"Fama-French 4-Factor ({_ff_yr_lbl} OLS{_ff_src}): Signal={_sig_lbl} | "
             f"Alpha={_a_sign}{_ff.get('alpha',0):.1f}%pa (p={_ff.get('pval',1):.3f}) | "
             f"MKT-beta={_ff.get('beta',1):.2f} | SMB={_ff.get('smb',0):.2f} | "
             f"HML={_ff.get('hml',0):.2f} | MOM={_ff.get('mom',0):.2f}"
@@ -3990,7 +4016,7 @@ def _comp_data_summary(d: dict) -> str:
             _ff_line += f" | Insight: {_ff['insight']}"
         _lines.append(_ff_line)
     else:
-        _lines.append("Fama-French 4-Factor: not available for this ticker (non-US or not in universe)")
+        _lines.append("Fama-French 4-Factor: computation failed — use qualitative factor proxy from beta, P/B and market cap")
 
     # ── TSR DECOMPOSITION SUMMARY FOR AI ─────────────────────
     try:
@@ -4387,6 +4413,7 @@ YOUR JOB IN THIS STAGE:
 4. Margin quality: show historical operating margin trend. Is it expanding or compressing? Why?
 5. ROIC vs cost of capital: is the business creating or destroying value? Reference historical ROIC from data above.
 6. Balance sheet: D/E and interest coverage — can they fund growth without dilution?
+   D/E ANOMALY FLAG: If D/E > 10x, immediately flag this to the user: "⚠️ D/E ratio of X is unusually high — this typically signals near-zero or negative book equity from aggressive share buybacks, not traditional leverage. Re-frame: look at net debt/EBITDA and interest coverage instead, as the D/E ratio becomes meaningless here. Companies like [Apple, Domino's] run negative book equity by design." Never present an extreme D/E ratio without this context.
 7. FAMA-FRENCH FACTOR ANALYSIS (MANDATORY): You MUST discuss the FF4 factor signal from the data above.
    - State the signal (STRONG ALPHA / MARGINAL / AVOID) and what it means in plain English
    - Explain the alpha, beta, SMB, HML, MOM loadings in context
@@ -4398,7 +4425,23 @@ YOUR JOB IN THIS STAGE:
 10. FLAG NEXT EARNINGS: Mention the next earnings date if available in data — this is the most important near-term catalyst for any thesis.
 11. Flag any behavioural biases in user reasoning (recency, momentum-chasing, anchoring)
 12. STRESS-TEST THE THESIS: Before moving to valuation, explicitly ask "What would make this thesis wrong?" — don't let the user skip this.
-13. END with: "The quality picture is clear — let me take you through the valuation now." (this triggers next stage)""",
+13. INVESTMENT SCORECARD (MANDATORY — produce this at the end of the fundamental stage, before moving to valuation):
+   Output a structured scorecard using markdown table format. Score each category 1–5 (1=Poor, 3=Average, 5=Excellent). Weight is the relative importance.
+   "**Investment Scorecard — [Ticker]**
+   | Category | Score | Weight | Notes |
+   |---|---|---|---|
+   | Business quality & moat | /5 | 20% | [one-line rationale] |
+   | Revenue growth trajectory | /5 | 15% | [CAGR and direction] |
+   | Margin quality & trend | /5 | 10% | [expanding/contracting] |
+   | ROIC vs cost of capital | /5 | 15% | [value creator or destroyer?] |
+   | Balance sheet strength | /5 | 10% | [D/E, coverage] |
+   | Management & capital allocation | /5 | 10% | [buybacks, dividends, acquisitions] |
+   | Competitive positioning | /5 | 10% | [moat sources] |
+   | Earnings quality | /5 | 5% | [cash conversion, accruals] |
+   | Factor signal (FF4) | /5 | 5% | [alpha/signal] |
+   | **Weighted score** | **/5** | 100% | |"
+   Explain the weighted total in one sentence. This replaces a long prose summary — be brief in the rows.
+14. END with: "The quality picture is clear — let me take you through the valuation now." (this triggers next stage)""",
 
         'valuation': f"""STAGE: Valuation — 3-Phase DCF + McKinsey Terminal Value + Monte Carlo
 You have live data including HISTORICAL AVERAGES (revenue CAGR, avg op margin, ROIC, investment rate, tax rate, D/E).
@@ -4437,6 +4480,13 @@ Run the DCF mentally and present:
 - MONTE CARLO: "Stress-testing 4,000 scenarios with random variation in growth and margins — 80% of outcomes land between X and Y. The stock at [price] sits [above/below/within] that range."
 - WACC SENSITIVITY: Present a simple 3×3 grid in text: Low/Mid/High WACC × Low/Mid/High terminal growth → show implied value per share for each cell
 - Margin of safety discussion: how much buffer does the user have?
+- BULL / BASE / BEAR SCENARIOS (MANDATORY): After presenting the base-case DCF, always present three explicit scenarios with probability weights that sum to 100%:
+  "Here are the three scenarios I'm weighting:
+   🟢 Bull case (X% probability): [key assumption e.g. margin expansion to Y%] → implies £Z per share
+   ⚪ Base case (Y% probability): [current assumptions] → implies £W per share
+   🔴 Bear case (Z% probability): [downside e.g. revenue misses, margin compression] → implies £V per share
+   Probability-weighted expected value: £[X*Z + Y*W + Z*V / 100] vs current price of £[price] = [upside/downside]%"
+  Probabilities should reflect genuine conviction — do not default to 33/33/33 unless truly uncertain.
 
 STEP 4 — FORWARD TSR PROJECTION: Once DCF assumptions are agreed, translate them into an implied forward TSR:
 "Based on your assumptions, here is the implied forward TSR breakdown:
@@ -4465,9 +4515,39 @@ YOUR JOB — BE SPECIFIC, NOT GENERIC:
    - Ideal entry zone (price level where risk/reward is best)
    - Stop-loss reference point
    - Target exit zone based on resistance
-7. CATALYSTS: What near-term events (earnings, macro, sector events) could trigger the move?
-8. Ask: "The chart suggests [summary]. Given your [horizon] horizon, does the entry zone make sense with your thesis?"
-9. END: "We've covered quality, value, and timing. Let me pull this together into your watchlist."
+7. CATALYSTS & EVENT RISK: What near-term events (earnings, macro, sector events) could trigger the move?
+   CRITICAL: If earnings date is available in the data above, always flag it: "⚠️ Earnings in X days — this is a binary event. The chart setup may be invalidated overnight by a miss. Size accordingly or wait for the print."
+8. "WHY NOW?" IC TEST (MANDATORY — do this for every stock before ending the technical stage):
+   Before moving on, explicitly answer this structured question — do not skip it:
+   "The 'Why Now?' test for [ticker]:
+   • Trend: [Bullish / Neutral / Bearish]
+   • Location: [e.g. Pullback to 50d MA support / Near resistance — poor location]
+   • Trigger: [What specific price action triggers entry — e.g. break above £X on volume]
+   • Confirmation needed: [e.g. volume expansion, close above resistance, sector confirmation]
+   • Entry quality: [A+ = trend + location + trigger + confirmation all aligned / B = good setup, one element missing / C = FOMO / wait]
+   • Stop / Invalidation: [The price level where the technical thesis is wrong — NOT a dollar loss amount]
+   • R/R: [Estimated upside to target ÷ distance to stop — flag if < 2:1]
+   If Entry quality is C or R/R is below 2:1 → tell the user plainly: 'The chart does not support a good entry right now — here is what to wait for: [specific condition].'"
+9. TECHNICAL SETUP SCORE (MANDATORY — produce this after the Why Now? test):
+   Output a structured scoring table. Score each factor 1–5.
+   "**Technical Setup Score — [Ticker]**
+   | Factor | Score | Signal |
+   |---|---|---|
+   | Trend (primary) | /5 | Bullish/Neutral/Bearish |
+   | Market structure | /5 | HH+HL / ranging / LL+LH |
+   | Location | /5 | at support / mid-range / at resistance |
+   | Momentum (RSI/MACD) | /5 | confirming / diverging / exhausted |
+   | Volume | /5 | confirming / declining / absent |
+   | Relative strength vs sector | /5 | leader / in-line / lagging |
+   | Pattern quality | /5 | clear setup / emerging / absent |
+   | Market/sector confirmation | /5 | supportive / neutral / opposing |
+   | Entry quality | /5 | A+ / B / C / no trade |
+   | R/R ratio | /5 | >3:1 / 2-3:1 / <2:1 |
+   | **Total** | **/50** | |"
+   Interpret: 45–50 = exceptional setup, 38–44 = high quality, 30–37 = watchlist, <30 = wait.
+   If total <30: tell the user explicitly "The technical setup does not support entry today — wait for [specific condition]."
+10. Ask: "The chart suggests [summary]. Given your [horizon] horizon, does the entry zone make sense with your thesis?"
+11. END: "We've covered quality, value, and timing. Let me pull this together into your watchlist."
 Current watchlist: {_wl} ({len(_wl)}/{_max} slots)""",
 
         'finalise': f"""STAGE: Finalise Watchlist
@@ -4475,8 +4555,14 @@ Current watchlist: {_wl} ({len(_wl)}/{_max} stocks maximum)
 • Summarise each stock: one-line quality verdict + valuation view + entry logic + key risk
 • Ask if user wants changes — any additions, removals, or replacements
 • Enforce the discipline: if user wants more than {_max}, explain "A concentrated watchlist forces conviction — let's keep the strongest {_max}"
+• KILL-SWITCH (MANDATORY — do this for every stock): Before finalising, explicitly state what would change the thesis:
+  "Kill-switch conditions for [ticker] — exit or reassess if:
+   📋 Thesis break: [e.g. revenue growth drops below X%, management changes, competitive moat narrows]
+   📉 Price stop: [the structural support level from technical analysis — not a % loss]
+   ⏱️ Time stop: [if X hasn't happened by Y date, the thesis hasn't played out — reassess]
+   This is what changes our mind — not a bad day, but a genuine thesis failure."
 • When satisfied: "Ready to generate your research report?"
-• The report will include: thesis per stock, valuation range, entry logic, key risks, disclaimer""",
+• The report will include: thesis per stock, valuation range, entry logic, key risks, kill-switch conditions, disclaimer""",
 
         'report': """STAGE: Report Generated
 The research report is displayed in the right panel and available for download.
@@ -4485,9 +4571,20 @@ The research report is displayed in the right panel and available for download.
 • Offer to start a new analysis session or deep-dive on any individual stock"""
     }
 
+    _stage_lock = ""
+    if stage not in ('discovery', 'confirm'):
+        _stage_lock = f"""
+STAGE LOCK — CRITICAL: You are currently in the {stage.upper()} stage. The conversation has already moved past discovery and data collection.
+• NEVER ask about investment horizon, risk appetite, geography, or stock selection — those are already established (see USER CONTEXT below)
+• NEVER suggest starting over or ask "what would you like to analyse?"
+• NEVER go backwards to an earlier stage — only forward
+• If the user goes off-topic, gently redirect: "Let's stay with the {stage} analysis — [relevant question for this stage]"
+"""
+
     return f"""You are Fintiq's AI Investment Companion.
 
 You combine the perspectives of: a senior equity analyst, hedge fund analyst, quantitative researcher, and behavioural finance expert. You have deep markets knowledge and speak like a smart senior colleague — direct, substantive, no filler.
+{_stage_lock}
 
 TOOLS AVAILABLE — use them proactively:
 • search_web — search the live internet for news, earnings commentary, analyst reports, competitor data, macro events. USE THIS whenever you need current information rather than relying on training data. Always search before saying you "don't have" current data.
@@ -6974,7 +7071,11 @@ div[data-testid="stChatInput"] > div {
                     p in _reply_lower for p in ['quality picture is clear', 'take you through the valuation',
                                                 'turn to valuation', 'move to valuation',
                                                 'look at valuation', 'what it\'s worth',
-                                                'let me take you through', 'on to valuation']):
+                                                'let me take you through', 'on to valuation',
+                                                'move on to valuation', 'now to valuation',
+                                                'valuation now', 'value it now',
+                                                'into the valuation', 'tackle the valuation',
+                                                'dig into valuation']):
                     _SS.cp_stage = 'valuation'
                 elif _SS.cp_stage == 'valuation' and any(
                     p in _reply_lower for p in ['valuation sets the floor', 'technicals tell us about timing',
@@ -6986,7 +7087,12 @@ div[data-testid="stChatInput"] > div {
                     p in _reply_lower for p in ["covered quality, value, and timing",
                                                 'pull this together', 'finalise', 'finalize',
                                                 'let me summarise', 'let me summarize',
-                                                'build the report', 'put together a report']):
+                                                'build the report', 'put together a report',
+                                                'watchlist now', 'into your watchlist',
+                                                'wrap this up', 'build your watchlist',
+                                                'put this together', 'summarise the',
+                                                'summarize the', 'ready to finalise',
+                                                'ready to finalize', 'time to decide']):
                     _SS.cp_stage = 'finalise'
 
                 # ── Always: if fundamental stage and no data yet, scan USER messages only ──
@@ -10303,6 +10409,146 @@ Be direct, analytical, and specific. Avoid generic statements. Write like you're
 
 import requests as _req
 import numpy as _np
+
+
+@st.cache_data(ttl=86400)
+def _fetch_french_factors() -> "pd.DataFrame | None":
+    """Download Kenneth French daily 4-factor (Carhart) data and return a DataFrame
+    with columns: Mkt-RF, SMB, HML, Mom, RF (all in decimal form, i.e. /100).
+    Cached 24 hrs to avoid hammering Dartmouth."""
+    import io, zipfile, pandas as _pd_ff
+    try:
+        _ff3_url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip"
+        _mom_url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
+
+        def _parse_french_zip(url, value_cols):
+            _r = _req.get(url, timeout=25)
+            _zf = zipfile.ZipFile(io.BytesIO(_r.content))
+            _fname = [n for n in _zf.namelist() if n.upper().endswith('.CSV')][0]
+            _raw = _zf.read(_fname).decode('latin-1')
+            _lines = _raw.splitlines()
+            # Find first line that starts with a 8-digit date
+            _start = 0
+            for _i, _l in enumerate(_lines):
+                _s = _l.strip().replace(',', '')
+                if _s and len(_s) >= 8 and _s[:8].isdigit():
+                    _start = _i
+                    break
+            # Collect data lines until a non-date line
+            _data_lines = []
+            for _l in _lines[_start:]:
+                _s = _l.strip()
+                if not _s:
+                    continue
+                _first = _s.split(',')[0].strip()
+                if len(_first) == 8 and _first.isdigit():
+                    _data_lines.append(_l)
+                elif _data_lines:  # hit the annual section — stop
+                    break
+            _csv = '\n'.join(_data_lines)
+            _df = _pd_ff.read_csv(io.StringIO(_csv), header=None,
+                                   names=['Date'] + value_cols)
+            _df['Date'] = _pd_ff.to_datetime(_df['Date'].astype(str), format='%Y%m%d', errors='coerce')
+            _df = _df.dropna(subset=['Date']).set_index('Date')
+            for _c in value_cols:
+                _df[_c] = _pd_ff.to_numeric(_df[_c], errors='coerce') / 100.0
+            return _df
+
+        _ff3 = _parse_french_zip(_ff3_url, ['Mkt-RF', 'SMB', 'HML', 'RF'])
+        _mom = _parse_french_zip(_mom_url, ['Mom'])
+        _combined = _ff3.join(_mom, how='inner')
+        return _combined
+    except Exception:
+        return None
+
+
+def _compute_ff4_ols(hist, years: int = 2) -> "dict | None":
+    """Compute Carhart 4-factor model via OLS on daily returns.
+    Uses Kenneth French data from Dartmouth (cached).
+    Returns dict matching the pre-screened JSON format, or None on failure."""
+    import numpy as _np_ols, pandas as _pd_ols
+    try:
+        if hist is None or hist.empty:
+            return None
+        _factors = _fetch_french_factors()
+        if _factors is None or _factors.empty:
+            return None
+
+        # Stock daily returns
+        _close = hist['Close'].copy()
+        _close.index = _pd_ols.to_datetime(_close.index).tz_localize(None)
+        _stock_ret = _close.pct_change().dropna()
+
+        # Trim to requested years
+        _cutoff = _pd_ols.Timestamp.now() - _pd_ols.DateOffset(years=years)
+        _stock_ret = _stock_ret[_stock_ret.index >= _cutoff]
+        if len(_stock_ret) < 60:
+            return None
+
+        # Align with factor data
+        _df = _factors.join(_stock_ret.rename('Stock'), how='inner')
+        _df = _df.dropna()
+        if len(_df) < 60:
+            return None
+
+        # OLS: excess return = alpha + beta*Mkt-RF + smb*SMB + hml*HML + mom*Mom + e
+        _Y = (_df['Stock'] - _df['RF']).values
+        _X = _np_ols.column_stack([
+            _np_ols.ones(len(_df)),
+            _df['Mkt-RF'].values,
+            _df['SMB'].values,
+            _df['HML'].values,
+            _df['Mom'].values,
+        ])
+        _coeffs, _residuals, _rank, _sv = _np_ols.linalg.lstsq(_X, _Y, rcond=None)
+        _alpha_d, _beta, _smb, _hml, _mom = _coeffs
+
+        # Annualise alpha
+        _alpha_ann = _alpha_d * 252 * 100  # percentage
+
+        # p-value for alpha via t-stat
+        _n, _k = len(_Y), _X.shape[1]
+        _Y_hat = _X @ _coeffs
+        _sse = float(_np_ols.sum((_Y - _Y_hat) ** 2))
+        _mse = _sse / max(_n - _k, 1)
+        _XtX_inv = _np_ols.linalg.pinv(_X.T @ _X)
+        _se_alpha = (_mse * _XtX_inv[0, 0]) ** 0.5
+        _t_stat = _alpha_d / max(_se_alpha, 1e-12)
+        # Two-tailed p-value approximation
+        import math as _math_ols
+        _pval = 2 * (1 - min(0.9999, 0.5 * (1 + _math_ols.erf(abs(_t_stat) / _math_ols.sqrt(2)))))
+
+        # R²
+        _ss_tot = float(_np_ols.sum((_Y - _np_ols.mean(_Y)) ** 2))
+        _r2 = 1 - _sse / max(_ss_tot, 1e-12)
+
+        # Signal
+        if _alpha_ann >= 3 and _pval <= 0.10:
+            _signal = 'green'
+            _insight = f"Statistically significant positive alpha of {_alpha_ann:+.1f}%pa (p={_pval:.3f})"
+        elif _alpha_ann <= -3 and _pval <= 0.10:
+            _signal = 'red'
+            _insight = f"Statistically significant negative alpha of {_alpha_ann:+.1f}%pa (p={_pval:.3f})"
+        else:
+            _signal = 'amber'
+            _insight = f"Alpha of {_alpha_ann:+.1f}%pa is not statistically significant (p={_pval:.3f})"
+
+        return {
+            'ticker': None,  # filled by caller
+            'alpha': _alpha_ann,
+            'beta': float(_beta),
+            'smb': float(_smb),
+            'hml': float(_hml),
+            'mom': float(_mom),
+            'pval': float(_pval),
+            'r2': float(_r2),
+            'signal': _signal,
+            'insight': _insight,
+            'source': 'on-demand OLS',
+            'years': years,
+        }
+    except Exception:
+        return None
 
 
 @st.cache_data(ttl=3600)
