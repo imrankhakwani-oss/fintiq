@@ -7260,6 +7260,28 @@ Senior users: add your own questions at the bottom of the conversation.
         try: return float(v)
         except: return None
 
+    # ── Persistent toolbar — always shown (save / transcript / resume / reset) ──
+    _tb_sp, _tb1, _tb2, _tb3, _tb4 = st.columns([6, 1, 1, 1, 1], gap="small")
+    with _tb1:
+        st.download_button("⬇️", data=_session_json,
+            file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json", use_container_width=True,
+            key="cp_dl_chat", help="Save chat")
+    with _tb2:
+        st.download_button("📄", data=_transcript_txt,
+            file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+            mime="text/plain", use_container_width=True,
+            key="cp_dl_transcript", help="Download transcript")
+    with _tb3:
+        if st.button("📂", use_container_width=True, key="cp_resume_btn",
+                     help="Resume saved session"):
+            _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
+    with _tb4:
+        if st.button("🔄", use_container_width=True, key="cp_reset",
+                     help="New Session"):
+            _do_reset()
+            st.rerun()
+
     if _stage == 'discovery' and not _SS.cp_data:
         # Show "how this works" intro banner
         st.markdown("""
@@ -7275,29 +7297,8 @@ Senior users: add your own questions at the bottom of the conversation.
   &nbsp;&nbsp;<em style="color:#475569">· Stock cards appear here as we analyse each company</em>
 </span>
 </div>""", unsafe_allow_html=True)
-        # Compact toolbar — right below steps bar
-        _tb_sp, _tb1, _tb2, _tb3, _tb4 = st.columns([6, 1, 1, 1, 1], gap="small")
-        with _tb1:
-            st.download_button("⬇️", data=_session_json,
-                file_name=f"fintiq_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                mime="application/json", use_container_width=True,
-                key="cp_dl_chat", help="Save chat")
-        with _tb2:
-            st.download_button("📄", data=_transcript_txt,
-                file_name=f"fintiq_transcript_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                mime="text/plain", use_container_width=True,
-                key="cp_dl_transcript", help="Download transcript")
-        with _tb3:
-            if st.button("📂", use_container_width=True, key="cp_resume_btn",
-                         help="Resume saved session"):
-                _SS['cp_show_resume'] = not _SS.get('cp_show_resume', False)
-        with _tb4:
-            if st.button("🔄", use_container_width=True, key="cp_reset",
-                         help="New Session"):
-                _do_reset()
-                st.rerun()
 
-    elif _SS.cp_data:
+    if _SS.cp_data:
         _tickers_to_show = list(_SS.cp_data.keys())[:5]   # cap at 5
         _ncols = len(_tickers_to_show)
         _card_cols = st.columns(_ncols, gap="small")
@@ -7528,8 +7529,8 @@ Senior users: add your own questions at the bottom of the conversation.
                 ('P/B',          f"{_fv2(_ti.get('priceToBook')):.2f}x" if _fv2(_ti.get('priceToBook')) else '—'),
                 # — Per Share —
                 _sec('── PER SHARE ──'),
-                ('EPS (TTM)',     f"${_eps_v:.2f}"  if _eps_v else '—'),
-                ('Div / Share',  f"${_dps_v:.2f}" if _dps_v else 'None'),
+                ('EPS (TTM)',    get_price_display(_eps_v, _tk, _ti) if _eps_v else '—'),
+                ('Div / Share', get_price_display(_dps_v, _tk, _ti) if _dps_v else 'None'),
                 # — Quality —
                 _sec('── QUALITY ──'),
                 ('Rev Growth',   f"{_rg_v*100:+.1f}%" if _rg_v else '—'),
@@ -7557,6 +7558,8 @@ Senior users: add your own questions at the bottom of the conversation.
             ]
 
             # Compute TSR and insert rows
+            # Note: simple TSR uses rolling trading-day lookback (252d/756d/1260d), NOT fiscal year.
+            # The TSR deep-dive expander below uses FY boundaries — minor differences are expected.
             _tsr_data = _comp_compute_tsr(_td)
             _s_tsr = _tsr_data.get('simple', {})
             def _tsr_pct(v):
@@ -7564,14 +7567,18 @@ Senior users: add your own questions at the bottom of the conversation.
             def _tsr_color(v):
                 if v is None: return '#94A3B8'
                 return '#22c55e' if v >= 0 else '#ef4444'
-            for _tp, _tlbl in [('1y','1 Year'), ('3y','3 Year (ann.)'), ('5y','5 Year (ann.)')]:
+            for _tp, _tlbl, _tnote in [
+                ('1y','1 Year','trailing 252d'),
+                ('3y','3 Year (ann.)','trailing 756d, ann.'),
+                ('5y','5 Year (ann.)','trailing 1260d, ann.')]:
                 _tv = _s_tsr.get(_tp, {})
                 _ttsr = _tv.get('tsr')
                 if _ttsr is not None:
                     _mets.append((_tlbl,
                         f'<span style="color:{_tsr_color(_ttsr)};font-weight:700">{_tsr_pct(_ttsr)}</span>'
                         f' <span style="font-size:0.65rem;color:#64748B">'
-                        f'(Δprice {_tsr_pct(_tv.get("price_return"))} + div {_tsr_pct(_tv.get("div_yield"))})</span>'))
+                        f'(Δprice {_tsr_pct(_tv.get("price_return"))} + div {_tsr_pct(_tv.get("div_yield"))})</span>'
+                        f' <span style="font-size:0.58rem;color:#334155">[{_tnote}]</span>'))
 
             # Technicals
             _mets += [
@@ -7611,13 +7618,14 @@ Senior users: add your own questions at the bottom of the conversation.
             # Build valuation estimate metric rows
             _val_est_rows = [_sec('── VALUATION ESTIMATES ──')]
             if _graham:
+                # For GBp stocks, Graham Number from yfinance is in pence — convert for display
                 _gv_c = '#22c55e' if _graham > (_pr or 0) else '#ef4444'
                 _val_est_rows.append(('Graham Number',
-                    f'<span style="color:{_gv_c};font-weight:700">${_graham:.2f}</span>'
+                    f'<span style="color:{_gv_c};font-weight:700">{get_price_display(_graham, _tk, _ti)}</span>'
                     f' <span style="font-size:0.63rem;color:#64748B">(√22.5×EPS×BV)</span>'))
             if _tgt:
                 _up_c = '#22c55e' if (_tgt_upside or 0) >= 0 else '#ef4444'
-                _tgt_str = f'${_tgt:.2f}'
+                _tgt_str = get_price_display(_tgt, _tk, _ti)
                 if _tgt_upside is not None:
                     _tgt_str += f' <span style="color:{_up_c};font-size:0.7rem">({_tgt_upside*100:+.1f}%)</span>'
                 if _rec_lbl:
@@ -7626,20 +7634,33 @@ Senior users: add your own questions at the bottom of the conversation.
                     _tgt_str += '</span>'
                 _val_est_rows.append(('Analyst Target', _tgt_str))
             if _tgt_low and _tgt_high:
-                _val_est_rows.append(('Analyst Range', f'${_tgt_low:.2f} – ${_tgt_high:.2f}'))
+                _val_est_rows.append(('Analyst Range',
+                    f'{get_price_display(_tgt_low, _tk, _ti)} – {get_price_display(_tgt_high, _tk, _ti)}'))
             # DCF estimate (shown when available from valuation stage)
             _dcf_est = _an.get('dcf_ps')
             if _dcf_est:
                 _dcf_c = '#22c55e' if _dcf_est > (_pr or 0) else '#ef4444'
                 _dcf_up = ((_dcf_est - _pr) / _pr) if _pr else None
-                _dcf_str = f'<span style="color:{_dcf_c};font-weight:700">${_dcf_est:.2f}</span>'
+                _dcf_str = f'<span style="color:{_dcf_c};font-weight:700">{get_price_display(_dcf_est, _tk, _ti)}</span>'
                 if _dcf_up is not None:
                     _dcf_str += f' <span style="font-size:0.7rem;color:{_dcf_c}">({_dcf_up*100:+.1f}%)</span>'
                 _val_est_rows.append(('Fintiq DCF Est.', _dcf_str))
             if _an.get('mc'):
                 _mc_v2 = _an['mc']
                 _val_est_rows.append(('MC Bear/Base/Bull',
-                    f'${_mc_v2["p25"]:.2f} / ${_mc_v2["p50"]:.2f} / ${_mc_v2["p75"]:.2f}'))
+                    f'{get_price_display(_mc_v2["p25"], _tk, _ti)} / '
+                    f'{get_price_display(_mc_v2["p50"], _tk, _ti)} / '
+                    f'{get_price_display(_mc_v2["p75"], _tk, _ti)}'))
+            # Industry P/E fair value
+            _eps_raw = _fv2(_ti.get('trailingEps') or _ti.get('epsTrailingTwelveMonths'))
+            _sect_name = _ti.get('sector', '')
+            _sect_pe = SECTOR_PE_AVERAGES.get(_sect_name, 17) if _sect_name else None
+            if _eps_raw and _sect_pe:
+                _pe_iv = _eps_raw * _sect_pe
+                _pe_iv_c = '#22c55e' if _pe_iv > (_pr or 0) else '#ef4444'
+                _val_est_rows.append(('Industry P/E FV',
+                    f'<span style="color:{_pe_iv_c};font-weight:700">{get_price_display(_pe_iv, _tk, _ti)}</span>'
+                    f' <span style="font-size:0.62rem;color:#64748B">({_sect_name} avg {_sect_pe}x)</span>'))
             _val_est_rows.append(('52w Range', _range_str))
             if _range_pos is not None:
                 _rp_c = '#22c55e' if _range_pos >= 50 else '#F59E0B' if _range_pos >= 25 else '#ef4444'
@@ -7703,7 +7724,10 @@ Senior users: add your own questions at the bottom of the conversation.
                            '</div>')
 
             _border_col = '#FBBF24' if _in_wl else 'rgba(255,255,255,0.08)'
-            _pr_str = f"{_pr:.2f} {_curr}" if isinstance(_pr, float) else '—'
+            # Price: use get_price_display to handle GBp→£ conversion and correct currency symbol
+            _pr_str = get_price_display(_pr, _tk, _ti) if isinstance(_pr, float) else '—'
+            # Currency symbol for this stock (£ for UK, $ for US, etc.)
+            _csym = '£' if _curr == 'GBp' else get_currency_symbol(_tk)
             _cap_str = f"{'%.1fB'%(_fv2(_ti.get('marketCap'))/1e9)}" if _fv2(_ti.get('marketCap')) else ''
 
             _card_html = (
@@ -8064,17 +8088,15 @@ Senior users: add your own questions at the bottom of the conversation.
                                                   tickfont=dict(size=8), row=1, col=1)
                                 return _fig
 
-                            # Price + RSI (default view)
-                            _mini_fig = _build_chart(_ch_df, 320, _show_rsi=True, _show_macd=False)
-                            st.plotly_chart(_mini_fig, use_container_width=True,
-                                            config={"displayModeBar": False}, key=f"_cpcht_{_tk}_{_sel_per}")
-                            # Full chart with MACD in sub-expander
-                            with st.expander("➕ Show MACD"):
-                                _full_fig = _build_chart(_ch_df, 550, _show_rsi=True, _show_macd=True)
-                                st.plotly_chart(_full_fig, use_container_width=True,
-                                                config={"displayModeBar": True,
-                                                        "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
-                                                key=f"_cpcht_full_{_tk}_{_sel_per}")
+                            # Chart: Price + RSI by default; MACD added via checkbox
+                            _macd_key = f"_show_macd_{_tk}"
+                            _show_macd_cb = st.checkbox("Show MACD", key=_macd_key, value=False)
+                            _chart_h = 480 if _show_macd_cb else 340
+                            _main_fig = _build_chart(_ch_df, _chart_h, _show_rsi=True, _show_macd=_show_macd_cb)
+                            st.plotly_chart(_main_fig, use_container_width=True,
+                                            config={"displayModeBar": True,
+                                                    "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
+                                            key=f"_cpcht_{_tk}_{_sel_per}_{int(_show_macd_cb)}")
 
                 # WACC sensitivity table — shown in valuation stage
                 if _stage == 'valuation' and _an.get('mc'):
