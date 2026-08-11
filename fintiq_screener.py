@@ -4295,7 +4295,7 @@ def _comp_ai(messages: list, system: str) -> str:
         for _round in range(_max_rounds):
             _r = _client.messages.create(
                 model="claude-sonnet-5",
-                max_tokens=5000,
+                max_tokens=8000,
                 system=system,
                 messages=_msgs,
                 tools=_COMP_TOOLS
@@ -4417,6 +4417,8 @@ You have live data above including historical DCF inputs. Use it conversationall
 GEOGRAPHY: User's market preference is {ctx.get('geography', 'not specified')}.
 Frame all comparisons against the relevant market norms — never US benchmarks for UK/EU/Asian stocks.
 
+LENGTH DISCIPLINE: If the user sends 5 or more questions in one message, answer the first 3-4 fully, then end with "— Continuing with [remaining topics] in my next reply →" and stop. The Investment Scorecard table is a long output — it counts as one full question. Never attempt the Scorecard in the same reply as FF4 analysis AND buyback analysis AND segment breakdown.
+
 CRITICAL — TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without ticker.
 CRITICAL — NEW STOCK REQUESTS: If the user asks to analyse a stock not yet in your data, say "Pulling up [Company (TICKER)] now — give me a moment." The platform will fetch it automatically. NEVER say you cannot access data for a named stock.
 CRITICAL — COMPETITOR DATA: You CANNOT fetch live data for companies not in your current data set. If the user asks to compare peers, EITHER (a) ask them to add the peer tickers so the platform can fetch live data, OR (b) use directional general knowledge and flag it clearly as "directional, not live-verified — add [ticker] to the session for live numbers." NEVER promise to "queue up" or "pull" data you don't have. NEVER present unverified general knowledge as if it were live data.
@@ -4474,7 +4476,13 @@ YOUR JOB IN THIS STAGE:
         'valuation': f"""STAGE: Valuation — 3-Phase DCF + McKinsey Terminal Value + Monte Carlo
 You have live data including HISTORICAL AVERAGES (revenue CAGR, avg op margin, ROIC, investment rate, tax rate, D/E).
 
-LENGTH DISCIPLINE: Keep Steps 1 and 2 under 300 words. Step 3 (DCF output) MUST be split across exactly two turns — never attempt to produce the full DCF in one reply. In your first Step 3 reply, say: "I'll present this in two parts — base case first." Second turn: scenarios + probability weights + WACC grid. This split is mandatory — do not squeeze the full output into one reply or you will truncate and the user will never see the key numbers.
+LENGTH DISCIPLINE — CRITICAL: This stage contains multiple dense analytical outputs (WACC build, comps table, buyback analysis, DCF, sensitivity grid, TSR decomposition). Each is substantial. Never attempt to answer more than 3 questions per reply or you will hit the token limit and truncate mid-answer.
+
+MULTI-QUESTION BATCHING RULE (MANDATORY): If the user sends 4 or more questions in a single message, you MUST batch them. Answer the first 2-3 questions fully, then end the reply with: "— Continuing with [list remaining question topics] in my next reply →" and stop. Do NOT attempt all questions in one reply under any circumstances.
+
+DCF SPLIT RULE (MANDATORY): Step 3 (the DCF output) MUST be split across exactly two turns — never attempt to produce the full DCF in one reply. Turn 3A = WACC build + base case DCF only. Turn 3B = scenarios + WACC sensitivity grid. End Turn 3A with: "Continuing with scenarios and WACC sensitivity in my next reply →"
+
+ORDERING when multiple questions arrive at once: Answer in this priority order — (1) WACC build, (2) multiples comps table, (3) buyback analysis, (4) DCF Turn 3A, (5) DCF Turn 3B + sensitivity, (6) margin of safety, (7) net debt / Graham Number, (8) TSR decomposition. Never skip to a later item before completing earlier ones.
 
 YOUR JOB — BE PROACTIVE, NOT PASSIVE. Do not wait for the user to ask:
 
@@ -4579,6 +4587,8 @@ STEP 5 — END: "Valuation sets the floor and ceiling. Technicals tell us about 
         'technical': f"""STAGE: Technical Analysis
 You have 1yr price history in the data above (open/high/low/close/volume). Use it.
 A CHART IS DISPLAYED below the chat for each stock — reference it explicitly.
+
+LENGTH DISCIPLINE: If the user sends 4 or more questions in one message, answer the first 3 fully, then end with "— Continuing with [remaining topics] in my next reply →" and stop. The Why Now? IC test and Technical Setup Score (/50) are long outputs — each counts as one full question. Never attempt both in the same reply as options flow analysis.
 
 YOUR JOB — BE SPECIFIC, NOT GENERIC:
 1. TREND CHARACTER: Is the stock in a clear uptrend, downtrend, or consolidating? What does the slope tell you about momentum?
