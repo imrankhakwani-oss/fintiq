@@ -7181,11 +7181,21 @@ div[data-testid="stChatInput"] > div {
     # ════════════════════════════════════════════════════════════
     with st.expander("📋 Analyst Playbook — How a Hedge Fund Analyst Thinks About a Stock"):
         st.markdown("""
-<div style="font-size:0.72rem;color:#64748B;margin-bottom:12px">
+<div style="font-size:0.72rem;color:#64748B;margin-bottom:10px">
 Not sure what to ask? These are the questions a professional equity analyst works through systematically.
-Copy any question, replace <strong>[Company]</strong> with your stock's name, and paste it into the chat above.
-Senior users: add your own questions at the bottom of the conversation.
+Enter your company name below — it will replace <strong>[Company]</strong> in every question so you can copy and paste straight into chat.
 </div>""", unsafe_allow_html=True)
+
+        _pb_company = st.text_input(
+            "Company name",
+            value=_SS.get('pb_company', ''),
+            placeholder="e.g. Apple, Caterpillar, Games Workshop...",
+            key="pb_company_input",
+            label_visibility="collapsed",
+        )
+        if _pb_company:
+            _SS['pb_company'] = _pb_company
+        _pb_label = _pb_company.strip() if _pb_company.strip() else '[Company]'
 
         _pb_stages = [
             ("🔎 Stage 1 — Business Quality & Moat", [
@@ -7240,10 +7250,11 @@ Senior users: add your own questions at the bottom of the conversation.
                 unsafe_allow_html=True)
             _pb_html = ['<div style="font-size:0.71rem;line-height:1.8;color:#94A3B8">']
             for _q in _pb_qs:
+                _q_filled = _q.replace('[Company]', f'<strong style="color:#e2e8f0">{_pb_label}</strong>')
                 _pb_html.append(
                     f'<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" '
                     f'title="Copy this question and paste into the chat above">'
-                    f'<span style="color:#475569;margin-right:6px">›</span>{_q}</div>')
+                    f'<span style="color:#475569;margin-right:6px">›</span>{_q_filled}</div>')
             _pb_html.append('</div>')
             st.markdown(''.join(_pb_html), unsafe_allow_html=True)
 
@@ -7260,7 +7271,23 @@ Senior users: add your own questions at the bottom of the conversation.
         try: return float(v)
         except: return None
 
-    # ── Persistent toolbar — always shown (save / transcript / resume / reset) ──
+    if _stage == 'discovery' and not _SS.cp_data:
+        # Show "how this works" intro banner
+        st.markdown("""
+<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);
+    border-radius:10px;padding:18px 24px;margin-top:8px;
+    display:flex;gap:40px;flex-wrap:wrap;align-items:center">
+<span style="font-size:0.82rem;color:#64748B">
+  <span style="color:#FBBF24;font-weight:700">①</span> Fundamental screen &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">②</span> DCF + Monte Carlo &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">③</span> Technical &amp; timing &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">④</span> Watchlist &nbsp;→&nbsp;
+  <span style="color:#FBBF24;font-weight:700">⑤</span> Research report
+  &nbsp;&nbsp;<em style="color:#475569">· Stock cards appear here as we analyse each company</em>
+</span>
+</div>""", unsafe_allow_html=True)
+
+    # ── Persistent toolbar — always shown below process steps (save / transcript / resume / reset) ──
     _tb_sp, _tb1, _tb2, _tb3, _tb4 = st.columns([6, 1, 1, 1, 1], gap="small")
     with _tb1:
         st.download_button("⬇️", data=_session_json,
@@ -7282,868 +7309,854 @@ Senior users: add your own questions at the bottom of the conversation.
             _do_reset()
             st.rerun()
 
-    if _stage == 'discovery' and not _SS.cp_data:
-        # Show "how this works" intro banner
-        st.markdown("""
-<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);
-    border-radius:10px;padding:18px 24px;margin-top:8px;
-    display:flex;gap:40px;flex-wrap:wrap;align-items:center">
-<span style="font-size:0.82rem;color:#64748B">
-  <span style="color:#FBBF24;font-weight:700">①</span> Fundamental screen &nbsp;→&nbsp;
-  <span style="color:#FBBF24;font-weight:700">②</span> DCF + Monte Carlo &nbsp;→&nbsp;
-  <span style="color:#FBBF24;font-weight:700">③</span> Technical &amp; timing &nbsp;→&nbsp;
-  <span style="color:#FBBF24;font-weight:700">④</span> Watchlist &nbsp;→&nbsp;
-  <span style="color:#FBBF24;font-weight:700">⑤</span> Research report
-  &nbsp;&nbsp;<em style="color:#475569">· Stock cards appear here as we analyse each company</em>
-</span>
-</div>""", unsafe_allow_html=True)
-
     if _SS.cp_data:
-        _tickers_to_show = list(_SS.cp_data.keys())[:5]   # cap at 5
-        _ncols = len(_tickers_to_show)
-        _card_cols = st.columns(_ncols, gap="small")
+        _card_label = f"📊 Stock Cards — {', '.join(list(_SS.cp_data.keys())[:5])}"
+        with st.expander(_card_label, expanded=True):
+            _tickers_to_show = list(_SS.cp_data.keys())[:5]   # cap at 5
+            _ncols = len(_tickers_to_show)
+            _card_cols = st.columns(_ncols, gap="small")
 
-        for _ci, _tk in enumerate(_tickers_to_show):
-            _td   = _SS.cp_data[_tk]
-            _an   = _SS.cp_analyses.get(_tk, {})
-            _ti   = _td.get('info', {}) if not _td.get('error') else {}
-            _pr   = _td.get('price')
-            _name = _ti.get('longName', _tk)
-            _sect = _ti.get('sector', '')
-            _curr = _ti.get('currency', '')
-            _in_wl = _tk in _wl
+            for _ci, _tk in enumerate(_tickers_to_show):
+                _td   = _SS.cp_data[_tk]
+                _an   = _SS.cp_analyses.get(_tk, {})
+                _ti   = _td.get('info', {}) if not _td.get('error') else {}
+                _pr   = _td.get('price')
+                _name = _ti.get('longName', _tk)
+                _sect = _ti.get('sector', '')
+                _curr = _ti.get('currency', '')
+                _in_wl = _tk in _wl
 
-            # Stage progress
-            _st_done = []
-            if _stage in ('fundamental','valuation','technical','finalise','report'): _st_done.append('F')
-            if _stage in ('valuation','technical','finalise','report'): _st_done.append('V')
-            if _stage in ('technical','finalise','report'): _st_done.append('T')
-            _stage_dots = " ".join(
-                f'<span style="color:#FBBF24;font-weight:700">{s}</span>' if s in _st_done
-                else f'<span style="color:#334155">{s}</span>'
-                for s in ['F','V','T'])
+                # Stage progress
+                _st_done = []
+                if _stage in ('fundamental','valuation','technical','finalise','report'): _st_done.append('F')
+                if _stage in ('valuation','technical','finalise','report'): _st_done.append('V')
+                if _stage in ('technical','finalise','report'): _st_done.append('T')
+                _stage_dots = " ".join(
+                    f'<span style="color:#FBBF24;font-weight:700">{s}</span>' if s in _st_done
+                    else f'<span style="color:#334155">{s}</span>'
+                    for s in ['F','V','T'])
 
-            # ── Quality score (0–100) ─────────────────────────────
-            _roe_v  = _fv2(_ti.get('returnOnEquity')) or 0
-            _gm_v   = _fv2(_ti.get('grossMargins')) or 0
-            _nm_v   = _fv2(_ti.get('profitMargins')) or 0
-            _om_v   = _fv2(_ti.get('operatingMargins')) or 0
-            _de_v   = _fv2(_ti.get('debtToEquity'))
-            _rg_v   = _fv2(_ti.get('revenueGrowth')) or 0
-            _qs = 0
-            if _roe_v >= 0.15: _qs += 25
-            elif _roe_v >= 0.08: _qs += 12
-            if _gm_v >= 0.40: _qs += 20
-            elif _gm_v >= 0.20: _qs += 10
-            if _nm_v >= 0.15: _qs += 20
-            elif _nm_v >= 0.05: _qs += 10
-            if _de_v is None or _de_v <= 1.0: _qs += 20
-            elif _de_v <= 3.0: _qs += 10
-            if _rg_v >= 0.20: _qs += 15
-            elif _rg_v >= 0.05: _qs += 8
-            _qs_col = '#22c55e' if _qs >= 70 else '#F59E0B' if _qs >= 45 else '#ef4444'
-            _qs_lbl = 'HIGH' if _qs >= 70 else 'MED' if _qs >= 45 else 'LOW'
+                # ── Quality score (0–100) ─────────────────────────────
+                _roe_v  = _fv2(_ti.get('returnOnEquity')) or 0
+                _gm_v   = _fv2(_ti.get('grossMargins')) or 0
+                _nm_v   = _fv2(_ti.get('profitMargins')) or 0
+                _om_v   = _fv2(_ti.get('operatingMargins')) or 0
+                _de_v   = _fv2(_ti.get('debtToEquity'))
+                _rg_v   = _fv2(_ti.get('revenueGrowth')) or 0
+                _qs = 0
+                if _roe_v >= 0.15: _qs += 25
+                elif _roe_v >= 0.08: _qs += 12
+                if _gm_v >= 0.40: _qs += 20
+                elif _gm_v >= 0.20: _qs += 10
+                if _nm_v >= 0.15: _qs += 20
+                elif _nm_v >= 0.05: _qs += 10
+                if _de_v is None or _de_v <= 1.0: _qs += 20
+                elif _de_v <= 3.0: _qs += 10
+                if _rg_v >= 0.20: _qs += 15
+                elif _rg_v >= 0.05: _qs += 8
+                _qs_col = '#22c55e' if _qs >= 70 else '#F59E0B' if _qs >= 45 else '#ef4444'
+                _qs_lbl = 'HIGH' if _qs >= 70 else 'MED' if _qs >= 45 else 'LOW'
 
-            # ── Technical signal from price history ───────────────
-            _hist = _td.get('hist')
-            _tech_lbl = '—'; _tech_col = '#64748B'
-            _ma50_str = '—'; _ma200_str = '—'; _wk52h_str = '—'
-            if _hist is not None and not _hist.empty and _pr:
+                # ── Technical signal from price history ───────────────
+                _hist = _td.get('hist')
+                _tech_lbl = '—'; _tech_col = '#64748B'
+                _ma50_str = '—'; _ma200_str = '—'; _wk52h_str = '—'
+                if _hist is not None and not _hist.empty and _pr:
+                    try:
+                        _cl = _hist['Close']
+                        _ma50  = float(_cl.tail(50).mean())  if len(_cl) >= 50  else 0
+                        _ma200 = float(_cl.tail(200).mean()) if len(_cl) >= 200 else 0
+                        _52h   = float(_cl.tail(252).max())  if len(_cl) >= 20  else 0
+                        _tscore = 0
+                        if _ma50  > 0:
+                            _vsma50 = (_pr/_ma50 - 1)*100
+                            _ma50_str  = f"{'▲' if _vsma50>=0 else '▼'} {abs(_vsma50):.1f}%"
+                            if _vsma50 >= 0: _tscore += 2
+                        if _ma200 > 0:
+                            _vsma200 = (_pr/_ma200 - 1)*100
+                            _ma200_str = f"{'▲' if _vsma200>=0 else '▼'} {abs(_vsma200):.1f}%"
+                            if _vsma200 >= 0: _tscore += 2
+                        if _52h > 0:
+                            _vs52h = (_52h - _pr)/_52h * 100
+                            _wk52h_str = f"-{_vs52h:.1f}% from high"
+                            if _vs52h <= 10: _tscore += 1
+                        _tech_lbl = '✅ Strong' if _tscore >= 4 else '⚠️ Neutral' if _tscore >= 2 else '🔴 Weak'
+                        _tech_col = '#22c55e' if _tscore >= 4 else '#F59E0B' if _tscore >= 2 else '#ef4444'
+                    except Exception:
+                        pass
+
+                # ── DCF inputs: ROIC, Inv Rate, Tax Rate, EPS, DPS ──────
+                _fin_df = _td.get('financials')
+                _cf_df  = _td.get('cashflow')
+                _eps_v  = _fv2(_ti.get('trailingEps'))
+                _dps_v  = _fv2(_ti.get('dividendRate'))
+                # ROIC, Inv Rate, Tax Rate — computed from financials/cashflow DFs
+                # (yfinance info dict does NOT have ebit/effectiveTaxRate/capitalExpenditures)
+                _roic_v = _inv_rate_v = _taxr_v = None
                 try:
-                    _cl = _hist['Close']
-                    _ma50  = float(_cl.tail(50).mean())  if len(_cl) >= 50  else 0
-                    _ma200 = float(_cl.tail(200).mean()) if len(_cl) >= 200 else 0
-                    _52h   = float(_cl.tail(252).max())  if len(_cl) >= 20  else 0
-                    _tscore = 0
-                    if _ma50  > 0:
-                        _vsma50 = (_pr/_ma50 - 1)*100
-                        _ma50_str  = f"{'▲' if _vsma50>=0 else '▼'} {abs(_vsma50):.1f}%"
-                        if _vsma50 >= 0: _tscore += 2
-                    if _ma200 > 0:
-                        _vsma200 = (_pr/_ma200 - 1)*100
-                        _ma200_str = f"{'▲' if _vsma200>=0 else '▼'} {abs(_vsma200):.1f}%"
-                        if _vsma200 >= 0: _tscore += 2
-                    if _52h > 0:
-                        _vs52h = (_52h - _pr)/_52h * 100
-                        _wk52h_str = f"-{_vs52h:.1f}% from high"
-                        if _vs52h <= 10: _tscore += 1
-                    _tech_lbl = '✅ Strong' if _tscore >= 4 else '⚠️ Neutral' if _tscore >= 2 else '🔴 Weak'
-                    _tech_col = '#22c55e' if _tscore >= 4 else '#F59E0B' if _tscore >= 2 else '#ef4444'
+                    if _fin_df is not None and not _fin_df.empty:
+                        # EBIT: try multiple key names
+                        _ebit_pt = None
+                        for _ek in ['EBIT', 'Operating Income', 'Normalized EBITDA']:
+                            if _ek in _fin_df.index:
+                                _ebit_pt = float(_fin_df.loc[_ek].iloc[0]); break
+                        # Tax rate: Tax Provision / Pretax Income
+                        _pretax_pt = None
+                        for _pk in ['Pretax Income', 'Income Before Tax', 'Pretax Income']:
+                            if _pk in _fin_df.index:
+                                _pretax_pt = float(_fin_df.loc[_pk].iloc[0]); break
+                        _tax_pt = None
+                        for _tk3 in ['Tax Provision', 'Income Tax Expense']:
+                            if _tk3 in _fin_df.index:
+                                _tax_pt = abs(float(_fin_df.loc[_tk3].iloc[0])); break
+                        if _pretax_pt and _tax_pt and abs(_pretax_pt) > 0:
+                            _taxr_v = _tax_pt / abs(_pretax_pt)
+                        # ROIC = NOPAT / Invested Capital
+                        if _ebit_pt and _taxr_v:
+                            _nopat_pt = _ebit_pt * (1 - min(_taxr_v, 0.5))
+                            _debt_pt  = _fv2(_ti.get('totalDebt')) or 0
+                            _bvps     = _fv2(_ti.get('bookValue')) or 0
+                            _shares   = _fv2(_ti.get('sharesOutstanding') or _ti.get('impliedSharesOutstanding')) or 1
+                            _eq_pt    = _bvps * _shares
+                            _ic_pt    = _debt_pt + _eq_pt
+                            if _ic_pt > 0: _roic_v = _nopat_pt / _ic_pt
+                except Exception: pass
+                # Investment rate from cashflow DF
+                try:
+                    if _cf_df is not None and not _cf_df.empty:
+                        _capex_pt = None
+                        for _ck in ['Capital Expenditure', 'Capital Expenditures', 'Purchase Of Property Plant And Equipment']:
+                            if _ck in _cf_df.index:
+                                _capex_pt = abs(float(_cf_df.loc[_ck].iloc[0])); break
+                        _cfo_pt = None
+                        for _ok in ['Operating Cash Flow', 'Cash Flow From Continuing Operating Activities', 'Total Cash From Operating Activities']:
+                            if _ok in _cf_df.index:
+                                _cfo_pt = abs(float(_cf_df.loc[_ok].iloc[0])); break
+                        if _capex_pt and _cfo_pt and _cfo_pt > 0:
+                            _inv_rate_v = _capex_pt / _cfo_pt
+                except Exception: pass
+
+                # ── 3-year averages from financials DataFrame ─────────
+                _avg_rev_g = _avg_earn_g = _avg_roic = _avg_inv = _avg_op_m = None
+                try:
+                    if _fin_df is not None and not _fin_df.empty and _cf_df is not None:
+                        import numpy as _np_c
+                        _cols = min(4, _fin_df.shape[1])  # up to 4 years
+                        # Revenue CAGR proxy: year-on-year growth rates
+                        _rev_row = None
+                        for _rk in ['Total Revenue','Revenue']:
+                            if _rk in _fin_df.index:
+                                _rev_row = _fin_df.loc[_rk].iloc[:_cols].dropna()
+                                break
+                        if _rev_row is not None and len(_rev_row) >= 2:
+                            _rev_vals = [float(v) for v in _rev_row.values]
+                            _rg_rates = [((_rev_vals[i]/_rev_vals[i+1])-1) for i in range(len(_rev_vals)-1)]
+                            _avg_rev_g = float(_np_c.mean(_rg_rates))
+                        # Earnings growth: Net Income
+                        _ni_row = None
+                        for _nk in ['Net Income','Net Income Common Stockholders']:
+                            if _nk in _fin_df.index:
+                                _ni_row = _fin_df.loc[_nk].iloc[:_cols].dropna()
+                                break
+                        if _ni_row is not None and len(_ni_row) >= 2:
+                            _ni_vals = [float(v) for v in _ni_row.values]
+                            _ni_rates = [((_ni_vals[i]/_ni_vals[i+1])-1)
+                                         for i in range(len(_ni_vals)-1) if _ni_vals[i+1] != 0]
+                            if _ni_rates: _avg_earn_g = float(_np_c.mean(_ni_rates))
+                        # Avg Operating Margin
+                        _op_row = None
+                        for _opk in ['Operating Income', 'EBIT']:
+                            if _opk in _fin_df.index:
+                                _op_row = _fin_df.loc[_opk].iloc[:_cols].dropna()
+                                break
+                        if _op_row is not None and _rev_row is not None and len(_op_row) >= 2:
+                            _op_margins = []
+                            for _oi in range(min(len(_op_row), len(_rev_row))):
+                                try:
+                                    _rv = float(_rev_row.iloc[_oi])
+                                    _op = float(_op_row.iloc[_oi])
+                                    if _rv != 0: _op_margins.append(_op / _rv)
+                                except Exception: pass
+                            if _op_margins: _avg_op_m = float(_np_c.mean(_op_margins))
+                        # Avg ROIC: EBIT*(1-tax) / (equity+debt) per year from fins
+                        _ebit_row = None
+                        for _ek in ['EBIT','Operating Income']:
+                            if _ek in _fin_df.index:
+                                _ebit_row = _fin_df.loc[_ek].iloc[:_cols].dropna()
+                                break
+                        _tax_row = None
+                        for _tk2 in ['Tax Provision','Income Tax Expense']:
+                            if _tk2 in _fin_df.index:
+                                _tax_row = _fin_df.loc[_tk2].iloc[:_cols].dropna()
+                                break
+                        # Build invested capital from info dict (available for avg ROIC calc)
+                        _ic_avg = (_fv2(_ti.get('totalDebt')) or 0) + \
+                                  ((_fv2(_ti.get('bookValue')) or 0) *
+                                   (_fv2(_ti.get('sharesOutstanding') or _ti.get('impliedSharesOutstanding')) or 1))
+                        if _ebit_row is not None and _tax_row is not None and len(_ebit_row) >= 2 and _ic_avg > 0:
+                            _roic_vals = []
+                            for _ci2 in range(min(len(_ebit_row), len(_tax_row))):
+                                try:
+                                    _e = float(_ebit_row.iloc[_ci2])
+                                    _t = abs(float(_tax_row.iloc[_ci2]))
+                                    _tr2 = (_t / abs(_e)) if _e != 0 else 0.25
+                                    _nopat2 = _e * (1 - min(_tr2, 0.5))
+                                    if _ic_avg > 0: _roic_vals.append(_nopat2 / _ic_avg)
+                                except Exception: pass
+                            if _roic_vals: _avg_roic = float(_np_c.mean(_roic_vals))
+                        # Avg investment rate: capex / cfo from cashflow
+                        _capex_row = None
+                        for _ck in ['Capital Expenditure','Capital Expenditures']:
+                            if _ck in _cf_df.index:
+                                _capex_row = _cf_df.loc[_ck].iloc[:_cols].dropna()
+                                break
+                        _cfo_row = None
+                        for _ok in ['Operating Cash Flow','Cash Flow From Continuing Operating Activities']:
+                            if _ok in _cf_df.index:
+                                _cfo_row = _cf_df.loc[_ok].iloc[:_cols].dropna()
+                                break
+                        if _capex_row is not None and _cfo_row is not None:
+                            _ir_vals = []
+                            for _ci3 in range(min(len(_capex_row), len(_cfo_row))):
+                                try:
+                                    _cx = abs(float(_capex_row.iloc[_ci3]))
+                                    _co = abs(float(_cfo_row.iloc[_ci3]))
+                                    if _co > 0: _ir_vals.append(_cx / _co)
+                                except Exception: pass
+                            if _ir_vals: _avg_inv = float(_np_c.mean(_ir_vals))
                 except Exception:
                     pass
 
-            # ── DCF inputs: ROIC, Inv Rate, Tax Rate, EPS, DPS ──────
-            _fin_df = _td.get('financials')
-            _cf_df  = _td.get('cashflow')
-            _eps_v  = _fv2(_ti.get('trailingEps'))
-            _dps_v  = _fv2(_ti.get('dividendRate'))
-            # ROIC, Inv Rate, Tax Rate — computed from financials/cashflow DFs
-            # (yfinance info dict does NOT have ebit/effectiveTaxRate/capitalExpenditures)
-            _roic_v = _inv_rate_v = _taxr_v = None
-            try:
-                if _fin_df is not None and not _fin_df.empty:
-                    # EBIT: try multiple key names
-                    _ebit_pt = None
-                    for _ek in ['EBIT', 'Operating Income', 'Normalized EBITDA']:
-                        if _ek in _fin_df.index:
-                            _ebit_pt = float(_fin_df.loc[_ek].iloc[0]); break
-                    # Tax rate: Tax Provision / Pretax Income
-                    _pretax_pt = None
-                    for _pk in ['Pretax Income', 'Income Before Tax', 'Pretax Income']:
-                        if _pk in _fin_df.index:
-                            _pretax_pt = float(_fin_df.loc[_pk].iloc[0]); break
-                    _tax_pt = None
-                    for _tk3 in ['Tax Provision', 'Income Tax Expense']:
-                        if _tk3 in _fin_df.index:
-                            _tax_pt = abs(float(_fin_df.loc[_tk3].iloc[0])); break
-                    if _pretax_pt and _tax_pt and abs(_pretax_pt) > 0:
-                        _taxr_v = _tax_pt / abs(_pretax_pt)
-                    # ROIC = NOPAT / Invested Capital
-                    if _ebit_pt and _taxr_v:
-                        _nopat_pt = _ebit_pt * (1 - min(_taxr_v, 0.5))
-                        _debt_pt  = _fv2(_ti.get('totalDebt')) or 0
-                        _bvps     = _fv2(_ti.get('bookValue')) or 0
-                        _shares   = _fv2(_ti.get('sharesOutstanding') or _ti.get('impliedSharesOutstanding')) or 1
-                        _eq_pt    = _bvps * _shares
-                        _ic_pt    = _debt_pt + _eq_pt
-                        if _ic_pt > 0: _roic_v = _nopat_pt / _ic_pt
-            except Exception: pass
-            # Investment rate from cashflow DF
-            try:
-                if _cf_df is not None and not _cf_df.empty:
-                    _capex_pt = None
-                    for _ck in ['Capital Expenditure', 'Capital Expenditures', 'Purchase Of Property Plant And Equipment']:
-                        if _ck in _cf_df.index:
-                            _capex_pt = abs(float(_cf_df.loc[_ck].iloc[0])); break
-                    _cfo_pt = None
-                    for _ok in ['Operating Cash Flow', 'Cash Flow From Continuing Operating Activities', 'Total Cash From Operating Activities']:
-                        if _ok in _cf_df.index:
-                            _cfo_pt = abs(float(_cf_df.loc[_ok].iloc[0])); break
-                    if _capex_pt and _cfo_pt and _cfo_pt > 0:
-                        _inv_rate_v = _capex_pt / _cfo_pt
-            except Exception: pass
+                # ── Metric rows ───────────────────────────────────────
+                # Section header helper
+                def _sec(label):
+                    return (label, f'<span style="color:#475569;font-size:0.6rem;font-weight:700;'
+                                   f'letter-spacing:0.05em">{label}</span>')
 
-            # ── 3-year averages from financials DataFrame ─────────
-            _avg_rev_g = _avg_earn_g = _avg_roic = _avg_inv = _avg_op_m = None
-            try:
-                if _fin_df is not None and not _fin_df.empty and _cf_df is not None:
-                    import numpy as _np_c
-                    _cols = min(4, _fin_df.shape[1])  # up to 4 years
-                    # Revenue CAGR proxy: year-on-year growth rates
-                    _rev_row = None
-                    for _rk in ['Total Revenue','Revenue']:
-                        if _rk in _fin_df.index:
-                            _rev_row = _fin_df.loc[_rk].iloc[:_cols].dropna()
-                            break
-                    if _rev_row is not None and len(_rev_row) >= 2:
-                        _rev_vals = [float(v) for v in _rev_row.values]
-                        _rg_rates = [((_rev_vals[i]/_rev_vals[i+1])-1) for i in range(len(_rev_vals)-1)]
-                        _avg_rev_g = float(_np_c.mean(_rg_rates))
-                    # Earnings growth: Net Income
-                    _ni_row = None
-                    for _nk in ['Net Income','Net Income Common Stockholders']:
-                        if _nk in _fin_df.index:
-                            _ni_row = _fin_df.loc[_nk].iloc[:_cols].dropna()
-                            break
-                    if _ni_row is not None and len(_ni_row) >= 2:
-                        _ni_vals = [float(v) for v in _ni_row.values]
-                        _ni_rates = [((_ni_vals[i]/_ni_vals[i+1])-1)
-                                     for i in range(len(_ni_vals)-1) if _ni_vals[i+1] != 0]
-                        if _ni_rates: _avg_earn_g = float(_np_c.mean(_ni_rates))
-                    # Avg Operating Margin
-                    _op_row = None
-                    for _opk in ['Operating Income', 'EBIT']:
-                        if _opk in _fin_df.index:
-                            _op_row = _fin_df.loc[_opk].iloc[:_cols].dropna()
-                            break
-                    if _op_row is not None and _rev_row is not None and len(_op_row) >= 2:
-                        _op_margins = []
-                        for _oi in range(min(len(_op_row), len(_rev_row))):
-                            try:
-                                _rv = float(_rev_row.iloc[_oi])
-                                _op = float(_op_row.iloc[_oi])
-                                if _rv != 0: _op_margins.append(_op / _rv)
-                            except Exception: pass
-                        if _op_margins: _avg_op_m = float(_np_c.mean(_op_margins))
-                    # Avg ROIC: EBIT*(1-tax) / (equity+debt) per year from fins
-                    _ebit_row = None
-                    for _ek in ['EBIT','Operating Income']:
-                        if _ek in _fin_df.index:
-                            _ebit_row = _fin_df.loc[_ek].iloc[:_cols].dropna()
-                            break
-                    _tax_row = None
-                    for _tk2 in ['Tax Provision','Income Tax Expense']:
-                        if _tk2 in _fin_df.index:
-                            _tax_row = _fin_df.loc[_tk2].iloc[:_cols].dropna()
-                            break
-                    # Build invested capital from info dict (available for avg ROIC calc)
-                    _ic_avg = (_fv2(_ti.get('totalDebt')) or 0) + \
-                              ((_fv2(_ti.get('bookValue')) or 0) *
-                               (_fv2(_ti.get('sharesOutstanding') or _ti.get('impliedSharesOutstanding')) or 1))
-                    if _ebit_row is not None and _tax_row is not None and len(_ebit_row) >= 2 and _ic_avg > 0:
-                        _roic_vals = []
-                        for _ci2 in range(min(len(_ebit_row), len(_tax_row))):
-                            try:
-                                _e = float(_ebit_row.iloc[_ci2])
-                                _t = abs(float(_tax_row.iloc[_ci2]))
-                                _tr2 = (_t / abs(_e)) if _e != 0 else 0.25
-                                _nopat2 = _e * (1 - min(_tr2, 0.5))
-                                if _ic_avg > 0: _roic_vals.append(_nopat2 / _ic_avg)
-                            except Exception: pass
-                        if _roic_vals: _avg_roic = float(_np_c.mean(_roic_vals))
-                    # Avg investment rate: capex / cfo from cashflow
-                    _capex_row = None
-                    for _ck in ['Capital Expenditure','Capital Expenditures']:
-                        if _ck in _cf_df.index:
-                            _capex_row = _cf_df.loc[_ck].iloc[:_cols].dropna()
-                            break
-                    _cfo_row = None
-                    for _ok in ['Operating Cash Flow','Cash Flow From Continuing Operating Activities']:
-                        if _ok in _cf_df.index:
-                            _cfo_row = _cf_df.loc[_ok].iloc[:_cols].dropna()
-                            break
-                    if _capex_row is not None and _cfo_row is not None:
-                        _ir_vals = []
-                        for _ci3 in range(min(len(_capex_row), len(_cfo_row))):
-                            try:
-                                _cx = abs(float(_capex_row.iloc[_ci3]))
-                                _co = abs(float(_cfo_row.iloc[_ci3]))
-                                if _co > 0: _ir_vals.append(_cx / _co)
-                            except Exception: pass
-                        if _ir_vals: _avg_inv = float(_np_c.mean(_ir_vals))
-            except Exception:
-                pass
+                _mets = [
+                    # — Valuation —
+                    _sec('── VALUATION ──'),
+                    ('Trailing PE',  f"{_fv2(_ti.get('trailingPE')):.1f}x" if _fv2(_ti.get('trailingPE')) else '—'),
+                    ('Forward PE',   f"{_fv2(_ti.get('forwardPE')):.1f}x"  if _fv2(_ti.get('forwardPE'))  else '—'),
+                    ('EV/EBITDA',    f"{_fv2(_ti.get('enterpriseToEbitda')):.1f}x" if _fv2(_ti.get('enterpriseToEbitda')) else '—'),
+                    ('P/B',          f"{_fv2(_ti.get('priceToBook')):.2f}x" if _fv2(_ti.get('priceToBook')) else '—'),
+                    # — Per Share —
+                    _sec('── PER SHARE ──'),
+                    ('EPS (TTM)',    get_price_display(_eps_v, _tk, _ti) if _eps_v else '—'),
+                    ('Div / Share', get_price_display(_dps_v, _tk, _ti) if _dps_v else 'None'),
+                    # — Quality —
+                    _sec('── QUALITY ──'),
+                    ('Rev Growth',   f"{_rg_v*100:+.1f}%" if _rg_v else '—'),
+                    ('Gross Mgn',    f"{_gm_v*100:.1f}%"  if _gm_v else '—'),
+                    ('Op Margin',    f"{_om_v*100:.1f}%"  if _om_v else '—'),
+                    ('Net Margin',   f"{_nm_v*100:.1f}%"  if _nm_v else '—'),
+                    ('ROE',          f"{_roe_v*100:.1f}%"  if _roe_v else '—'),
+                    ('ROIC',         f"{_roic_v*100:.1f}%" if _roic_v else '—'),
+                    ('Debt/Eq',      f"{_de_v:.2f}x"       if _de_v is not None else '—'),
+                    ('Cash Conv',    f"{_fv2(_ti.get('operatingCashflow'))/(_fv2(_ti.get('netIncomeToCommon')) or 1):.2f}x"
+                                     if _fv2(_ti.get('operatingCashflow')) and _fv2(_ti.get('netIncomeToCommon')) else '—'),
+                    # — DCF Inputs —
+                    _sec('── DCF INPUTS ──'),
+                    ('Inv Rate',     f"{_inv_rate_v*100:.1f}%" if _inv_rate_v else '—'),
+                    ('Tax Rate',     f"{_taxr_v*100:.1f}%"     if _taxr_v else '—'),
+                    # — 3yr Averages —
+                    _sec('── 3YR AVERAGES ──'),
+                    ('Avg Rev Growth',  f"{_avg_rev_g*100:+.1f}%pa" if _avg_rev_g is not None else '—'),
+                    ('Avg Earn Growth', f"{_avg_earn_g*100:+.1f}%pa" if _avg_earn_g is not None else '—'),
+                    ('Avg Op Margin',   f"{_avg_op_m*100:.1f}%"      if _avg_op_m  is not None else '—'),
+                    ('Avg ROIC',        f"{_avg_roic*100:.1f}%"      if _avg_roic is not None else '—'),
+                    ('Avg Inv Rate',    f"{_avg_inv*100:.1f}%"        if _avg_inv is not None else '—'),
+                    # — TSR —
+                    _sec('── TOTAL SHAREHOLDER RETURN ──'),
+                ]
 
-            # ── Metric rows ───────────────────────────────────────
-            # Section header helper
-            def _sec(label):
-                return (label, f'<span style="color:#475569;font-size:0.6rem;font-weight:700;'
-                               f'letter-spacing:0.05em">{label}</span>')
+                # Compute TSR and insert rows
+                # Note: simple TSR uses rolling trading-day lookback (252d/756d/1260d), NOT fiscal year.
+                # The TSR deep-dive expander below uses FY boundaries — minor differences are expected.
+                _tsr_data = _comp_compute_tsr(_td)
+                _s_tsr = _tsr_data.get('simple', {})
+                def _tsr_pct(v):
+                    return f"{v*100:+.1f}%" if v is not None else '—'
+                def _tsr_color(v):
+                    if v is None: return '#94A3B8'
+                    return '#22c55e' if v >= 0 else '#ef4444'
+                for _tp, _tlbl, _tnote in [
+                    ('1y','1 Year','trailing 252d'),
+                    ('3y','3 Year (ann.)','trailing 756d, ann.'),
+                    ('5y','5 Year (ann.)','trailing 1260d, ann.')]:
+                    _tv = _s_tsr.get(_tp, {})
+                    _ttsr = _tv.get('tsr')
+                    if _ttsr is not None:
+                        _mets.append((_tlbl,
+                            f'<span style="color:{_tsr_color(_ttsr)};font-weight:700">{_tsr_pct(_ttsr)}</span>'
+                            f' <span style="font-size:0.65rem;color:#64748B">'
+                            f'(Δprice {_tsr_pct(_tv.get("price_return"))} + div {_tsr_pct(_tv.get("div_yield"))})</span>'
+                            f' <span style="font-size:0.58rem;color:#334155">[{_tnote}]</span>'))
 
-            _mets = [
-                # — Valuation —
-                _sec('── VALUATION ──'),
-                ('Trailing PE',  f"{_fv2(_ti.get('trailingPE')):.1f}x" if _fv2(_ti.get('trailingPE')) else '—'),
-                ('Forward PE',   f"{_fv2(_ti.get('forwardPE')):.1f}x"  if _fv2(_ti.get('forwardPE'))  else '—'),
-                ('EV/EBITDA',    f"{_fv2(_ti.get('enterpriseToEbitda')):.1f}x" if _fv2(_ti.get('enterpriseToEbitda')) else '—'),
-                ('P/B',          f"{_fv2(_ti.get('priceToBook')):.2f}x" if _fv2(_ti.get('priceToBook')) else '—'),
-                # — Per Share —
-                _sec('── PER SHARE ──'),
-                ('EPS (TTM)',    get_price_display(_eps_v, _tk, _ti) if _eps_v else '—'),
-                ('Div / Share', get_price_display(_dps_v, _tk, _ti) if _dps_v else 'None'),
-                # — Quality —
-                _sec('── QUALITY ──'),
-                ('Rev Growth',   f"{_rg_v*100:+.1f}%" if _rg_v else '—'),
-                ('Gross Mgn',    f"{_gm_v*100:.1f}%"  if _gm_v else '—'),
-                ('Op Margin',    f"{_om_v*100:.1f}%"  if _om_v else '—'),
-                ('Net Margin',   f"{_nm_v*100:.1f}%"  if _nm_v else '—'),
-                ('ROE',          f"{_roe_v*100:.1f}%"  if _roe_v else '—'),
-                ('ROIC',         f"{_roic_v*100:.1f}%" if _roic_v else '—'),
-                ('Debt/Eq',      f"{_de_v:.2f}x"       if _de_v is not None else '—'),
-                ('Cash Conv',    f"{_fv2(_ti.get('operatingCashflow'))/(_fv2(_ti.get('netIncomeToCommon')) or 1):.2f}x"
-                                 if _fv2(_ti.get('operatingCashflow')) and _fv2(_ti.get('netIncomeToCommon')) else '—'),
-                # — DCF Inputs —
-                _sec('── DCF INPUTS ──'),
-                ('Inv Rate',     f"{_inv_rate_v*100:.1f}%" if _inv_rate_v else '—'),
-                ('Tax Rate',     f"{_taxr_v*100:.1f}%"     if _taxr_v else '—'),
-                # — 3yr Averages —
-                _sec('── 3YR AVERAGES ──'),
-                ('Avg Rev Growth',  f"{_avg_rev_g*100:+.1f}%pa" if _avg_rev_g is not None else '—'),
-                ('Avg Earn Growth', f"{_avg_earn_g*100:+.1f}%pa" if _avg_earn_g is not None else '—'),
-                ('Avg Op Margin',   f"{_avg_op_m*100:.1f}%"      if _avg_op_m  is not None else '—'),
-                ('Avg ROIC',        f"{_avg_roic*100:.1f}%"      if _avg_roic is not None else '—'),
-                ('Avg Inv Rate',    f"{_avg_inv*100:.1f}%"        if _avg_inv is not None else '—'),
-                # — TSR —
-                _sec('── TOTAL SHAREHOLDER RETURN ──'),
-            ]
+                # Technicals
+                _mets += [
+                    _sec('── TECHNICALS ──'),
+                    ('vs 50d MA',    _ma50_str),
+                    ('vs 200d MA',   _ma200_str),
+                    ('52w High',     _wk52h_str),
+                ]
 
-            # Compute TSR and insert rows
-            # Note: simple TSR uses rolling trading-day lookback (252d/756d/1260d), NOT fiscal year.
-            # The TSR deep-dive expander below uses FY boundaries — minor differences are expected.
-            _tsr_data = _comp_compute_tsr(_td)
-            _s_tsr = _tsr_data.get('simple', {})
-            def _tsr_pct(v):
-                return f"{v*100:+.1f}%" if v is not None else '—'
-            def _tsr_color(v):
-                if v is None: return '#94A3B8'
-                return '#22c55e' if v >= 0 else '#ef4444'
-            for _tp, _tlbl, _tnote in [
-                ('1y','1 Year','trailing 252d'),
-                ('3y','3 Year (ann.)','trailing 756d, ann.'),
-                ('5y','5 Year (ann.)','trailing 1260d, ann.')]:
-                _tv = _s_tsr.get(_tp, {})
-                _ttsr = _tv.get('tsr')
-                if _ttsr is not None:
-                    _mets.append((_tlbl,
-                        f'<span style="color:{_tsr_color(_ttsr)};font-weight:700">{_tsr_pct(_ttsr)}</span>'
-                        f' <span style="font-size:0.65rem;color:#64748B">'
-                        f'(Δprice {_tsr_pct(_tv.get("price_return"))} + div {_tsr_pct(_tv.get("div_yield"))})</span>'
-                        f' <span style="font-size:0.58rem;color:#334155">[{_tnote}]</span>'))
+                # ── Valuation estimate section ────────────────────────
+                # Graham Number = sqrt(22.5 × EPS × BVPS) — no-assumptions intrinsic value
+                _bvps   = _fv2(_ti.get('bookValue'))
+                _graham = None
+                if _eps_v and _bvps and _eps_v > 0 and _bvps > 0:
+                    import math as _math_g
+                    _graham = _math_g.sqrt(22.5 * _eps_v * _bvps)
+                # 52-week range
+                _52w_lo = _fv2(_ti.get('fiftyTwoWeekLow'))
+                _52w_hi = _fv2(_ti.get('fiftyTwoWeekHigh'))
+                _range_str = (f"${_52w_lo:.2f} – ${_52w_hi:.2f}"
+                              if _52w_lo and _52w_hi else '—')
+                _range_pos = None
+                if _52w_lo and _52w_hi and _pr and _52w_hi > _52w_lo:
+                    _range_pos = (_pr - _52w_lo) / (_52w_hi - _52w_lo) * 100
+                # Analyst consensus
+                _tgt          = _fv2(_ti.get('targetMeanPrice'))
+                _tgt_low      = _fv2(_ti.get('targetLowPrice'))
+                _tgt_high     = _fv2(_ti.get('targetHighPrice'))
+                _num_analysts = _fv2(_ti.get('numberOfAnalystOpinions'))
+                _rec_mean     = _fv2(_ti.get('recommendationMean'))  # 1=Strong Buy … 5=Sell
+                _rec_map = {1:'Strong Buy',2:'Buy',3:'Hold',4:'Underperform',5:'Sell'}
+                _rec_lbl  = ''
+                if _rec_mean:
+                    _rec_lbl = _rec_map.get(round(_rec_mean), f"{_rec_mean:.1f}")
+                _tgt_upside = ((_tgt - _pr) / _pr) if _tgt and _pr else None
 
-            # Technicals
-            _mets += [
-                _sec('── TECHNICALS ──'),
-                ('vs 50d MA',    _ma50_str),
-                ('vs 200d MA',   _ma200_str),
-                ('52w High',     _wk52h_str),
-            ]
+                # Build valuation estimate metric rows
+                _val_est_rows = [_sec('── VALUATION ESTIMATES ──')]
+                if _graham:
+                    # For GBp stocks, Graham Number from yfinance is in pence — convert for display
+                    _gv_c = '#22c55e' if _graham > (_pr or 0) else '#ef4444'
+                    _val_est_rows.append(('Graham Number',
+                        f'<span style="color:{_gv_c};font-weight:700">{get_price_display(_graham, _tk, _ti)}</span>'
+                        f' <span style="font-size:0.63rem;color:#64748B">(√22.5×EPS×BV)</span>'))
+                if _tgt:
+                    _up_c = '#22c55e' if (_tgt_upside or 0) >= 0 else '#ef4444'
+                    _tgt_str = get_price_display(_tgt, _tk, _ti)
+                    if _tgt_upside is not None:
+                        _tgt_str += f' <span style="color:{_up_c};font-size:0.7rem">({_tgt_upside*100:+.1f}%)</span>'
+                    if _rec_lbl:
+                        _tgt_str += f' <span style="font-size:0.63rem;color:#64748B">· {_rec_lbl}'
+                        if _num_analysts: _tgt_str += f' ({int(_num_analysts)})'
+                        _tgt_str += '</span>'
+                    _val_est_rows.append(('Analyst Target', _tgt_str))
+                if _tgt_low and _tgt_high:
+                    _val_est_rows.append(('Analyst Range',
+                        f'{get_price_display(_tgt_low, _tk, _ti)} – {get_price_display(_tgt_high, _tk, _ti)}'))
+                # DCF estimate (shown when available from valuation stage)
+                _dcf_est = _an.get('dcf_ps')
+                if _dcf_est:
+                    _dcf_c = '#22c55e' if _dcf_est > (_pr or 0) else '#ef4444'
+                    _dcf_up = ((_dcf_est - _pr) / _pr) if _pr else None
+                    _dcf_str = f'<span style="color:{_dcf_c};font-weight:700">{get_price_display(_dcf_est, _tk, _ti)}</span>'
+                    if _dcf_up is not None:
+                        _dcf_str += f' <span style="font-size:0.7rem;color:{_dcf_c}">({_dcf_up*100:+.1f}%)</span>'
+                    _val_est_rows.append(('Fintiq DCF Est.', _dcf_str))
+                if _an.get('mc'):
+                    _mc_v2 = _an['mc']
+                    _val_est_rows.append(('MC Bear/Base/Bull',
+                        f'{get_price_display(_mc_v2["p25"], _tk, _ti)} / '
+                        f'{get_price_display(_mc_v2["p50"], _tk, _ti)} / '
+                        f'{get_price_display(_mc_v2["p75"], _tk, _ti)}'))
+                # Industry P/E fair value
+                _eps_raw = _fv2(_ti.get('trailingEps') or _ti.get('epsTrailingTwelveMonths'))
+                _sect_name = _ti.get('sector', '')
+                _sect_pe = SECTOR_PE_AVERAGES.get(_sect_name, 17) if _sect_name else None
+                if _eps_raw and _sect_pe:
+                    _pe_iv = _eps_raw * _sect_pe
+                    _pe_iv_c = '#22c55e' if _pe_iv > (_pr or 0) else '#ef4444'
+                    _val_est_rows.append(('Industry P/E FV',
+                        f'<span style="color:{_pe_iv_c};font-weight:700">{get_price_display(_pe_iv, _tk, _ti)}</span>'
+                        f' <span style="font-size:0.62rem;color:#64748B">({_sect_name} avg {_sect_pe}x)</span>'))
+                _val_est_rows.append(('52w Range', _range_str))
+                if _range_pos is not None:
+                    _rp_c = '#22c55e' if _range_pos >= 50 else '#F59E0B' if _range_pos >= 25 else '#ef4444'
+                    _val_est_rows.append(('Range Position',
+                        f'<span style="color:{_rp_c};font-weight:700">{_range_pos:.0f}%</span>'
+                        f' <span style="font-size:0.63rem;color:#64748B">(0%=52w low, 100%=52w high)</span>'))
+                _mets += _val_est_rows
 
-            # ── Valuation estimate section ────────────────────────
-            # Graham Number = sqrt(22.5 × EPS × BVPS) — no-assumptions intrinsic value
-            _bvps   = _fv2(_ti.get('bookValue'))
-            _graham = None
-            if _eps_v and _bvps and _eps_v > 0 and _bvps > 0:
-                import math as _math_g
-                _graham = _math_g.sqrt(22.5 * _eps_v * _bvps)
-            # 52-week range
-            _52w_lo = _fv2(_ti.get('fiftyTwoWeekLow'))
-            _52w_hi = _fv2(_ti.get('fiftyTwoWeekHigh'))
-            _range_str = (f"${_52w_lo:.2f} – ${_52w_hi:.2f}"
-                          if _52w_lo and _52w_hi else '—')
-            _range_pos = None
-            if _52w_lo and _52w_hi and _pr and _52w_hi > _52w_lo:
-                _range_pos = (_pr - _52w_lo) / (_52w_hi - _52w_lo) * 100
-            # Analyst consensus
-            _tgt          = _fv2(_ti.get('targetMeanPrice'))
-            _tgt_low      = _fv2(_ti.get('targetLowPrice'))
-            _tgt_high     = _fv2(_ti.get('targetHighPrice'))
-            _num_analysts = _fv2(_ti.get('numberOfAnalystOpinions'))
-            _rec_mean     = _fv2(_ti.get('recommendationMean'))  # 1=Strong Buy … 5=Sell
-            _rec_map = {1:'Strong Buy',2:'Buy',3:'Hold',4:'Underperform',5:'Sell'}
-            _rec_lbl  = ''
-            if _rec_mean:
-                _rec_lbl = _rec_map.get(round(_rec_mean), f"{_rec_mean:.1f}")
-            _tgt_upside = ((_tgt - _pr) / _pr) if _tgt and _pr else None
+                # MC/target now handled in valuation estimate section — clear old rows
+                _mc_row  = ''
+                _tgt_row = ''
 
-            # Build valuation estimate metric rows
-            _val_est_rows = [_sec('── VALUATION ESTIMATES ──')]
-            if _graham:
-                # For GBp stocks, Graham Number from yfinance is in pence — convert for display
-                _gv_c = '#22c55e' if _graham > (_pr or 0) else '#ef4444'
-                _val_est_rows.append(('Graham Number',
-                    f'<span style="color:{_gv_c};font-weight:700">{get_price_display(_graham, _tk, _ti)}</span>'
-                    f' <span style="font-size:0.63rem;color:#64748B">(√22.5×EPS×BV)</span>'))
-            if _tgt:
-                _up_c = '#22c55e' if (_tgt_upside or 0) >= 0 else '#ef4444'
-                _tgt_str = get_price_display(_tgt, _tk, _ti)
-                if _tgt_upside is not None:
-                    _tgt_str += f' <span style="color:{_up_c};font-size:0.7rem">({_tgt_upside*100:+.1f}%)</span>'
-                if _rec_lbl:
-                    _tgt_str += f' <span style="font-size:0.63rem;color:#64748B">· {_rec_lbl}'
-                    if _num_analysts: _tgt_str += f' ({int(_num_analysts)})'
-                    _tgt_str += '</span>'
-                _val_est_rows.append(('Analyst Target', _tgt_str))
-            if _tgt_low and _tgt_high:
-                _val_est_rows.append(('Analyst Range',
-                    f'{get_price_display(_tgt_low, _tk, _ti)} – {get_price_display(_tgt_high, _tk, _ti)}'))
-            # DCF estimate (shown when available from valuation stage)
-            _dcf_est = _an.get('dcf_ps')
-            if _dcf_est:
-                _dcf_c = '#22c55e' if _dcf_est > (_pr or 0) else '#ef4444'
-                _dcf_up = ((_dcf_est - _pr) / _pr) if _pr else None
-                _dcf_str = f'<span style="color:{_dcf_c};font-weight:700">{get_price_display(_dcf_est, _tk, _ti)}</span>'
-                if _dcf_up is not None:
-                    _dcf_str += f' <span style="font-size:0.7rem;color:{_dcf_c}">({_dcf_up*100:+.1f}%)</span>'
-                _val_est_rows.append(('Fintiq DCF Est.', _dcf_str))
-            if _an.get('mc'):
-                _mc_v2 = _an['mc']
-                _val_est_rows.append(('MC Bear/Base/Bull',
-                    f'{get_price_display(_mc_v2["p25"], _tk, _ti)} / '
-                    f'{get_price_display(_mc_v2["p50"], _tk, _ti)} / '
-                    f'{get_price_display(_mc_v2["p75"], _tk, _ti)}'))
-            # Industry P/E fair value
-            _eps_raw = _fv2(_ti.get('trailingEps') or _ti.get('epsTrailingTwelveMonths'))
-            _sect_name = _ti.get('sector', '')
-            _sect_pe = SECTOR_PE_AVERAGES.get(_sect_name, 17) if _sect_name else None
-            if _eps_raw and _sect_pe:
-                _pe_iv = _eps_raw * _sect_pe
-                _pe_iv_c = '#22c55e' if _pe_iv > (_pr or 0) else '#ef4444'
-                _val_est_rows.append(('Industry P/E FV',
-                    f'<span style="color:{_pe_iv_c};font-weight:700">{get_price_display(_pe_iv, _tk, _ti)}</span>'
-                    f' <span style="font-size:0.62rem;color:#64748B">({_sect_name} avg {_sect_pe}x)</span>'))
-            _val_est_rows.append(('52w Range', _range_str))
-            if _range_pos is not None:
-                _rp_c = '#22c55e' if _range_pos >= 50 else '#F59E0B' if _range_pos >= 25 else '#ef4444'
-                _val_est_rows.append(('Range Position',
-                    f'<span style="color:{_rp_c};font-weight:700">{_range_pos:.0f}%</span>'
-                    f' <span style="font-size:0.63rem;color:#64748B">(0%=52w low, 100%=52w high)</span>'))
-            _mets += _val_est_rows
+                def _met_html(label, val):
+                    # Section headers have an HTML span as value
+                    if label.startswith('──'):
+                        return (f'<div style="padding:6px 0 2px;margin-top:4px">'
+                                f'<span style="color:#475569;font-size:0.6rem;font-weight:700;'
+                                f'letter-spacing:0.07em">{label}</span></div>')
+                    return (f'<div style="display:flex;justify-content:space-between;'
+                            f'padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
+                            f'<span style="color:#64748B;font-size:0.72rem">{label}</span>'
+                            f'<span style="color:#E2E8F0;font-size:0.74rem;font-weight:600">{val}</span></div>')
+                _rows_html = "".join(_met_html(_l, _v) for _l, _v in _mets)
 
-            # MC/target now handled in valuation estimate section — clear old rows
-            _mc_row  = ''
-            _tgt_row = ''
-
-            def _met_html(label, val):
-                # Section headers have an HTML span as value
-                if label.startswith('──'):
-                    return (f'<div style="padding:6px 0 2px;margin-top:4px">'
-                            f'<span style="color:#475569;font-size:0.6rem;font-weight:700;'
-                            f'letter-spacing:0.07em">{label}</span></div>')
-                return (f'<div style="display:flex;justify-content:space-between;'
-                        f'padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04)">'
-                        f'<span style="color:#64748B;font-size:0.72rem">{label}</span>'
-                        f'<span style="color:#E2E8F0;font-size:0.74rem;font-weight:600">{val}</span></div>')
-            _rows_html = "".join(_met_html(_l, _v) for _l, _v in _mets)
-
-            # Factor badge
-            _ff = _td.get('factor')
-            _ff_yr_used = _td.get('ff_years', _SS.cp_ctx.get('ff_years', 2))
-            _ff_row = ''
-            if _ff:
-                _sig_colours = {'green': ('#22c55e','rgba(34,197,94,0.12)','🟢 Strong Alpha'),
-                                'amber': ('#F59E0B','rgba(245,158,11,0.12)','🟡 Marginal'),
-                                'red':   ('#ef4444','rgba(239,68,68,0.10)','🔴 Avoid')}
-                _fc, _fbg, _flbl = _sig_colours.get(_ff.get('signal',''), ('#94A3B8','rgba(148,163,184,0.08)','⚪ N/A'))
-                _fa_sign = '+' if _ff.get('alpha',0) >= 0 else ''
-                _fp = _ff.get('pval', 1)
-                _fp_str = f"p={_fp:.3f}" if _fp is not None else ''
-                _fi = _ff.get('insight', '')
-                _ff_insight_html = (f'<div style="font-size:0.63rem;color:#94A3B8;margin-top:3px;'
-                                    f'font-style:italic">{_fi}</div>') if _fi else ''
-                _ff_row = (
-                    f'<div style="margin-top:8px;padding:8px 10px;background:{_fbg};'
-                    f'border-radius:6px;border:1px solid {_fc}50">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
-                    f'<span style="font-size:0.62rem;color:#64748B;font-weight:700">FF4 · {_ff_yr_used}YR OLS</span>'
-                    f'<span style="font-size:0.68rem;color:{_fc};font-weight:800">{_flbl}</span>'
-                    f'</div>'
-                    f'<div style="display:flex;justify-content:space-between;margin-bottom:2px">'
-                    f'<span style="font-size:0.72rem;color:{_fc};font-weight:700">α {_fa_sign}{_ff.get("alpha",0):.1f}%pa</span>'
-                    f'<span style="font-size:0.68rem;color:#64748B">{_fp_str}</span>'
-                    f'</div>'
-                    f'<div style="font-size:0.64rem;color:#64748B">'
-                    f'β={_ff.get("beta",1):.2f} · SMB={_ff.get("smb",0):+.2f} · HML={_ff.get("hml",0):+.2f} · MOM={_ff.get("mom",0):+.2f}'
-                    f'</div>'
-                    f'{_ff_insight_html}'
-                    f'</div>')
-            else:
-                _ff_row = ('<div style="margin-top:8px;padding:6px 8px;background:rgba(148,163,184,0.05);'
-                           'border-radius:6px;border:1px solid rgba(148,163,184,0.15)">'
-                           '<div style="font-size:0.62rem;color:#475569;font-weight:700">FF4 FACTOR MODEL</div>'
-                           '<div style="font-size:0.63rem;color:#334155;margin-top:2px">Not in US universe — directional only</div>'
-                           '</div>')
-
-            _border_col = '#FBBF24' if _in_wl else 'rgba(255,255,255,0.08)'
-            # Price: use get_price_display to handle GBp→£ conversion and correct currency symbol
-            _pr_str = get_price_display(_pr, _tk, _ti) if isinstance(_pr, float) else '—'
-            # Currency symbol for this stock (£ for UK, $ for US, etc.)
-            _csym = '£' if _curr == 'GBp' else get_currency_symbol(_tk)
-            _cap_str = f"{'%.1fB'%(_fv2(_ti.get('marketCap'))/1e9)}" if _fv2(_ti.get('marketCap')) else ''
-
-            _card_html = (
-                f'<div style="background:rgba(255,255,255,0.03);border:1px solid {_border_col};'
-                f'border-radius:10px;padding:12px;margin-bottom:8px">'
-                # Header
-                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">'
-                f'<span style="font-size:0.85rem;font-weight:700;color:#FBBF24">{_tk}</span>'
-                f'<span style="font-size:0.65rem;color:#64748B">{_stage_dots}</span>'
-                f'</div>'
-                f'<div style="font-size:0.7rem;color:#94A3B8;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_name[:30]}</div>'
-                f'<div style="font-size:0.65rem;color:#475569;margin-bottom:6px">{_sect}</div>'
-                # Quality score + Tech signal badges
-                f'<div style="display:flex;gap:6px;margin-bottom:8px">'
-                f'<div style="flex:1;background:rgba(255,255,255,0.04);border-radius:5px;padding:4px 6px;text-align:center">'
-                f'<div style="font-size:0.58rem;color:#64748B;font-weight:700">QUALITY</div>'
-                f'<div style="font-size:0.9rem;font-weight:800;color:{_qs_col}">{_qs}</div>'
-                f'<div style="font-size:0.58rem;color:{_qs_col}">{_qs_lbl}</div>'
-                f'</div>'
-                f'<div style="flex:2;background:rgba(255,255,255,0.04);border-radius:5px;padding:4px 6px;text-align:center">'
-                f'<div style="font-size:0.58rem;color:#64748B;font-weight:700">TECH SIGNAL</div>'
-                f'<div style="font-size:0.75rem;font-weight:700;color:{_tech_col};margin-top:2px">{_tech_lbl}</div>'
-                f'</div>'
-                f'</div>'
-                # Price row
-                f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
-                f'<span style="font-size:0.9rem;font-weight:700;color:#E2E8F0">{_pr_str}</span>'
-                f'<span style="font-size:0.68rem;color:#64748B">{_cap_str}</span>'
-                f'</div>'
-                # Metrics
-                f'{_rows_html}'
-                # Factor model
-                f'{_ff_row}'
-                # MC / target
-                f'{_mc_row}{_tgt_row}'
-                + (f'<div style="font-size:0.65rem;color:#FBBF24;margin-top:6px;font-weight:700">★ WATCHLIST</div>' if _in_wl else '')
-                + f'</div>')
-
-            with _card_cols[_ci]:
-                if _td.get('error'):
-                    st.warning(f"{_tk}: data unavailable")
+                # Factor badge
+                _ff = _td.get('factor')
+                _ff_yr_used = _td.get('ff_years', _SS.cp_ctx.get('ff_years', 2))
+                _ff_row = ''
+                if _ff:
+                    _sig_colours = {'green': ('#22c55e','rgba(34,197,94,0.12)','🟢 Strong Alpha'),
+                                    'amber': ('#F59E0B','rgba(245,158,11,0.12)','🟡 Marginal'),
+                                    'red':   ('#ef4444','rgba(239,68,68,0.10)','🔴 Avoid')}
+                    _fc, _fbg, _flbl = _sig_colours.get(_ff.get('signal',''), ('#94A3B8','rgba(148,163,184,0.08)','⚪ N/A'))
+                    _fa_sign = '+' if _ff.get('alpha',0) >= 0 else ''
+                    _fp = _ff.get('pval', 1)
+                    _fp_str = f"p={_fp:.3f}" if _fp is not None else ''
+                    _fi = _ff.get('insight', '')
+                    _ff_insight_html = (f'<div style="font-size:0.63rem;color:#94A3B8;margin-top:3px;'
+                                        f'font-style:italic">{_fi}</div>') if _fi else ''
+                    _ff_row = (
+                        f'<div style="margin-top:8px;padding:8px 10px;background:{_fbg};'
+                        f'border-radius:6px;border:1px solid {_fc}50">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+                        f'<span style="font-size:0.62rem;color:#64748B;font-weight:700">FF4 · {_ff_yr_used}YR OLS</span>'
+                        f'<span style="font-size:0.68rem;color:{_fc};font-weight:800">{_flbl}</span>'
+                        f'</div>'
+                        f'<div style="display:flex;justify-content:space-between;margin-bottom:2px">'
+                        f'<span style="font-size:0.72rem;color:{_fc};font-weight:700">α {_fa_sign}{_ff.get("alpha",0):.1f}%pa</span>'
+                        f'<span style="font-size:0.68rem;color:#64748B">{_fp_str}</span>'
+                        f'</div>'
+                        f'<div style="font-size:0.64rem;color:#64748B">'
+                        f'β={_ff.get("beta",1):.2f} · SMB={_ff.get("smb",0):+.2f} · HML={_ff.get("hml",0):+.2f} · MOM={_ff.get("mom",0):+.2f}'
+                        f'</div>'
+                        f'{_ff_insight_html}'
+                        f'</div>')
                 else:
-                    st.markdown(_card_html, unsafe_allow_html=True)
+                    _ff_row = ('<div style="margin-top:8px;padding:6px 8px;background:rgba(148,163,184,0.05);'
+                               'border-radius:6px;border:1px solid rgba(148,163,184,0.15)">'
+                               '<div style="font-size:0.62rem;color:#475569;font-weight:700">FF4 FACTOR MODEL</div>'
+                               '<div style="font-size:0.63rem;color:#334155;margin-top:2px">Not in US universe — directional only</div>'
+                               '</div>')
 
-                # TSR deep-dive expander (always shown once data loaded)
-                if not _td.get('error'):
-                    with st.expander("📊 TSR Deep-Dive — Annual & Quarterly"):
-                        _tsr_d = _comp_compute_tsr(_td)
+                _border_col = '#FBBF24' if _in_wl else 'rgba(255,255,255,0.08)'
+                # Price: use get_price_display to handle GBp→£ conversion and correct currency symbol
+                _pr_str = get_price_display(_pr, _tk, _ti) if isinstance(_pr, float) else '—'
+                # Currency symbol for this stock (£ for UK, $ for US, etc.)
+                _csym = '£' if _curr == 'GBp' else get_currency_symbol(_tk)
+                _cap_str = f"{'%.1fB'%(_fv2(_ti.get('marketCap'))/1e9)}" if _fv2(_ti.get('marketCap')) else ''
 
-                        # ── WHY TSR MATTERS ──
-                        st.markdown(
-                            '<div style="background:rgba(251,191,36,0.06);border-left:3px solid #FBBF24;'
-                            'padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:14px">'
-                            '<div style="font-size:0.72rem;color:#FBBF24;font-weight:700;margin-bottom:3px">WHY TOTAL SHAREHOLDER RETURN?</div>'
-                            '<div style="font-size:0.68rem;color:#94A3B8;line-height:1.5">'
-                            'TSR is the actual return you earned — price change plus dividends. Decomposing it tells you '
-                            '<em>why</em> you earned it: was it genuine business improvement, a valuation re-rating by the market, '
-                            'or just income? Only performance-driven TSR is repeatable. Multiple expansion eventually mean-reverts.'
-                            '</div></div>',
-                            unsafe_allow_html=True)
+                _card_html = (
+                    f'<div style="background:rgba(255,255,255,0.03);border:1px solid {_border_col};'
+                    f'border-radius:10px;padding:12px;margin-bottom:8px">'
+                    # Header
+                    f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">'
+                    f'<span style="font-size:0.85rem;font-weight:700;color:#FBBF24">{_tk}</span>'
+                    f'<span style="font-size:0.65rem;color:#64748B">{_stage_dots}</span>'
+                    f'</div>'
+                    f'<div style="font-size:0.7rem;color:#94A3B8;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_name[:30]}</div>'
+                    f'<div style="font-size:0.65rem;color:#475569;margin-bottom:6px">{_sect}</div>'
+                    # Quality score + Tech signal badges
+                    f'<div style="display:flex;gap:6px;margin-bottom:8px">'
+                    f'<div style="flex:1;background:rgba(255,255,255,0.04);border-radius:5px;padding:4px 6px;text-align:center">'
+                    f'<div style="font-size:0.58rem;color:#64748B;font-weight:700">QUALITY</div>'
+                    f'<div style="font-size:0.9rem;font-weight:800;color:{_qs_col}">{_qs}</div>'
+                    f'<div style="font-size:0.58rem;color:{_qs_col}">{_qs_lbl}</div>'
+                    f'</div>'
+                    f'<div style="flex:2;background:rgba(255,255,255,0.04);border-radius:5px;padding:4px 6px;text-align:center">'
+                    f'<div style="font-size:0.58rem;color:#64748B;font-weight:700">TECH SIGNAL</div>'
+                    f'<div style="font-size:0.75rem;font-weight:700;color:{_tech_col};margin-top:2px">{_tech_lbl}</div>'
+                    f'</div>'
+                    f'</div>'
+                    # Price row
+                    f'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
+                    f'<span style="font-size:0.9rem;font-weight:700;color:#E2E8F0">{_pr_str}</span>'
+                    f'<span style="font-size:0.68rem;color:#64748B">{_cap_str}</span>'
+                    f'</div>'
+                    # Metrics
+                    f'{_rows_html}'
+                    # Factor model
+                    f'{_ff_row}'
+                    # MC / target
+                    f'{_mc_row}{_tgt_row}'
+                    + (f'<div style="font-size:0.65rem;color:#FBBF24;margin-top:6px;font-weight:700">★ WATCHLIST</div>' if _in_wl else '')
+                    + f'</div>')
 
-                        # ── ANNUAL ENHANCED DECOMPOSITION (table) ──
-                        _ann = _tsr_d.get('annual', [])
-                        if _ann:
-                            _yr_hdrs = [str(_a['year']) for _a in _ann]
-                            _n_yrs = len(_ann)
-                            _at = ['<div style="margin-bottom:16px;overflow-x:auto">',
-                                   '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">ANNUAL ENHANCED DECOMPOSITION</div>',
-                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over the fiscal year (FY start → FY end price). '
-                                   'Decomposition below explains <em>why</em> shareholders earned that return.</div>',
-                                   '<table style="width:100%;border-collapse:collapse;font-size:0.68rem;white-space:nowrap">',
-                                   '<tr style="border-bottom:1px solid #334155">',
-                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:140px;white-space:normal">Line item</th>']
-                            for _yh in _yr_hdrs:
-                                _at.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_yh}</th>')
-                            _at.append('</tr>')
+                with _card_cols[_ci]:
+                    if _td.get('error'):
+                        st.warning(f"{_tk}: data unavailable")
+                    else:
+                        st.markdown(_card_html, unsafe_allow_html=True)
 
-                            # ── Calculation basis rows (FY-aligned prices) ──
-                            _basis_rows = [
-                                ('Opening price (FY start)', 'fy_start_price', 'fy_start_date', '$'),
-                                ('Closing price (FY end)',   'fy_end_price',   'fy_end_date',   '$'),
-                                ('Dividends paid in FY',     'fy_dividends',   None,            '$'),
-                            ]
-                            for _bl, _bk, _dk, _pfx in _basis_rows:
-                                _at.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">'
-                                           f'<td style="padding:3px 6px;color:#64748B;font-style:italic">{_bl}</td>')
-                                for _a in _ann:
-                                    _bv = _a.get(_bk)
-                                    _dv = _a.get(_dk, '') if _dk else ''
-                                    if _bv is None:
-                                        _at.append('<td style="padding:3px 6px;text-align:right;color:#334155">—</td>')
-                                    else:
-                                        _bstr = f'{_pfx}{_bv:.2f}' + (f'<br><span style="font-size:0.6rem;color:#334155">{_dv}</span>' if _dv else '')
-                                        _at.append(f'<td style="padding:3px 6px;text-align:right;color:#94A3B8;line-height:1.4">{_bstr}</td>')
+                    # TSR deep-dive expander (always shown once data loaded)
+                    if not _td.get('error'):
+                        with st.expander("📊 TSR Deep-Dive — Annual & Quarterly"):
+                            _tsr_d = _comp_compute_tsr(_td)
+
+                            # ── WHY TSR MATTERS ──
+                            st.markdown(
+                                '<div style="background:rgba(251,191,36,0.06);border-left:3px solid #FBBF24;'
+                                'padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:14px">'
+                                '<div style="font-size:0.72rem;color:#FBBF24;font-weight:700;margin-bottom:3px">WHY TOTAL SHAREHOLDER RETURN?</div>'
+                                '<div style="font-size:0.68rem;color:#94A3B8;line-height:1.5">'
+                                'TSR is the actual return you earned — price change plus dividends. Decomposing it tells you '
+                                '<em>why</em> you earned it: was it genuine business improvement, a valuation re-rating by the market, '
+                                'or just income? Only performance-driven TSR is repeatable. Multiple expansion eventually mean-reverts.'
+                                '</div></div>',
+                                unsafe_allow_html=True)
+
+                            # ── ANNUAL ENHANCED DECOMPOSITION (table) ──
+                            _ann = _tsr_d.get('annual', [])
+                            if _ann:
+                                _yr_hdrs = [str(_a['year']) for _a in _ann]
+                                _n_yrs = len(_ann)
+                                _at = ['<div style="margin-bottom:16px;overflow-x:auto">',
+                                       '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">ANNUAL ENHANCED DECOMPOSITION</div>',
+                                       '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over the fiscal year (FY start → FY end price). '
+                                       'Decomposition below explains <em>why</em> shareholders earned that return.</div>',
+                                       '<table style="width:100%;border-collapse:collapse;font-size:0.68rem;white-space:nowrap">',
+                                       '<tr style="border-bottom:1px solid #334155">',
+                                       '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:140px;white-space:normal">Line item</th>']
+                                for _yh in _yr_hdrs:
+                                    _at.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_yh}</th>')
                                 _at.append('</tr>')
 
-                            # ── Actual TSR from prices ──
-                            _at.append(f'<tr style="border-bottom:2px solid #334155;background:rgba(255,255,255,0.02)">'
-                                       f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">= Actual TSR (price + div)</td>')
-                            for _a in _ann:
-                                _tv = _a.get('tsr')
-                                if _tv is None:
-                                    _at.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
-                                else:
-                                    _gc = '#22c55e' if _tv >= 0 else '#ef4444'
-                                    _at.append(f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>')
-                            _at.append('</tr>')
+                                # ── Calculation basis rows (FY-aligned prices) ──
+                                _basis_rows = [
+                                    ('Opening price (FY start)', 'fy_start_price', 'fy_start_date', '$'),
+                                    ('Closing price (FY end)',   'fy_end_price',   'fy_end_date',   '$'),
+                                    ('Dividends paid in FY',     'fy_dividends',   None,            '$'),
+                                ]
+                                for _bl, _bk, _dk, _pfx in _basis_rows:
+                                    _at.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">'
+                                               f'<td style="padding:3px 6px;color:#64748B;font-style:italic">{_bl}</td>')
+                                    for _a in _ann:
+                                        _bv = _a.get(_bk)
+                                        _dv = _a.get(_dk, '') if _dk else ''
+                                        if _bv is None:
+                                            _at.append('<td style="padding:3px 6px;text-align:right;color:#334155">—</td>')
+                                        else:
+                                            _bstr = f'{_pfx}{_bv:.2f}' + (f'<br><span style="font-size:0.6rem;color:#334155">{_dv}</span>' if _dv else '')
+                                            _at.append(f'<td style="padding:3px 6px;text-align:right;color:#94A3B8;line-height:1.4">{_bstr}</td>')
+                                    _at.append('</tr>')
 
-                            # ── Separator + decomposition label ──
-                            _at.append(f'<tr><td colspan="{1+_n_yrs}" style="padding:6px 6px 2px;color:#475569;font-size:0.62rem;font-style:italic">'
-                                       f'Decomposition — explains the TSR above through financial statement drivers:</td></tr>')
-
-                            _ann_row_defs = [
-                                ('Sales growth contribution',   'sales_growth_contrib',  None,      False),
-                                ('Reinvestment drag',           'invest_drag',            None,      False),
-                                ('Net growth impact',           '__net_growth__',         None,      False),
-                                ('Change in operating margin',  'margin_change_contrib',  None,      False),
-                                ('Sales × margin interaction',  'interaction',            '#94A3B8', False),
-                                ('TSR from Performance',        'performance',            None,      True),
-                                ('__sep__',                     None,                     None,      False),
-                                ('Earnings yield',              'earnings_yield',         '#38BDF8', False),
-                                ('FCF yield',                   'fcf_yield',              '#38BDF8', False),
-                                ('TSR from Yield',              'yield_bucket',           '#38BDF8', True),
-                                ('__sep__',                     None,                     None,      False),
-                                ('Valuation re-rating (P/E ∆)', 'valuation',             '#818CF8', True),
-                                ('__sep__',                     None,                     None,      False),
-                                ('TOTAL (decomposed — must = Actual TSR)', 'tsr',         None,      True),
-                                ('__sep__',                     None,                     None,      False),
-                                ('  P/E (open → close)',        '__pe__',                 '#64748B', False),
-                                ('  Op. Margin (open → close)', '__om__',                '#64748B', False),
-                            ]
-
-                            for _rl, _rk, _rc, _rb in _ann_row_defs:
-                                if _rl == '__sep__':
-                                    _at.append(f'<tr><td colspan="{1+_n_yrs}" style="padding:1px 0;border-bottom:1px solid #1e293b"></td></tr>')
-                                    continue
-                                _is_total = 'TOTAL' in _rl
-                                _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
-                                _at.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
-                                           f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
+                                # ── Actual TSR from prices ──
+                                _at.append(f'<tr style="border-bottom:2px solid #334155;background:rgba(255,255,255,0.02)">'
+                                           f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">= Actual TSR (price + div)</td>')
                                 for _a in _ann:
-                                    if _rk == '__net_growth__':
-                                        _v = (_a.get('sales_growth_contrib') or 0) + (_a.get('invest_drag') or 0)
-                                    elif _rk == '__pe__':
-                                        _ps, _pe = _a.get('pe_start'), _a.get('pe_end')
-                                        _cell = f'{_ps:.1f}x → {_pe:.1f}x' if _ps and _pe else '—'
-                                        _at.append(f'<td style="padding:4px 6px;text-align:right;color:#64748B">{_cell}</td>')
-                                        continue
-                                    elif _rk == '__om__':
-                                        _os2, _oe2 = _a.get('op_margin_start'), _a.get('op_margin_end')
-                                        _cell = f'{_os2*100:.1f}% → {_oe2*100:.1f}%' if _os2 and _oe2 else '—'
-                                        _at.append(f'<td style="padding:4px 6px;text-align:right;color:#64748B">{_cell}</td>')
-                                        continue
-                                    else:
-                                        _v = _a.get(_rk)
-                                    if _v is None:
+                                    _tv = _a.get('tsr')
+                                    if _tv is None:
                                         _at.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
                                     else:
-                                        _c = _rc or ('#22c55e' if _v >= 0 else '#ef4444')
-                                        _w = 'font-weight:700;' if _rb else ''
-                                        _at.append(f'<td style="padding:4px 6px;text-align:right;color:{_c};{_w}">{_v*100:+.1f}%</td>')
+                                        _gc = '#22c55e' if _tv >= 0 else '#ef4444'
+                                        _at.append(f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>')
                                 _at.append('</tr>')
-                            _at.append('</table></div>')
-                            st.markdown(''.join(_at), unsafe_allow_html=True)
 
-                        # ── QUARTERLY TRADITIONAL DECOMPOSITION (table) ──
-                        _qtrs = _tsr_d.get('quarterly', [])
-                        if _qtrs:
-                            _q_disp = list(reversed(_qtrs))  # most recent left
-                            _qt = ['<div style="margin-bottom:10px;overflow-x:auto">',
-                                   '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">QUARTERLY TRADITIONAL DECOMPOSITION</div>',
-                                   '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over each quarter (start → end price). Decomposition = EPS growth + P/E change + dividend yield + interaction.</div>',
-                                   '<table style="width:100%;border-collapse:collapse;font-size:0.68rem;white-space:nowrap">',
-                                   '<tr style="border-bottom:1px solid #334155">',
-                                   '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:120px;white-space:normal">Component</th>']
-                            for _q in _q_disp:
-                                _qt.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_q["period"]}</th>')
-                            _qt.append('</tr>')
+                                # ── Separator + decomposition label ──
+                                _at.append(f'<tr><td colspan="{1+_n_yrs}" style="padding:6px 6px 2px;color:#475569;font-size:0.62rem;font-style:italic">'
+                                           f'Decomposition — explains the TSR above through financial statement drivers:</td></tr>')
 
-                            # Calculation basis rows for quarterly
-                            for _bl, _bk, _dk in [
-                                ('Opening price', 'q_start_price', 'q_start_date'),
-                                ('Closing price', 'q_end_price',   'q_end_date'),
-                                ('Dividends',     'q_dividends',   None),
-                            ]:
-                                _qt.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.02)">'
-                                           f'<td style="padding:3px 6px;color:#64748B;font-style:italic">{_bl}</td>')
+                                _ann_row_defs = [
+                                    ('Sales growth contribution',   'sales_growth_contrib',  None,      False),
+                                    ('Reinvestment drag',           'invest_drag',            None,      False),
+                                    ('Net growth impact',           '__net_growth__',         None,      False),
+                                    ('Change in operating margin',  'margin_change_contrib',  None,      False),
+                                    ('Sales × margin interaction',  'interaction',            '#94A3B8', False),
+                                    ('TSR from Performance',        'performance',            None,      True),
+                                    ('__sep__',                     None,                     None,      False),
+                                    ('Earnings yield',              'earnings_yield',         '#38BDF8', False),
+                                    ('FCF yield',                   'fcf_yield',              '#38BDF8', False),
+                                    ('TSR from Yield',              'yield_bucket',           '#38BDF8', True),
+                                    ('__sep__',                     None,                     None,      False),
+                                    ('Valuation re-rating (P/E ∆)', 'valuation',             '#818CF8', True),
+                                    ('__sep__',                     None,                     None,      False),
+                                    ('TOTAL (decomposed — must = Actual TSR)', 'tsr',         None,      True),
+                                    ('__sep__',                     None,                     None,      False),
+                                    ('  P/E (open → close)',        '__pe__',                 '#64748B', False),
+                                    ('  Op. Margin (open → close)', '__om__',                '#64748B', False),
+                                ]
+
+                                for _rl, _rk, _rc, _rb in _ann_row_defs:
+                                    if _rl == '__sep__':
+                                        _at.append(f'<tr><td colspan="{1+_n_yrs}" style="padding:1px 0;border-bottom:1px solid #1e293b"></td></tr>')
+                                        continue
+                                    _is_total = 'TOTAL' in _rl
+                                    _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
+                                    _at.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
+                                               f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
+                                    for _a in _ann:
+                                        if _rk == '__net_growth__':
+                                            _v = (_a.get('sales_growth_contrib') or 0) + (_a.get('invest_drag') or 0)
+                                        elif _rk == '__pe__':
+                                            _ps, _pe = _a.get('pe_start'), _a.get('pe_end')
+                                            _cell = f'{_ps:.1f}x → {_pe:.1f}x' if _ps and _pe else '—'
+                                            _at.append(f'<td style="padding:4px 6px;text-align:right;color:#64748B">{_cell}</td>')
+                                            continue
+                                        elif _rk == '__om__':
+                                            _os2, _oe2 = _a.get('op_margin_start'), _a.get('op_margin_end')
+                                            _cell = f'{_os2*100:.1f}% → {_oe2*100:.1f}%' if _os2 and _oe2 else '—'
+                                            _at.append(f'<td style="padding:4px 6px;text-align:right;color:#64748B">{_cell}</td>')
+                                            continue
+                                        else:
+                                            _v = _a.get(_rk)
+                                        if _v is None:
+                                            _at.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
+                                        else:
+                                            _c = _rc or ('#22c55e' if _v >= 0 else '#ef4444')
+                                            _w = 'font-weight:700;' if _rb else ''
+                                            _at.append(f'<td style="padding:4px 6px;text-align:right;color:{_c};{_w}">{_v*100:+.1f}%</td>')
+                                    _at.append('</tr>')
+                                _at.append('</table></div>')
+                                st.markdown(''.join(_at), unsafe_allow_html=True)
+
+                            # ── QUARTERLY TRADITIONAL DECOMPOSITION (table) ──
+                            _qtrs = _tsr_d.get('quarterly', [])
+                            if _qtrs:
+                                _q_disp = list(reversed(_qtrs))  # most recent left
+                                _qt = ['<div style="margin-bottom:10px;overflow-x:auto">',
+                                       '<div style="font-size:0.7rem;color:#64748B;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">QUARTERLY TRADITIONAL DECOMPOSITION</div>',
+                                       '<div style="font-size:0.62rem;color:#475569;margin-bottom:8px">TSR = actual stock return over each quarter (start → end price). Decomposition = EPS growth + P/E change + dividend yield + interaction.</div>',
+                                       '<table style="width:100%;border-collapse:collapse;font-size:0.68rem;white-space:nowrap">',
+                                       '<tr style="border-bottom:1px solid #334155">',
+                                       '<th style="text-align:left;padding:4px 6px;color:#64748B;min-width:120px;white-space:normal">Component</th>']
                                 for _q in _q_disp:
-                                    _bv = _q.get(_bk)
-                                    _dv = _q.get(_dk, '') if _dk else ''
-                                    if _bv is None:
-                                        _qt.append('<td style="padding:3px 6px;text-align:right;color:#334155">—</td>')
-                                    else:
-                                        _bstr = f'${_bv:.2f}' + (f'<br><span style="font-size:0.6rem;color:#334155">{_dv}</span>' if _dv else '')
-                                        _qt.append(f'<td style="padding:3px 6px;text-align:right;color:#94A3B8;line-height:1.4">{_bstr}</td>')
+                                    _qt.append(f'<th style="text-align:right;padding:4px 6px;color:#64748B">{_q["period"]}</th>')
                                 _qt.append('</tr>')
 
-                            # Actual TSR row
-                            _qt.append(f'<tr style="border-bottom:2px solid #334155;background:rgba(255,255,255,0.02)">'
-                                       f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">= Actual TSR</td>')
-                            for _q in _q_disp:
-                                _tv = _q.get('tsr')
-                                if _tv is None:
-                                    _qt.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
-                                else:
-                                    _gc = '#22c55e' if _tv >= 0 else '#ef4444'
-                                    _qt.append(f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>')
-                            _qt.append('</tr>')
+                                # Calculation basis rows for quarterly
+                                for _bl, _bk, _dk in [
+                                    ('Opening price', 'q_start_price', 'q_start_date'),
+                                    ('Closing price', 'q_end_price',   'q_end_date'),
+                                    ('Dividends',     'q_dividends',   None),
+                                ]:
+                                    _qt.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.02)">'
+                                               f'<td style="padding:3px 6px;color:#64748B;font-style:italic">{_bl}</td>')
+                                    for _q in _q_disp:
+                                        _bv = _q.get(_bk)
+                                        _dv = _q.get(_dk, '') if _dk else ''
+                                        if _bv is None:
+                                            _qt.append('<td style="padding:3px 6px;text-align:right;color:#334155">—</td>')
+                                        else:
+                                            _bstr = f'${_bv:.2f}' + (f'<br><span style="font-size:0.6rem;color:#334155">{_dv}</span>' if _dv else '')
+                                            _qt.append(f'<td style="padding:3px 6px;text-align:right;color:#94A3B8;line-height:1.4">{_bstr}</td>')
+                                    _qt.append('</tr>')
 
-                            _qt.append(f'<tr><td colspan="{1+len(_q_disp)}" style="padding:5px 6px 2px;color:#475569;font-size:0.62rem;font-style:italic">'
-                                       f'Decomposition — explains the above TSR through EPS and P/E changes:</td></tr>')
-
-                            _q_row_defs = [
-                                ('EPS Growth',     'eps_growth',  None,      False),
-                                ('P/E Change',     'pe_change',   '#818CF8', False),
-                                ('Dividend Yield', 'div_yield',   '#38BDF8', False),
-                                ('Interaction',    'interaction',  '#94A3B8', False),
-                                ('TOTAL (decomposed)', 'tsr',     None,      True),
-                            ]
-                            for _rl, _rk, _rc, _rb in _q_row_defs:
-                                _is_total = _rb
-                                _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
-                                _qt.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
-                                           f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
+                                # Actual TSR row
+                                _qt.append(f'<tr style="border-bottom:2px solid #334155;background:rgba(255,255,255,0.02)">'
+                                           f'<td style="padding:4px 6px;color:#CBD5E1;font-weight:600">= Actual TSR</td>')
                                 for _q in _q_disp:
-                                    _v = _q.get(_rk)
-                                    if _v is None:
+                                    _tv = _q.get('tsr')
+                                    if _tv is None:
                                         _qt.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
                                     else:
-                                        _c = _rc or ('#22c55e' if _v >= 0 else '#ef4444')
-                                        _w = 'font-weight:700;' if _rb else ''
-                                        _qt.append(f'<td style="padding:4px 6px;text-align:right;color:{_c};{_w}">{_v*100:+.1f}%</td>')
+                                        _gc = '#22c55e' if _tv >= 0 else '#ef4444'
+                                        _qt.append(f'<td style="padding:4px 6px;text-align:right;color:{_gc};font-weight:700">{_tv*100:+.1f}%</td>')
                                 _qt.append('</tr>')
-                            _qt.append('</table></div>')
-                            st.markdown(''.join(_qt), unsafe_allow_html=True)
 
-                # Remove stock button
-                if _stage in ('fundamental','valuation','technical'):
-                    if st.button(f"🗑 Remove {_tk}", key=f"_rm_{_tk}", use_container_width=True,
-                                 help="Remove this stock from the analysis"):
+                                _qt.append(f'<tr><td colspan="{1+len(_q_disp)}" style="padding:5px 6px 2px;color:#475569;font-size:0.62rem;font-style:italic">'
+                                           f'Decomposition — explains the above TSR through EPS and P/E changes:</td></tr>')
+
+                                _q_row_defs = [
+                                    ('EPS Growth',     'eps_growth',  None,      False),
+                                    ('P/E Change',     'pe_change',   '#818CF8', False),
+                                    ('Dividend Yield', 'div_yield',   '#38BDF8', False),
+                                    ('Interaction',    'interaction',  '#94A3B8', False),
+                                    ('TOTAL (decomposed)', 'tsr',     None,      True),
+                                ]
+                                for _rl, _rk, _rc, _rb in _q_row_defs:
+                                    _is_total = _rb
+                                    _bg = ';background:rgba(255,255,255,0.025)' if _is_total else ''
+                                    _qt.append(f'<tr style="border-bottom:1px solid rgba(255,255,255,0.03){_bg}">'
+                                               f'<td style="padding:4px 6px;color:{"#E2E8F0" if _rb else "#CBD5E1"};{"font-weight:700;" if _rb else ""}">{_rl}</td>')
+                                    for _q in _q_disp:
+                                        _v = _q.get(_rk)
+                                        if _v is None:
+                                            _qt.append('<td style="padding:4px 6px;text-align:right;color:#334155">—</td>')
+                                        else:
+                                            _c = _rc or ('#22c55e' if _v >= 0 else '#ef4444')
+                                            _w = 'font-weight:700;' if _rb else ''
+                                            _qt.append(f'<td style="padding:4px 6px;text-align:right;color:{_c};{_w}">{_v*100:+.1f}%</td>')
+                                    _qt.append('</tr>')
+                                _qt.append('</table></div>')
+                                st.markdown(''.join(_qt), unsafe_allow_html=True)
+
+                    # Remove stock button
+                    if _stage in ('fundamental','valuation','technical'):
+                        if st.button(f"🗑 Remove {_tk}", key=f"_rm_{_tk}", use_container_width=True,
+                                     help="Remove this stock from the analysis"):
+                            _rm_confirm_key = f"_rm_confirm_{_tk}"
+                            if not _SS.get(_rm_confirm_key):
+                                _SS[_rm_confirm_key] = True
+                                st.rerun()
                         _rm_confirm_key = f"_rm_confirm_{_tk}"
-                        if not _SS.get(_rm_confirm_key):
-                            _SS[_rm_confirm_key] = True
-                            st.rerun()
-                    _rm_confirm_key = f"_rm_confirm_{_tk}"
-                    if _SS.get(_rm_confirm_key):
-                        st.warning(f"Remove **{_tk}** from this session?")
-                        _rc1, _rc2 = st.columns(2)
-                        with _rc1:
-                            if st.button("Yes, remove", key=f"_rm_yes_{_tk}", type="primary"):
-                                _SS.cp_data.pop(_tk, None)
-                                _SS[_rm_confirm_key] = False
-                                _SS.cp_msgs.append({"role": "assistant",
-                                    "content": f"I've removed {_tk} from the analysis. We're now focusing on: {', '.join(k for k in _SS.cp_data if not _SS.cp_data[k].get('error', False))}."})
-                                st.rerun()
-                        with _rc2:
-                            if st.button("Cancel", key=f"_rm_no_{_tk}"):
-                                _SS[_rm_confirm_key] = False
-                                st.rerun()
+                        if _SS.get(_rm_confirm_key):
+                            st.warning(f"Remove **{_tk}** from this session?")
+                            _rc1, _rc2 = st.columns(2)
+                            with _rc1:
+                                if st.button("Yes, remove", key=f"_rm_yes_{_tk}", type="primary"):
+                                    _SS.cp_data.pop(_tk, None)
+                                    _SS[_rm_confirm_key] = False
+                                    _SS.cp_msgs.append({"role": "assistant",
+                                        "content": f"I've removed {_tk} from the analysis. We're now focusing on: {', '.join(k for k in _SS.cp_data if not _SS.cp_data[k].get('error', False))}."})
+                                    st.rerun()
+                            with _rc2:
+                                if st.button("Cancel", key=f"_rm_no_{_tk}"):
+                                    _SS[_rm_confirm_key] = False
+                                    st.rerun()
 
-                # Price chart — always available once data loaded, inside expander
-                if not _td.get('error'):
-                    with st.expander("📈 Price & Technical Analysis"):
-                        import pandas as _pd_ch, plotly.graph_objects as _go_ch
-                        from plotly.subplots import make_subplots as _msp
-                        import numpy as _np_ch
-                        if _stage in ('discovery', 'confirm', 'fundamental'):
-                            st.caption("Chart available — technical interpretation unlocked at valuation stage.")
-                        # Period selector
-                        _per_key = f"_cht_per_{_tk}"
-                        _per_opts = ['1W','1M','3M','YTD','1Y','5Y']
-                        _per_cols = st.columns(len(_per_opts))
-                        for _pi, _po in enumerate(_per_opts):
-                            with _per_cols[_pi]:
-                                if st.button(_po, key=f"_pb_{_tk}_{_po}",
-                                             use_container_width=True,
-                                             type="primary" if _SS.get(_per_key,'1Y')==_po else "secondary"):
-                                    _SS[_per_key] = _po
-                        _sel_per = _SS.get(_per_key, '1Y')
-                        # Fetch history for selected period
-                        _hist_cache_key = f"_hist_{_tk}_{_sel_per}"
-                        if _hist_cache_key not in _SS:
-                            try:
-                                import yfinance as _yf_ch
-                                _yf_per_map = {'1W':'5d','1M':'1mo','3M':'3mo','YTD':'ytd','1Y':'1y','5Y':'5y'}
-                                _raw_h = _yf_ch.Ticker(_tk).history(period=_yf_per_map[_sel_per], interval='1d', auto_adjust=True)
-                                _SS[_hist_cache_key] = _raw_h if not _raw_h.empty else _td.get('hist')
-                            except Exception:
-                                _SS[_hist_cache_key] = _td.get('hist')
-                        _h = _SS.get(_hist_cache_key)
-                        if _h is None:
-                            _h = _td.get('hist')
-                        if _h is not None and not _h.empty:
-                            _ch_df = _h[['Close']].copy()
-                            _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
-                            _ch_df['MA20']  = _ch_df['Close'].rolling(20).mean()
-                            _ch_df['MA50']  = _ch_df['Close'].rolling(50).mean()
-                            _ch_df['MA200'] = _ch_df['Close'].rolling(200).mean()
-                            _delta = _ch_df['Close'].diff()
-                            _gain  = _delta.clip(lower=0).rolling(14).mean()
-                            _loss  = (-_delta.clip(upper=0)).rolling(14).mean()
-                            _rs    = _gain / _loss.replace(0, _np_ch.nan)
-                            _ch_df['RSI']    = 100 - 100 / (1 + _rs)
-                            _ema12 = _ch_df['Close'].ewm(span=12, adjust=False).mean()
-                            _ema26 = _ch_df['Close'].ewm(span=26, adjust=False).mean()
-                            _ch_df['MACD']   = _ema12 - _ema26
-                            _ch_df['Signal'] = _ch_df['MACD'].ewm(span=9, adjust=False).mean()
-                            _ch_df['Hist']   = _ch_df['MACD'] - _ch_df['Signal']
+                    # Price chart — always available once data loaded, inside expander
+                    if not _td.get('error'):
+                        with st.expander("📈 Price & Technical Analysis"):
+                            import pandas as _pd_ch, plotly.graph_objects as _go_ch
+                            from plotly.subplots import make_subplots as _msp
+                            import numpy as _np_ch
+                            if _stage in ('discovery', 'confirm', 'fundamental'):
+                                st.caption("Chart available — technical interpretation unlocked at valuation stage.")
+                            # Period selector
+                            _per_key = f"_cht_per_{_tk}"
+                            _per_opts = ['1W','1M','3M','YTD','1Y','5Y']
+                            _per_cols = st.columns(len(_per_opts))
+                            for _pi, _po in enumerate(_per_opts):
+                                with _per_cols[_pi]:
+                                    if st.button(_po, key=f"_pb_{_tk}_{_po}",
+                                                 use_container_width=True,
+                                                 type="primary" if _SS.get(_per_key,'1Y')==_po else "secondary"):
+                                        _SS[_per_key] = _po
+                            _sel_per = _SS.get(_per_key, '1Y')
+                            # Fetch history for selected period
+                            _hist_cache_key = f"_hist_{_tk}_{_sel_per}"
+                            if _hist_cache_key not in _SS:
+                                try:
+                                    import yfinance as _yf_ch
+                                    _yf_per_map = {'1W':'5d','1M':'1mo','3M':'3mo','YTD':'ytd','1Y':'1y','5Y':'5y'}
+                                    _raw_h = _yf_ch.Ticker(_tk).history(period=_yf_per_map[_sel_per], interval='1d', auto_adjust=True)
+                                    _SS[_hist_cache_key] = _raw_h if not _raw_h.empty else _td.get('hist')
+                                except Exception:
+                                    _SS[_hist_cache_key] = _td.get('hist')
+                            _h = _SS.get(_hist_cache_key)
+                            if _h is None:
+                                _h = _td.get('hist')
+                            if _h is not None and not _h.empty:
+                                _ch_df = _h[['Close']].copy()
+                                _ch_df.index = _pd_ch.to_datetime(_ch_df.index).tz_localize(None)
+                                _ch_df['MA20']  = _ch_df['Close'].rolling(20).mean()
+                                _ch_df['MA50']  = _ch_df['Close'].rolling(50).mean()
+                                _ch_df['MA200'] = _ch_df['Close'].rolling(200).mean()
+                                _delta = _ch_df['Close'].diff()
+                                _gain  = _delta.clip(lower=0).rolling(14).mean()
+                                _loss  = (-_delta.clip(upper=0)).rolling(14).mean()
+                                _rs    = _gain / _loss.replace(0, _np_ch.nan)
+                                _ch_df['RSI']    = 100 - 100 / (1 + _rs)
+                                _ema12 = _ch_df['Close'].ewm(span=12, adjust=False).mean()
+                                _ema26 = _ch_df['Close'].ewm(span=26, adjust=False).mean()
+                                _ch_df['MACD']   = _ema12 - _ema26
+                                _ch_df['Signal'] = _ch_df['MACD'].ewm(span=9, adjust=False).mean()
+                                _ch_df['Hist']   = _ch_df['MACD'] - _ch_df['Signal']
 
-                            def _build_chart(_df, _ht, _show_rsi, _show_macd):
-                                _rows  = 1 + (1 if _show_rsi else 0) + (1 if _show_macd else 0)
-                                _row_h = [0.6] if _rows==1 else ([0.5,0.25,0.25] if _rows==3 else [0.6,0.4])
-                                _sp_t  = [_tk] + (['RSI(14)'] if _show_rsi else []) + (['MACD(12,26,9)'] if _show_macd else [])
-                                _fig   = _msp(rows=_rows, cols=1, shared_xaxes=True,
-                                              vertical_spacing=0.04, row_heights=_row_h, subplot_titles=_sp_t)
-                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Close'],
-                                    name='Price', line=dict(color='#10B981',width=1.5),
-                                    hovertemplate='%{x|%d %b %Y}<br>%{y:.2f}<extra></extra>'), row=1, col=1)
-                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA20'],
-                                    name='MA20', line=dict(color='#F59E0B',width=1,dash='dot'),
-                                    hovertemplate='MA20: %{y:.2f}<extra></extra>'), row=1, col=1)
-                                _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA50'],
-                                    name='MA50', line=dict(color='#818CF8',width=1,dash='dot'),
-                                    hovertemplate='MA50: %{y:.2f}<extra></extra>'), row=1, col=1)
-                                if len(_df) >= 200:
-                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA200'],
-                                        name='MA200', line=dict(color='#F472B6',width=1,dash='dash'),
-                                        hovertemplate='MA200: %{y:.2f}<extra></extra>'), row=1, col=1)
-                                _cur_row = 2
-                                if _show_rsi:
-                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['RSI'],
-                                        name='RSI', line=dict(color='#38BDF8',width=1.2),
-                                        hovertemplate='RSI: %{y:.1f}<extra></extra>'), row=_cur_row, col=1)
-                                    _fig.add_hline(y=70, line_dash='dot', line_color='#ef4444', line_width=0.8, row=_cur_row, col=1)
-                                    _fig.add_hline(y=30, line_dash='dot', line_color='#22c55e', line_width=0.8, row=_cur_row, col=1)
-                                    _fig.update_yaxes(range=[0,100], row=_cur_row, col=1, tickfont=dict(size=8))
-                                    _cur_row += 1
-                                if _show_macd:
-                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MACD'],
-                                        name='MACD', line=dict(color='#10B981',width=1.2),
-                                        hovertemplate='MACD: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
-                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Signal'],
-                                        name='Signal', line=dict(color='#F59E0B',width=1,dash='dot'),
-                                        hovertemplate='Signal: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
-                                    _bar_colors = ['#22c55e' if v >= 0 else '#ef4444' for v in _df['Hist'].fillna(0)]
-                                    _fig.add_trace(_go_ch.Bar(x=_df.index, y=_df['Hist'],
-                                        name='Histogram', marker_color=_bar_colors, opacity=0.6,
-                                        hovertemplate='Hist: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
-                                _fig.update_layout(
-                                    height=_ht, margin=dict(l=0,r=0,t=20,b=0),
-                                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                    font=dict(size=9, color='#94A3B8'),
-                                    legend=dict(orientation='h', yanchor='bottom', y=1.02,
-                                                font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
-                                    hovermode='x unified', showlegend=True)
-                                _fig.update_xaxes(showgrid=False, tickfont=dict(size=8))
-                                _fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)',
-                                                  tickfont=dict(size=8), row=1, col=1)
-                                return _fig
+                                def _build_chart(_df, _ht, _show_rsi, _show_macd):
+                                    _rows  = 1 + (1 if _show_rsi else 0) + (1 if _show_macd else 0)
+                                    _row_h = [0.6] if _rows==1 else ([0.5,0.25,0.25] if _rows==3 else [0.6,0.4])
+                                    _sp_t  = [_tk] + (['RSI(14)'] if _show_rsi else []) + (['MACD(12,26,9)'] if _show_macd else [])
+                                    _fig   = _msp(rows=_rows, cols=1, shared_xaxes=True,
+                                                  vertical_spacing=0.04, row_heights=_row_h, subplot_titles=_sp_t)
+                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Close'],
+                                        name='Price', line=dict(color='#10B981',width=1.5),
+                                        hovertemplate='%{x|%d %b %Y}<br>%{y:.2f}<extra></extra>'), row=1, col=1)
+                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA20'],
+                                        name='MA20', line=dict(color='#F59E0B',width=1,dash='dot'),
+                                        hovertemplate='MA20: %{y:.2f}<extra></extra>'), row=1, col=1)
+                                    _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA50'],
+                                        name='MA50', line=dict(color='#818CF8',width=1,dash='dot'),
+                                        hovertemplate='MA50: %{y:.2f}<extra></extra>'), row=1, col=1)
+                                    if len(_df) >= 200:
+                                        _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MA200'],
+                                            name='MA200', line=dict(color='#F472B6',width=1,dash='dash'),
+                                            hovertemplate='MA200: %{y:.2f}<extra></extra>'), row=1, col=1)
+                                    _cur_row = 2
+                                    if _show_rsi:
+                                        _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['RSI'],
+                                            name='RSI', line=dict(color='#38BDF8',width=1.2),
+                                            hovertemplate='RSI: %{y:.1f}<extra></extra>'), row=_cur_row, col=1)
+                                        _fig.add_hline(y=70, line_dash='dot', line_color='#ef4444', line_width=0.8, row=_cur_row, col=1)
+                                        _fig.add_hline(y=30, line_dash='dot', line_color='#22c55e', line_width=0.8, row=_cur_row, col=1)
+                                        _fig.update_yaxes(range=[0,100], row=_cur_row, col=1, tickfont=dict(size=8))
+                                        _cur_row += 1
+                                    if _show_macd:
+                                        _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['MACD'],
+                                            name='MACD', line=dict(color='#10B981',width=1.2),
+                                            hovertemplate='MACD: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                        _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Signal'],
+                                            name='Signal', line=dict(color='#F59E0B',width=1,dash='dot'),
+                                            hovertemplate='Signal: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                        _bar_colors = ['#22c55e' if v >= 0 else '#ef4444' for v in _df['Hist'].fillna(0)]
+                                        _fig.add_trace(_go_ch.Bar(x=_df.index, y=_df['Hist'],
+                                            name='Histogram', marker_color=_bar_colors, opacity=0.6,
+                                            hovertemplate='Hist: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                    _fig.update_layout(
+                                        height=_ht, margin=dict(l=0,r=0,t=20,b=0),
+                                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                        font=dict(size=9, color='#94A3B8'),
+                                        legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                                                    font=dict(size=8), bgcolor='rgba(0,0,0,0)'),
+                                        hovermode='x unified', showlegend=True)
+                                    _fig.update_xaxes(showgrid=False, tickfont=dict(size=8))
+                                    _fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)',
+                                                      tickfont=dict(size=8), row=1, col=1)
+                                    return _fig
 
-                            # Chart: Price + RSI by default; MACD added via checkbox
-                            _macd_key = f"_show_macd_{_tk}"
-                            _show_macd_cb = st.checkbox("Show MACD", key=_macd_key, value=False)
-                            _chart_h = 480 if _show_macd_cb else 340
-                            _main_fig = _build_chart(_ch_df, _chart_h, _show_rsi=True, _show_macd=_show_macd_cb)
-                            st.plotly_chart(_main_fig, use_container_width=True,
-                                            config={"displayModeBar": True,
-                                                    "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
-                                            key=f"_cpcht_{_tk}_{_sel_per}_{int(_show_macd_cb)}")
+                                # Chart: Price + RSI by default; MACD added via checkbox
+                                _macd_key = f"_show_macd_{_tk}"
+                                _show_macd_cb = st.checkbox("Show MACD", key=_macd_key, value=False)
+                                _chart_h = 480 if _show_macd_cb else 340
+                                _main_fig = _build_chart(_ch_df, _chart_h, _show_rsi=True, _show_macd=_show_macd_cb)
+                                st.plotly_chart(_main_fig, use_container_width=True,
+                                                config={"displayModeBar": True,
+                                                        "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
+                                                key=f"_cpcht_{_tk}_{_sel_per}_{int(_show_macd_cb)}")
 
-                # WACC sensitivity table — shown in valuation stage
-                if _stage == 'valuation' and _an.get('mc'):
-                    _mc_v = _an['mc']
-                    # Build WACC × terminal growth sensitivity grid
-                    _wacc_vals = [0.07, 0.09, 0.11]
-                    _tg_vals   = [0.01, 0.02, 0.03]
-                    _base_ps   = _an.get('dcf_ps', _mc_v.get('p50', 0))
-                    if _base_ps:
-                        st.caption("🎲 WACC × Terminal Growth sensitivity (intrinsic value per share)")
-                        _cur_price = _fv2(_ti.get('currentPrice') or _ti.get('regularMarketPrice')) or 0
-                        _sens_rows = []
-                        for _wv in _wacc_vals:
-                            _row = {}
-                            for _tgv in _tg_vals:
-                                _base_factor = (0.09 - 0.02)
-                                _adj_factor  = (_wv - _tgv)
-                                _adj_ps = _base_ps * (_base_factor / _adj_factor) if _adj_factor > 0 else _base_ps
-                                _row[f"TG {_tgv*100:.0f}%"] = round(_adj_ps, 2)
-                            _sens_rows.append((f"WACC {_wv*100:.0f}%", _row))
-                        # Render as styled HTML table (green=above price, red=below)
-                        _tg_hdrs = [f"TG {int(_tgv*100)}%" for _tgv in _tg_vals]
-                        _s_html = ['<table style="width:100%;border-collapse:collapse;font-size:0.78rem">']
-                        _s_html.append('<tr><th style="padding:4px 6px;text-align:left;color:#94A3B8;font-weight:600;border-bottom:1px solid #334155"></th>')
-                        for _th in _tg_hdrs:
-                            _s_html.append(f'<th style="padding:4px 6px;text-align:center;color:#94A3B8;font-weight:600;border-bottom:1px solid #334155">{_th}</th>')
-                        _s_html.append('</tr>')
-                        for _wlbl, _wrow in _sens_rows:
-                            _s_html.append(f'<tr><td style="padding:4px 6px;color:#CBD5E1;font-weight:600">{_wlbl}</td>')
+                    # WACC sensitivity table — shown in valuation stage
+                    if _stage == 'valuation' and _an.get('mc'):
+                        _mc_v = _an['mc']
+                        # Build WACC × terminal growth sensitivity grid
+                        _wacc_vals = [0.07, 0.09, 0.11]
+                        _tg_vals   = [0.01, 0.02, 0.03]
+                        _base_ps   = _an.get('dcf_ps', _mc_v.get('p50', 0))
+                        if _base_ps:
+                            st.caption("🎲 WACC × Terminal Growth sensitivity (intrinsic value per share)")
+                            _cur_price = _fv2(_ti.get('currentPrice') or _ti.get('regularMarketPrice')) or 0
+                            _sens_rows = []
+                            for _wv in _wacc_vals:
+                                _row = {}
+                                for _tgv in _tg_vals:
+                                    _base_factor = (0.09 - 0.02)
+                                    _adj_factor  = (_wv - _tgv)
+                                    _adj_ps = _base_ps * (_base_factor / _adj_factor) if _adj_factor > 0 else _base_ps
+                                    _row[f"TG {_tgv*100:.0f}%"] = round(_adj_ps, 2)
+                                _sens_rows.append((f"WACC {_wv*100:.0f}%", _row))
+                            # Render as styled HTML table (green=above price, red=below)
+                            _tg_hdrs = [f"TG {int(_tgv*100)}%" for _tgv in _tg_vals]
+                            _s_html = ['<table style="width:100%;border-collapse:collapse;font-size:0.78rem">']
+                            _s_html.append('<tr><th style="padding:4px 6px;text-align:left;color:#94A3B8;font-weight:600;border-bottom:1px solid #334155"></th>')
                             for _th in _tg_hdrs:
-                                _cell_v = _wrow.get(_th, 0)
-                                if _cur_price and _cell_v > _cur_price * 1.10:
-                                    _bg = '#14532d'; _fg = '#86efac'
-                                elif _cur_price and _cell_v > _cur_price:
-                                    _bg = '#166534'; _fg = '#bbf7d0'
-                                elif _cur_price and _cell_v < _cur_price * 0.90:
-                                    _bg = '#7f1d1d'; _fg = '#fca5a5'
-                                elif _cur_price and _cell_v < _cur_price:
-                                    _bg = '#991b1b'; _fg = '#fecaca'
-                                else:
-                                    _bg = '#1e293b'; _fg = '#CBD5E1'
-                                _s_html.append(f'<td style="padding:4px 6px;text-align:center;background:{_bg};color:{_fg};border-radius:3px">{_cell_v:.2f}</td>')
+                                _s_html.append(f'<th style="padding:4px 6px;text-align:center;color:#94A3B8;font-weight:600;border-bottom:1px solid #334155">{_th}</th>')
                             _s_html.append('</tr>')
-                        _s_html.append('</table>')
-                        st.markdown(''.join(_s_html), unsafe_allow_html=True)
-                        if _cur_price:
-                            st.caption(f"Green = above current price ({_cur_price:.2f})  |  Red = below current price")
+                            for _wlbl, _wrow in _sens_rows:
+                                _s_html.append(f'<tr><td style="padding:4px 6px;color:#CBD5E1;font-weight:600">{_wlbl}</td>')
+                                for _th in _tg_hdrs:
+                                    _cell_v = _wrow.get(_th, 0)
+                                    if _cur_price and _cell_v > _cur_price * 1.10:
+                                        _bg = '#14532d'; _fg = '#86efac'
+                                    elif _cur_price and _cell_v > _cur_price:
+                                        _bg = '#166534'; _fg = '#bbf7d0'
+                                    elif _cur_price and _cell_v < _cur_price * 0.90:
+                                        _bg = '#7f1d1d'; _fg = '#fca5a5'
+                                    elif _cur_price and _cell_v < _cur_price:
+                                        _bg = '#991b1b'; _fg = '#fecaca'
+                                    else:
+                                        _bg = '#1e293b'; _fg = '#CBD5E1'
+                                    _s_html.append(f'<td style="padding:4px 6px;text-align:center;background:{_bg};color:{_fg};border-radius:3px">{_cell_v:.2f}</td>')
+                                _s_html.append('</tr>')
+                            _s_html.append('</table>')
+                            st.markdown(''.join(_s_html), unsafe_allow_html=True)
+                            if _cur_price:
+                                st.caption(f"Green = above current price ({_cur_price:.2f})  |  Red = below current price")
 
     # Report download (shows below cards when report generated)
     if _stage == 'report' and _SS.cp_report:
