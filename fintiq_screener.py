@@ -4412,13 +4412,19 @@ YOUR JOB IN THIS STAGE:
 3. Revenue trajectory: reference the historical CAGR from the data above. Is growth accelerating or decelerating?
 4. Margin quality: show historical operating margin trend. Is it expanding or compressing? Why?
 5. ROIC vs cost of capital: is the business creating or destroying value? Reference historical ROIC from data above.
-6. Balance sheet: D/E and interest coverage — can they fund growth without dilution?
+6. Balance sheet & capital allocation: D/E, interest coverage, and BUYBACK PROGRAMME (MANDATORY):
    D/E ANOMALY FLAG: If D/E > 10x, immediately flag this to the user: "⚠️ D/E ratio of X is unusually high — this typically signals near-zero or negative book equity from aggressive share buybacks, not traditional leverage. Re-frame: look at net debt/EBITDA and interest coverage instead, as the D/E ratio becomes meaningless here. Companies like [Apple, Domino's] run negative book equity by design." Never present an extreme D/E ratio without this context.
+   BUYBACK ANALYSIS (always discuss this — it directly affects EPS growth and shareholder returns):
+   - State whether the company has an active buyback programme and its scale
+   - Buyback yield = annual repurchase / market cap — compare to dividend yield; combined = total cash yield
+   - Mechanical EPS effect: if share count is declining X%pa, EPS grows X% faster than net income — retail investors often miss this and double-count growth
+   - Quality check: is the buyback funded from FCF (sustainable) or debt (increases leverage risk)?
+   - Conviction check: is management buying back shares when they're cheap or when they're expensive? Buybacks above intrinsic value destroy value for remaining shareholders.
 7. FAMA-FRENCH FACTOR ANALYSIS (MANDATORY): You MUST discuss the FF4 factor signal from the data above.
    - State the signal (STRONG ALPHA / MARGINAL / AVOID) and what it means in plain English
    - Explain the alpha, beta, SMB, HML, MOM loadings in context
    - Flag: "This is US-calibrated data — treat directionally for non-US stocks. Updated weekly."
-   - If factor data unavailable: explain that the stock is not in the pre-screened factor universe (typically smaller/mid-caps or stocks that failed data quality filters), but DO NOT treat this as a negative signal. Instead, compute directional factor exposure from beta (market risk), market cap context (SMB), and P/B ratio (HML) as a qualitative substitute.
+   - If factor data unavailable: DO NOT say "not available" and move on. Instead, state clearly WHY it is unavailable — e.g. "CRM is not in the pre-screened FF4 universe — this typically means the stock failed the data quality filter (requires 12+ months of clean price history with no gaps) or is too recently listed. This is a data coverage limitation, NOT a negative signal about the stock." Then build a qualitative proxy: (a) Beta from stock data → market risk loading; (b) Market cap → SMB loading direction (large-cap tilts negative SMB = no small-cap premium); (c) P/B ratio → HML loading (high P/B = growth tilt = negative HML); (d) 12-month momentum → MOM loading. Present this as: "Directional factor proxy (not a regression): Market beta X.XX | SMB: [large-cap, likely −ve] | HML: [P/B Xx → growth tilt, −ve HML] | MOM: [+/−, trailing 12m return]". Always be explicit that this is a qualitative proxy, not a run regression.
    - NEVER simply say "not available" and move on — always give the user something analytical about factor exposure.
 8. Compare to sector/industry peers: reference the sector context, typical margins and valuations for this industry. If the user asks for live peer data you don't have, offer to add those tickers to the session.
 9. SHORT INTEREST & POSITIONING: Comment on short interest % (from data if available) — a heavily shorted stock has squeeze potential but also signals bearish informed money.
@@ -4460,24 +4466,71 @@ Present these historical figures from the data above so the user has an informed
 - D/E ratio: X (treat as constant for WACC)
 Say: "These are your anchor points. Now let's think about what's realistic going forward."
 
-STEP 2 — ASK FOR ALL DCF ASSUMPTIONS IN ONE MESSAGE:
-Ask the user to confirm/adjust these assumptions for all three phases in a single structured ask:
-"To run the DCF I need your view on five inputs across three periods. I've pre-filled from historical data — push back on any you disagree with:
+STEP 2 — WACC BUILD + MULTIPLES + BUYBACKS, THEN ASK FOR DCF ASSUMPTIONS:
+
+Before asking for DCF assumptions, present three things in this order:
+
+A) WACC BUILD (show the derivation explicitly — never just state a number):
+"Building WACC from first principles:
+  Risk-free rate (Rf): X% (current 10Y Treasury/Gilt yield)
+  Equity Risk Premium (ERP): X% (Damodaran US/UK estimate)
+  Beta: X (from stock data above)
+  Size premium: X% (0% for large-cap, +1–2% for mid-cap, +3–5% for small-cap)
+  Cost of Equity = Rf + β × ERP + Size premium = X%
+  Cost of Debt (pre-tax): X% (from interest expense / total debt)
+  After-tax cost of debt: X% (×(1−tax rate))
+  D/V = X%, E/V = X% (market-value weights from D/E ratio above)
+  WACC = E/V × Ke + D/V × Kd(1−t) = X%"
+Always show this working. Never state WACC without the build.
+
+B) VALUATION MULTIPLES VS PEERS (produce a comparison table):
+"[Company] currently trades at:
+  | Multiple | [Company] | Sector Avg | 5yr Avg [Company] | Premium / Discount |
+  |---|---|---|---|---|
+  | Trailing P/E | Xx | Xx | Xx | +/-X% |
+  | Forward P/E | Xx | Xx | Xx | +/-X% |
+  | EV/EBITDA | Xx | Xx | Xx | +/-X% |
+  | P/FCF | Xx | Xx | Xx | +/-X% |
+  | EV/Revenue | Xx | Xx | Xx | +/-X% |
+Use the sector context from the data above for sector averages. If 5yr historical average is unavailable, note it and use directional knowledge. The key insight: is [Company] cheap or expensive on each metric, and are those metrics consistent with each other?"
+
+C) BUYBACK PROGRAMME ANALYSIS:
+"[Company]'s capital return programme: Has management been buying back shares? If yes:
+  - State the buyback programme size and timeline (e.g. '$10bn over 3 years')
+  - Calculate the buyback yield: (annual buyback spend / market cap) = X%
+  - Mechanical EPS accretion: with share count declining ~X%pa, EPS grows X% faster than net income — flag this to user so they don't double-count organic growth
+  - Is the buyback funded from FCF (good) or debt (check leverage trajectory)?
+  - Is management buying back at intrinsic value or above it? (buying above IV destroys value)
+If no meaningful buyback programme: note it and comment on whether the FCF is being reinvested, distributed as dividends, or accumulated on the balance sheet."
+
+Then ask for DCF assumptions:
+"To run the DCF I need your view on seven inputs across three periods. I've pre-filled from historical data and the WACC build above — push back on any you disagree with:
 
 Phase 1 (Yrs 1-3 — near term): Revenue growth __% | Operating margin __%
 Phase 2 (Yrs 4-7 — mid term): Revenue growth __% | Operating margin __%
 Phase 3 (Yrs 8-10 — long term): Revenue growth __% | Operating margin __%
-Investment rate: __% (how much of operating profit reinvested — from historical avg above)
-WACC: __% (your cost of capital assumption — I'd suggest X% based on beta and market)
+Investment rate: __% (how much of NOPAT reinvested — from historical avg above)
+WACC: __% (from build above — push back if you disagree with any component)
 Terminal growth rate: __% (long-run GDP-like, typically 2-3%)
+RONIC: __% (Return on New Invested Capital in terminal period. RONIC > WACC = growth creates value; RONIC = WACC = growth is neutral)
+
+Note: Terminal Value uses the McKinsey Value Driver Formula: TV = NOPAT(yr11) × (1 − g/RONIC) / (WACC − g).
 
 Happy to discuss any of these before we run the numbers."
 
 STEP 3 — WHEN USER CONFIRMS (SPLIT INTO TWO TURNS — MANDATORY):
 
 TURN 3A — BASE CASE ONLY (produce this first, then stop and say "Continuing with scenarios and WACC sensitivity in my next reply →"):
-- State assumptions clearly: "Running with: Phase 1 X%/Y% margin, Phase 2 X%/Y%, Phase 3 X%/Y%, WACC Z%, TGR W%"
-- Intrinsic value per share (RANGE, not point estimate): "Base case intrinsic value: $X–$Y per share"
+- State assumptions clearly: "Running with: Phase 1 X%/Y% margin, Phase 2 X%/Y%, Phase 3 X%/Y%, Investment rate Z%, WACC W%, TGR V%, RONIC R%"
+- TERMINAL VALUE — USE McKINSEY VALUE DRIVER FORMULA (MANDATORY, never use Gordon Growth as default):
+  TV = NOPAT(yr11) × (1 − g/RONIC) / (WACC − g)
+  Where: NOPAT(yr11) = Year 10 Revenue × (1+g) × long-run margin × (1−tax rate)
+         RONIC = assume 15% unless user has specified otherwise (steady-state SaaS/software) or 12% for mature industrials/cyclicals
+         Reinvestment rate in terminal period = g / RONIC
+  Show the calculation explicitly: "TV = $Xbn × (1 − g/RONIC) / (WACC − g) = $Ybn"
+  Then: PV of TV = TV / (1+WACC)^10
+  Then: EV = PV(explicit FCFs Yr1-10) + PV(TV); Equity Value = EV + net cash; Intrinsic Value = Equity Value / shares outstanding
+- State intrinsic value per share (RANGE, not point estimate): "McKinsey base case intrinsic value: $X–$Y per share (RONIC ±2pp sensitivity)"
 - Current price vs intrinsic value: "At $[price], the stock trades at [X% premium / X% discount] to base case"
 - MONTE CARLO: "Stress-testing 4,000 scenarios — 80% of outcomes land between $X and $Y. The stock at $[price] sits [above/below/within] that range."
 
@@ -4518,9 +4571,18 @@ YOUR JOB — BE SPECIFIC, NOT GENERIC:
    - Ideal entry zone (price level where risk/reward is best)
    - Stop-loss reference point
    - Target exit zone based on resistance
-7. CATALYSTS & EVENT RISK: What near-term events (earnings, macro, sector events) could trigger the move?
+7. OPTIONS MARKET INTELLIGENCE (MANDATORY — produce this before the Why Now? test):
+   The options market is the smartest money in the room — it prices in what equity investors miss. Always cover:
+   - IMPLIED VOLATILITY & IV RANK: "Current IV is approximately X% (from the stock's options chain context). IV rank of Y% means current IV is at the Yth percentile of its 52-week range — [low = options cheap, good to buy protection / high = options expensive, smart money is hedging]."
+   - EXPECTED MOVE: "The at-the-money straddle implies a ±X% move into the next earnings print (approx. $X to $Y range around current price of $Z). This is the market's best estimate of the binary risk."
+   - PUT/CALL SKEW: "Options skew tells us the direction of institutional hedging. If put IV > call IV (negative skew / puts bid up): smart money is paying for downside protection — treat as a bearish lean. If call IV > put IV (positive skew / calls bid): positioning is bullish, potential squeeze fuel. Current skew is [description]."
+   - SHORT-DATED vs LONG-DATED IV: "If near-term IV > long-term IV (contango): market is pricing near-term event risk (earnings, catalyst). If inverted (backwardation): structural concern rather than event risk."
+   - POSITIONING IMPLICATION: "Combined read: [options market is pricing X, which [confirms/contradicts] the technical setup. If going long, IV rank of Y means option premium is [cheap/expensive] — [buying calls is/isn't] good value vs historical cost of protection]."
+   If specific options data is not available from the live data feed: state this explicitly — "Live options chain data is not available in this session — the following is based on typical options market patterns for this type of stock and sector, treat as directional only." Never present generic guesses as live data.
+
+8. CATALYSTS & EVENT RISK: What near-term events (earnings, macro, sector events) could trigger the move?
    CRITICAL: If earnings date is available in the data above, always flag it: "⚠️ Earnings in X days — this is a binary event. The chart setup may be invalidated overnight by a miss. Size accordingly or wait for the print."
-8. "WHY NOW?" IC TEST (MANDATORY — do this for every stock before ending the technical stage):
+9. "WHY NOW?" IC TEST (MANDATORY — do this for every stock before ending the technical stage):
    Before moving on, explicitly answer this structured question — do not skip it:
    "The 'Why Now?' test for [ticker]:
    • Trend: [Bullish / Neutral / Bearish]
@@ -4531,7 +4593,7 @@ YOUR JOB — BE SPECIFIC, NOT GENERIC:
    • Stop / Invalidation: [The price level where the technical thesis is wrong — NOT a dollar loss amount]
    • R/R: [Estimated upside to target ÷ distance to stop — flag if < 2:1]
    If Entry quality is C or R/R is below 2:1 → tell the user plainly: 'The chart does not support a good entry right now — here is what to wait for: [specific condition].'"
-9. TECHNICAL SETUP SCORE (MANDATORY — produce this after the Why Now? test):
+10. TECHNICAL SETUP SCORE (MANDATORY — produce this after the Why Now? test):
    Output a structured scoring table. Score each factor 1–5.
    "**Technical Setup Score — [Ticker]**
    | Factor | Score | Signal |
@@ -4549,8 +4611,8 @@ YOUR JOB — BE SPECIFIC, NOT GENERIC:
    | **Total** | **/50** | |"
    Interpret: 45–50 = exceptional setup, 38–44 = high quality, 30–37 = watchlist, <30 = wait.
    If total <30: tell the user explicitly "The technical setup does not support entry today — wait for [specific condition]."
-10. Ask: "The chart suggests [summary]. Given your [horizon] horizon, does the entry zone make sense with your thesis?"
-11. END: "We've covered quality, value, and timing. Let me pull this together into your watchlist."
+11. Ask: "The chart suggests [summary]. Given your [horizon] horizon, does the entry zone make sense with your thesis?"
+12. END: "We've covered quality, value, and timing. Let me pull this together into your watchlist."
 Current watchlist: {_wl} ({len(_wl)}/{_max} slots)""",
 
         'finalise': f"""STAGE: Finalise Watchlist
@@ -4842,112 +4904,1055 @@ def _comp_generate_report(watchlist: list, data: dict, ctx: dict, analyses: dict
 
 
 
-def _comp_generate_report_pdf(watchlist: list, data: dict, ctx: dict, analyses: dict) -> bytes | None:
-    """Generate a clean PDF research report using reportlab. Returns bytes or None on failure."""
+def _comp_generate_report_pdf(watchlist: list, data: dict, ctx: dict, analyses: dict,
+                              msgs: list | None = None) -> bytes | None:
+    """Generate an investment-bank-quality equity research PDF. Returns bytes or None on failure."""
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import cm
+        from reportlab.lib.units import cm, mm
         from reportlab.lib import colors
         from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                        Table, TableStyle, HRFlowable)
-        from reportlab.lib.enums import TA_LEFT, TA_CENTER
-        import io
+                                        Table, TableStyle, HRFlowable,
+                                        PageBreak, KeepTogether)
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+        from reportlab.platypus.flowables import Flowable
+        import io, re
         from datetime import datetime as _dt
 
+        _PAGE_W, _PAGE_H = A4
+        _NAVY  = colors.HexColor('#0F2B4C')
+        _GOLD  = colors.HexColor('#C9A84C')
+        _BLUE  = colors.HexColor('#1D4ED8')
+        _LGRAY = colors.HexColor('#F3F4F6')
+        _MGRAY = colors.HexColor('#D1D5DB')
+        _DGRAY = colors.HexColor('#374151')
+        _GREEN = colors.HexColor('#166534')
+        _RED   = colors.HexColor('#991B1B')
+        _LGRN  = colors.HexColor('#DCFCE7')
+        _LRED  = colors.HexColor('#FEE2E2')
+        _WHITE = colors.white
+
         _buf = io.BytesIO()
-        _doc = SimpleDocTemplate(_buf, pagesize=A4,
-                                  leftMargin=2*cm, rightMargin=2*cm,
-                                  topMargin=2*cm, bottomMargin=2*cm)
-        _styles = getSampleStyleSheet()
 
-        # ── Custom styles ──
-        _h1 = ParagraphStyle('H1', parent=_styles['Heading1'], fontSize=18, textColor=colors.HexColor('#1E3A5F'), spaceAfter=4)
-        _h2 = ParagraphStyle('H2', parent=_styles['Heading2'], fontSize=13, textColor=colors.HexColor('#1E3A5F'), spaceBefore=14, spaceAfter=4)
-        _h3 = ParagraphStyle('H3', parent=_styles['Heading3'], fontSize=11, textColor=colors.HexColor('#374151'), spaceBefore=8, spaceAfter=3)
-        _body = ParagraphStyle('Body', parent=_styles['Normal'], fontSize=9, leading=14, textColor=colors.HexColor('#1F2937'))
-        _muted = ParagraphStyle('Muted', parent=_styles['Normal'], fontSize=8, textColor=colors.HexColor('#6B7280'), leading=12)
-        _badge = ParagraphStyle('Badge', parent=_styles['Normal'], fontSize=9, textColor=colors.HexColor('#1D4ED8'), leading=12)
+        # ── Page template with header/footer ──────────────────────────
+        _now_str = _dt.now().strftime("%d %B %Y")
+        _now_full = _dt.now().strftime("%d %B %Y, %H:%M GMT")
 
-        _story = []
-        _now = _dt.now().strftime("%d %B %Y, %H:%M GMT")
+        def _on_page(canvas, doc):
+            canvas.saveState()
+            # Top gold rule
+            canvas.setStrokeColor(_GOLD)
+            canvas.setLineWidth(2)
+            canvas.line(1.5*cm, _PAGE_H - 1.2*cm, _PAGE_W - 1.5*cm, _PAGE_H - 1.2*cm)
+            # Header text
+            canvas.setFont('Helvetica-Bold', 7)
+            canvas.setFillColor(_NAVY)
+            canvas.drawString(1.5*cm, _PAGE_H - 1.0*cm, "FINTIQ RESEARCH")
+            canvas.setFont('Helvetica', 7)
+            canvas.setFillColor(_DGRAY)
+            canvas.drawRightString(_PAGE_W - 1.5*cm, _PAGE_H - 1.0*cm,
+                                   f"AI Equity Research  |  {_now_str}")
+            # Bottom rule + page number
+            canvas.setStrokeColor(_MGRAY)
+            canvas.setLineWidth(0.5)
+            canvas.line(1.5*cm, 1.2*cm, _PAGE_W - 1.5*cm, 1.2*cm)
+            canvas.setFont('Helvetica', 7)
+            canvas.setFillColor(_DGRAY)
+            canvas.drawCentredString(_PAGE_W / 2, 0.8*cm, f"Page {doc.page}")
+            canvas.drawString(1.5*cm, 0.8*cm,
+                              "NOT FINANCIAL ADVICE — FOR EDUCATIONAL PURPOSES ONLY")
+            canvas.restoreState()
 
-        # ── Header ──
-        _story.append(Paragraph("Fintiq Research Report", _h1))
-        _story.append(Paragraph(f"Generated {_now} · AI Investment Companion", _muted))
-        _story.append(Spacer(1, 8))
-        _horizon = ctx.get('investment_horizon', 'Not specified')
-        _risk    = ctx.get('risk_appetite', 'Not specified')
-        _story.append(Paragraph(f"<b>Horizon:</b> {_horizon} &nbsp;·&nbsp; <b>Risk appetite:</b> {_risk}", _body))
-        _story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#FBBF24'), spaceAfter=12))
+        _doc = SimpleDocTemplate(
+            _buf, pagesize=A4,
+            leftMargin=1.8*cm, rightMargin=1.8*cm,
+            topMargin=2.2*cm, bottomMargin=1.8*cm,
+            onFirstPage=_on_page, onLaterPages=_on_page)
 
-        # ── Stock cards ──
-        for _tk in watchlist:
-            _d    = data.get(_tk, {})
-            _info = _d.get('info', {}) if not _d.get('error') else {}
-            _an   = analyses.get(_tk, {})
-            _pr   = _d.get('price', '—')
-            _name = _info.get('longName', _tk)
-            _sect = _info.get('sector', '—')
-            _tgt  = _info.get('targetMeanPrice', '—')
-            _pe   = _info.get('trailingPE', '—')
-            _dcf  = _an.get('dcf_str', '—')
-            _mc_lo= _an.get('mc_p25', '—')
-            _mc_hi= _an.get('mc_p75', '—')
-            _thesis  = _an.get('thesis', 'See conversation for full analysis.')
-            _entry   = _an.get('entry', '—')
-            _risk_txt= _an.get('key_risk', '—')
+        _base = getSampleStyleSheet()
 
-            _mc_str = f"${_mc_lo:.2f} – ${_mc_hi:.2f}" if isinstance(_mc_lo, float) else "—"
-            _pe_str = f"{_pe:.1f}x" if isinstance(_pe, float) else str(_pe)
-            _pr_str = f"{_pr:.2f}" if isinstance(_pr, float) else str(_pr)
-            _tgt_str = f"{_tgt:.2f}" if isinstance(_tgt, float) else str(_tgt)
+        def _sty(name, **kw):
+            return ParagraphStyle(name, parent=_base['Normal'], **kw)
 
-            _story.append(Paragraph(f"{_tk} — {_name}", _h2))
-            _story.append(Paragraph(f"<i>{_sect}</i>", _muted))
-            _story.append(Spacer(1, 6))
+        _cover_title = _sty('CT', fontSize=28, textColor=_NAVY, fontName='Helvetica-Bold',
+                             leading=34, spaceAfter=6)
+        _cover_sub   = _sty('CS', fontSize=13, textColor=_GOLD, fontName='Helvetica-Bold',
+                             leading=18, spaceAfter=4)
+        _cover_meta  = _sty('CM', fontSize=9, textColor=_DGRAY, leading=14, spaceAfter=3)
+        _sec_title   = _sty('ST', fontSize=11, textColor=_WHITE, fontName='Helvetica-Bold',
+                             leading=15, spaceBefore=14, spaceAfter=0,
+                             backColor=_NAVY, leftPadding=6, rightPadding=6,
+                             topPadding=4, bottomPadding=4)
+        _sub_title   = _sty('SuT', fontSize=10, textColor=_NAVY, fontName='Helvetica-Bold',
+                             leading=14, spaceBefore=10, spaceAfter=3)
+        _body        = _sty('B', fontSize=8.5, textColor=_DGRAY, leading=13, spaceAfter=4,
+                             alignment=TA_JUSTIFY)
+        _body_nb     = _sty('BNB', fontSize=8.5, textColor=_DGRAY, leading=13, spaceAfter=4)
+        _bullet      = _sty('BL', fontSize=8.5, textColor=_DGRAY, leading=13,
+                             leftIndent=12, firstLineIndent=-8, spaceAfter=2)
+        _muted       = _sty('Mu', fontSize=7.5, textColor=colors.HexColor('#6B7280'), leading=11)
+        _tbl_hdr     = _sty('TH', fontSize=8, textColor=_WHITE, fontName='Helvetica-Bold',
+                             leading=11, alignment=TA_CENTER)
+        _tbl_cell    = _sty('TC', fontSize=8, textColor=_DGRAY, leading=11, alignment=TA_CENTER)
+        _rec_box     = _sty('RB', fontSize=22, textColor=_WHITE, fontName='Helvetica-Bold',
+                             leading=28, alignment=TA_CENTER)
+        _rec_lbl     = _sty('RL', fontSize=8, textColor=_WHITE, leading=11, alignment=TA_CENTER)
 
-            # Metrics table
-            _tdata = [
-                ["Current Price", "Analyst Target", "Trailing P/E", "DCF Value", "Monte Carlo (P25–P75)"],
-                [_pr_str, _tgt_str, _pe_str, _dcf, _mc_str],
-            ]
-            _tbl = Table(_tdata, colWidths=[3.2*cm, 3.2*cm, 3.2*cm, 3.2*cm, 4.4*cm])
-            _tbl.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#EFF6FF')),
-                ('TEXTCOLOR',  (0,0), (-1,0), colors.HexColor('#1D4ED8')),
+        def _tbl_style(hdr_color=_NAVY, alt=True):
+            s = [
+                ('BACKGROUND', (0,0), (-1,0), hdr_color),
+                ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
                 ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
                 ('FONTSIZE',   (0,0), (-1,-1), 8),
                 ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
-                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F9FAFB')]),
-                ('BOX',        (0,0), (-1,-1), 0.5, colors.HexColor('#D1D5DB')),
-                ('INNERGRID',  (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
+                ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID',  (0,0), (-1,-1), 0.3, colors.HexColor('#E5E7EB')),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING',   (0,0), (-1,-1), 5),
+                ('RIGHTPADDING',  (0,0), (-1,-1), 5),
+            ]
+            if alt:
+                s.append(('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]))
+            return TableStyle(s)
+
+        def _fv(v):
+            try: return float(v)
+            except: return None
+
+        def _pct(v):
+            f = _fv(v)
+            return f"{f*100:.1f}%" if f is not None else "—"
+
+        def _fmt(v, dec=2, prefix=''):
+            f = _fv(v)
+            return f"{prefix}{f:,.{dec}f}" if f is not None else "—"
+
+        def _mfmt(v):  # millions/billions
+            f = _fv(v)
+            if f is None: return "—"
+            if abs(f) >= 1e9: return f"${f/1e9:.2f}B"
+            if abs(f) >= 1e6: return f"${f/1e6:.1f}M"
+            return f"${f:,.0f}"
+
+        def _currency_prefix(info):
+            curr = info.get('currency', 'USD')
+            return '£' if curr == 'GBp' else ('£' if curr == 'GBP' else
+                   ('€' if curr == 'EUR' else '$'))
+
+        def _price_fmt(v, info):
+            f = _fv(v)
+            if f is None: return "—"
+            curr = info.get('currency', 'USD')
+            if curr == 'GBp':
+                return f"£{f/100:.2f} ({f:.0f}p)"
+            sym = '£' if curr == 'GBP' else ('€' if curr == 'EUR' else '$')
+            return f"{sym}{f:.2f}"
+
+        # ── Extract conversation excerpts for qualitative sections ────
+        _conv_text = ""
+        if msgs:
+            _conv_text = "\n".join(
+                f"{'AI' if m['role']=='assistant' else 'User'}: {m['content']}"
+                for m in msgs if m.get('content'))
+
+        def _extract_section(pattern, text, default="See conversation for full analysis."):
+            m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if m:
+                snippet = m.group(0)[:800].strip()
+                snippet = re.sub(r'\*\*(.*?)\*\*', r'\1', snippet)
+                snippet = re.sub(r'\*(.*?)\*', r'\1', snippet)
+                return snippet
+            return default
+
+        _story = []
+
+        # ════════════════════════════════════════════════════════
+        # COVER PAGE
+        # ════════════════════════════════════════════════════════
+        _story.append(Spacer(1, 1.5*cm))
+
+        # Fintiq wordmark block
+        _wm_data = [[Paragraph("FINTIQ", _sty('WM', fontSize=32, textColor=_NAVY,
+                                               fontName='Helvetica-Bold', leading=36)),
+                     Paragraph("AI EQUITY RESEARCH", _sty('WS', fontSize=10, textColor=_GOLD,
+                                                           fontName='Helvetica-Bold', leading=14))]]
+        _wm_tbl = Table(_wm_data, colWidths=[8*cm, _PAGE_W - 1.8*cm - 1.8*cm - 8*cm])
+        _wm_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+            ('ALIGN',  (1,0), (1,0),  'RIGHT'),
+        ]))
+        _story.append(_wm_tbl)
+        _story.append(HRFlowable(width="100%", thickness=3, color=_GOLD, spaceAfter=20))
+
+        # One cover block per ticker
+        for _tk in watchlist:
+            _d    = data.get(_tk, {})
+            _info = _d.get('info', {}) if not _d.get('error') else {}
+            _an   = analyses.get(_tk, {})
+            _name = _info.get('longName', _tk)
+            _sect = _info.get('sector', '—')
+            _ind  = _info.get('industry', '—')
+            _pr   = _d.get('price')
+            _tgt  = _fv(_info.get('targetMeanPrice'))
+            _pe   = _fv(_info.get('trailingPE'))
+            _cpfx = _currency_prefix(_info)
+
+            # Recommendation box
+            _upside = ((_tgt/_pr - 1)*100) if _tgt and _pr else None
+            if _upside is not None:
+                if _upside >= 15:   _rec, _rec_col = "BUY",  colors.HexColor('#166534')
+                elif _upside >= 5:  _rec, _rec_col = "HOLD", colors.HexColor('#92400E')
+                elif _upside >= -5: _rec, _rec_col = "HOLD", colors.HexColor('#92400E')
+                else:               _rec, _rec_col = "SELL", colors.HexColor('#7F1D1D')
+            else:
+                _rec, _rec_col = "UNDER REVIEW", _NAVY
+
+            _cover_rec_tbl = Table(
+                [[Paragraph(_rec, _rec_box)],
+                 [Paragraph(f"Analyst Consensus Target: {_price_fmt(_tgt, _info)}", _rec_lbl)]],
+                colWidths=[4*cm])
+            _cover_rec_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), _rec_col),
+                ('TOPPADDING', (0,0), (-1,-1), 6),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+                ('ROUNDEDCORNERS', [4]),
+            ]))
+
+            _cover_info = Table([
+                [Paragraph(f"{_tk}  —  {_name}", _cover_title), _cover_rec_tbl],
+                [Paragraph(f"{_sect}  ·  {_ind}", _cover_sub), ""],
+                [Paragraph(f"Current Price: {_price_fmt(_pr, _info)}  |  "
+                           f"Trailing P/E: {_fmt(_pe, 1)}x  |  "
+                           f"Market Cap: {_mfmt(_info.get('marketCap'))}", _cover_meta), ""],
+                [Paragraph(f"Investment Horizon: {ctx.get('investment_horizon','—')}  |  "
+                           f"Risk Appetite: {ctx.get('risk_appetite','—')}  |  "
+                           f"Report Date: {_now_full}", _muted), ""],
+            ], colWidths=[_PAGE_W - 1.8*cm - 1.8*cm - 4.5*cm, 4.5*cm])
+            _cover_info.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('SPAN',   (1,0), (1,3)),
+                ('ALIGN',  (1,0), (1,0),  'RIGHT'),
+                ('VALIGN', (1,0), (1,0),  'MIDDLE'),
+            ]))
+            _story.append(_cover_info)
+            _story.append(Spacer(1, 0.3*cm))
+
+        _story.append(HRFlowable(width="100%", thickness=1, color=_MGRAY, spaceAfter=6))
+
+        # ── Table of Contents ──────────────────────────────────────────
+        _story.append(Paragraph("Contents", _sub_title))
+        _toc_items = [
+            "1.  Executive Summary & Investment Thesis",
+            "2.  Business Quality & Competitive Moat",
+            "3.  Financial Performance & Key Metrics",
+            "4.  Revenue & Margin by Segment",
+            "5.  ROIC & Earnings Quality",
+            "6.  Valuation — DCF (McKinsey Method), Monte Carlo & Multiples",
+            "7.  Sensitivity Analysis — WACC × Terminal Growth",
+            "8.  Technical Analysis & Timing",
+            "9.  Catalysts, Macro Risks & Event Calendar",
+            "10. Management, Governance & Insider Activity",
+            "11. Watchlist — Entry/Exit/Stop (Long & Short)",
+            "12. Investment Scorecard",
+            "13. Fundamental vs Technical Matrix",
+            "14. Risk Factors & Bear Case",
+            "15. Disclaimer",
+        ]
+        for _item in _toc_items:
+            _story.append(Paragraph(_item, _muted))
+        _story.append(PageBreak())
+
+        # ════════════════════════════════════════════════════════
+        # BODY — one section set per stock
+        # ════════════════════════════════════════════════════════
+        for _tk in watchlist:
+            _d    = data.get(_tk, {})
+            _info = _d.get('info', {}) if not _d.get('error') else {}
+            _an   = analyses.get(_tk, {})
+            _pr   = _d.get('price')
+            _hist = _d.get('hist')
+            _name = _info.get('longName', _tk)
+            _sect = _info.get('sector', '—')
+            _ind  = _info.get('industry', '—')
+            _cpfx = _currency_prefix(_info)
+
+            def _pi(v, label=''):  # price item
+                f = _fv(v)
+                return _price_fmt(f, _info) if f is not None else "—"
+
+            # ── helpers ──
+            def _row(label, value, bold=False):
+                lp = Paragraph(f"<b>{label}</b>" if bold else label, _body_nb)
+                vp = Paragraph(str(value), _body_nb)
+                return [lp, vp]
+
+            # Stock section header
+            _story.append(Paragraph(f"EQUITY RESEARCH  |  {_tk}  —  {_name}", _sec_title))
+            _story.append(Spacer(1, 0.2*cm))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 1 — Executive Summary & Investment Thesis
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("1.  Executive Summary & Investment Thesis", _sub_title))
+            _thesis = _an.get('thesis', '')
+            if not _thesis:
+                _thesis = _extract_section(
+                    r'(?:Summarise|full investment case|investment thesis).*?(?:\n\n|\Z)',
+                    _conv_text)
+            # Build a structured executive summary from available data
+            _tgt   = _fv(_info.get('targetMeanPrice'))
+            _upside = ((_tgt / _pr - 1) * 100) if _tgt and _pr else None
+            _pe    = _fv(_info.get('trailingPE'))
+            _fwdpe = _fv(_info.get('forwardPE'))
+            _gm    = _fv(_info.get('grossMargins'))
+            _om    = _fv(_info.get('operatingMargins'))
+            _nm    = _fv(_info.get('profitMargins'))
+            _roe   = _fv(_info.get('returnOnEquity'))
+            _roa   = _fv(_info.get('returnOnAssets'))
+            _fcf   = _fv(_info.get('freeCashflow'))
+            _rev   = _fv(_info.get('totalRevenue'))
+            _revg  = _fv(_info.get('revenueGrowth'))
+            _epsg  = _fv(_info.get('earningsGrowth'))
+            _ebit  = _fv(_info.get('ebitda'))
+            _de    = _fv(_info.get('debtToEquity'))
+            _cr    = _fv(_info.get('currentRatio'))
+            _mcap  = _fv(_info.get('marketCap'))
+            _eps   = _fv(_info.get('trailingEps'))
+            _dps   = _fv(_info.get('dividendRate'))
+            _dy    = _fv(_info.get('dividendYield'))
+            _beta  = _fv(_info.get('beta'))
+            _short = _fv(_info.get('shortPercentOfFloat'))
+            _wk52h = _fv(_info.get('fiftyTwoWeekHigh'))
+            _wk52l = _fv(_info.get('fiftyTwoWeekLow'))
+            _an_tgt_hi = _fv(_info.get('targetHighPrice'))
+            _an_tgt_lo = _fv(_info.get('targetLowPrice'))
+            _an_n   = _fv(_info.get('numberOfAnalystOpinions'))
+            _rec_mean = _info.get('recommendationMean')
+            _rec_key  = _info.get('recommendationKey', '').upper().replace('_',' ')
+            _dcf_ps   = _an.get('dcf_ps')
+            _mc_p25   = _an.get('mc_p25')
+            _mc_p75   = _an.get('mc_p75')
+            _mc_p50   = _an.get('mc_p50')
+
+            # Derive recommendation from data
+            _rec_str = _rec_key or ('BUY' if (_upside or 0) > 10 else
+                                    'HOLD' if (_upside or 0) > 0 else 'HOLD')
+            _upside_str = f"{_upside:+.1f}%" if _upside is not None else "—"
+
+            exec_rows = [
+                ["Recommendation", _rec_str, "Current Price", _price_fmt(_pr, _info)],
+                ["Analyst Target", _price_fmt(_tgt, _info),
+                 "Implied Upside", _upside_str],
+                ["Analyst Range",
+                 f"{_price_fmt(_an_tgt_lo, _info)} – {_price_fmt(_an_tgt_hi, _info)}",
+                 "# Analysts", str(int(_an_n)) if _an_n else "—"],
+                ["DCF Fair Value", _price_fmt(_dcf_ps, _info) if _dcf_ps else "—",
+                 "Monte Carlo P25–P75",
+                 (f"{_price_fmt(_mc_p25, _info)} – {_price_fmt(_mc_p75, _info)}"
+                  if _mc_p25 and _mc_p75 else "—")],
+                ["52-Week Range",
+                 f"{_price_fmt(_wk52l, _info)} – {_price_fmt(_wk52h, _info)}",
+                 "Market Cap", _mfmt(_mcap)],
+            ]
+            _exec_tbl = Table(exec_rows,
+                              colWidths=[3.8*cm, 4.5*cm, 3.8*cm, 4.5*cm])
+            _exec_tbl.setStyle(_tbl_style(_NAVY))
+            _exec_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                ('BACKGROUND', (0,1), (-1,-1), _WHITE),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                ('TEXTCOLOR', (0,0), (-1,0), _WHITE),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME', (0,1), (0,-1), 'Helvetica-Bold'),  # label cols bold
+                ('FONTNAME', (2,1), (2,-1), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (0,1), (0,-1), _NAVY),
+                ('TEXTCOLOR', (2,1), (2,-1), _NAVY),
+                ('FONTSIZE', (0,0), (-1,-1), 8),
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('BOX', (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID', (0,0), (-1,-1), 0.3, _MGRAY),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING', (0,0), (-1,-1), 6),
+                ('RIGHTPADDING', (0,0), (-1,-1), 6),
+            ]))
+            _story.append(_exec_tbl)
+            _story.append(Spacer(1, 0.3*cm))
+
+            if _thesis:
+                _story.append(Paragraph("Investment Thesis", _sub_title))
+                _story.append(Paragraph(_thesis[:1500], _body))
+            _story.append(Spacer(1, 0.15*cm))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 2 — Business Quality & Competitive Moat
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("2.  Business Quality & Competitive Moat", _sub_title))
+            _moat_txt = _extract_section(
+                r'(?:competitive moat|switching cost|moat|durable).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            _biz_txt  = _extract_section(
+                r'(?:business model|how.*make money|revenue.*subscription).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _biz_txt:
+                _story.append(Paragraph("Business Model", _sub_title))
+                _story.append(Paragraph(_biz_txt[:800], _body))
+            if _moat_txt:
+                _story.append(Paragraph("Competitive Moat", _sub_title))
+                _story.append(Paragraph(_moat_txt[:800], _body))
+            else:
+                _story.append(Paragraph(
+                    f"{_name} operates in the {_sect} sector ({_ind}). "
+                    f"Refer to the conversation transcript for the full moat and business quality analysis.",
+                    _body))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 3 — Financial Performance & Key Metrics
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("3.  Financial Performance & Key Metrics", _sub_title))
+            _fin_rows = [
+                ["Metric", "Value", "Metric", "Value"],
+                ["Revenue (TTM)", _mfmt(_rev),
+                 "Revenue Growth", _pct(_revg)],
+                ["Gross Margin", _pct(_gm),
+                 "Operating Margin", _pct(_om)],
+                ["Net Margin", _pct(_nm),
+                 "EBITDA", _mfmt(_ebit)],
+                ["Free Cash Flow", _mfmt(_fcf),
+                 "FCF Margin",
+                 (f"{_fv(_fcf)/_fv(_rev)*100:.1f}%" if _fv(_fcf) and _fv(_rev) else "—")],
+                ["Return on Equity", _pct(_roe),
+                 "Return on Assets", _pct(_roa)],
+                ["Trailing EPS", _price_fmt(_eps, _info),
+                 "Forward P/E", (f"{_fwdpe:.1f}x" if _fwdpe else "—")],
+                ["Dividend / Share", _price_fmt(_dps, _info),
+                 "Dividend Yield", _pct(_dy)],
+                ["Debt / Equity", (f"{_de:.0f}x" if _de else "—"),
+                 "Current Ratio", _fmt(_cr, 2)],
+                ["Beta", (f"{_beta:.2f}" if _beta else "—"),
+                 "Short Interest", _pct(_short)],
+            ]
+            _fin_tbl = Table(_fin_rows, colWidths=[4.2*cm, 4.0*cm, 4.2*cm, 4.0*cm])
+            _fin_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME',   (0,1), (0,-1), 'Helvetica-Bold'),
+                ('FONTNAME',   (2,1), (2,-1), 'Helvetica-Bold'),
+                ('TEXTCOLOR',  (0,1), (0,-1), _NAVY),
+                ('TEXTCOLOR',  (2,1), (2,-1), _NAVY),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                ('FONTSIZE',   (0,0), (-1,-1), 8),
+                ('ALIGN',      (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING',   (0,0), (-1,-1), 6),
+                ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+            ]))
+            _story.append(_fin_tbl)
+
+            # ────────────────────────────────────────────────────
+            # SECTION 4 — Revenue & Margin by Segment
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("4.  Revenue & Margin by Segment", _sub_title))
+            _seg_txt = _extract_section(
+                r'(?:segment breakdown|segment|Sales Cloud|Service Cloud|revenue.*segment).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _seg_txt:
+                _story.append(Paragraph(_seg_txt[:800], _body))
+            else:
+                _story.append(Paragraph(
+                    "Segment-level breakdown not available from data provider. "
+                    "Refer to company's most recent 10-K/Annual Report for segment disclosure.", _body))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 5 — ROIC & Earnings Quality
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("5.  ROIC & Earnings Quality", _sub_title))
+            _roic_txt = _extract_section(
+                r'(?:ROIC|FCF conversion|earnings quality|return on invested).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _roic_txt:
+                _story.append(Paragraph(_roic_txt[:800], _body))
+
+            # FCF conversion ratio
+            _ni = _fv(_info.get('netIncomeToCommon'))
+            if _fcf and _ni and _ni != 0:
+                _fcf_conv = _fv(_fcf) / _ni
+                _story.append(Paragraph(
+                    f"FCF Conversion (FCF ÷ Net Income): {_fcf_conv:.2f}x — "
+                    f"{'High quality, cash earnings exceed GAAP net income' if _fcf_conv > 1.2 else 'In-line with GAAP earnings' if _fcf_conv > 0.8 else 'Below average — review working capital and capex trends'}",
+                    _body))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 6 — Valuation
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("6.  Valuation — DCF, Monte Carlo & Multiples", _sub_title))
+
+            # Multiples comparison table
+            _pb    = _fv(_info.get('priceToBook'))
+            _ps    = _fv(_info.get('priceToSalesTrailingTwelveMonths'))
+            _evrev = _fv(_info.get('enterpriseToRevenue'))
+            _evebi = _fv(_info.get('enterpriseToEbitda'))
+            _peg   = _fv(_info.get('pegRatio'))
+            _fcf_yield = (_fv(_fcf) / _mcap * 100) if _fcf and _mcap else None
+
+            _mult_rows = [
+                ["Multiple", "Current", "Benchmark / Context"],
+                ["Trailing P/E", (f"{_pe:.1f}x" if _pe else "—"), "Sector avg varies — compare vs peers"],
+                ["Forward P/E", (f"{_fwdpe:.1f}x" if _fwdpe else "—"), "Market-implied growth expectations"],
+                ["PEG Ratio", (f"{_peg:.2f}x" if _peg else "—"), "<1.0 considered value vs growth rate"],
+                ["Price / Book", (f"{_pb:.1f}x" if _pb else "—"), "Asset-intensity dependent"],
+                ["Price / Sales", (f"{_ps:.1f}x" if _ps else "—"), "Software typically 4–10x"],
+                ["EV / Revenue", (f"{_evrev:.1f}x" if _evrev else "—"), "Enterprise value perspective"],
+                ["EV / EBITDA", (f"{_evebi:.1f}x" if _evebi else "—"), "Key acquisition / peer multiple"],
+                ["FCF Yield", (f"{_fcf_yield:.1f}%" if _fcf_yield else "—"), "Owner earnings return at current price"],
+            ]
+            _mult_tbl = Table(_mult_rows, colWidths=[4*cm, 3*cm, 9.4*cm])
+            _mult_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME',   (0,1), (0,-1), 'Helvetica-Bold'),
+                ('TEXTCOLOR',  (0,1), (0,-1), _NAVY),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                ('FONTSIZE',   (0,0), (-1,-1), 8),
+                ('ALIGN',      (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING',   (0,0), (-1,-1), 6),
+            ]))
+            _story.append(_mult_tbl)
+            _story.append(Spacer(1, 0.2*cm))
+
+            # DCF / MC summary
+            _dcf_txt = _extract_section(
+                r'(?:DCF|intrinsic value|McKinsey|terminal value|Monte Carlo).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _dcf_txt:
+                _story.append(Paragraph("DCF & Monte Carlo Summary", _sub_title))
+                _story.append(Paragraph(_dcf_txt[:1000], _body))
+
+            if _dcf_ps or (_mc_p25 and _mc_p75):
+                _val_summary = [
+                    ["Method", "Intrinsic Value", "vs Current Price", "Margin of Safety"],
+                ]
+                if _dcf_ps and _pr:
+                    _disc = (_dcf_ps - _pr) / _pr * 100
+                    _mos  = (1 - _pr / _dcf_ps) * 100 if _dcf_ps > 0 else 0
+                    _val_summary.append([
+                        "DCF (Base Case)", _price_fmt(_dcf_ps, _info),
+                        f"{_disc:+.1f}%", f"{_mos:.1f}%"])
+                if _mc_p25 and _mc_p75:
+                    _mc_mid = (_mc_p25 + _mc_p75) / 2
+                    _disc_mc = (_mc_mid - _pr) / _pr * 100 if _pr else 0
+                    _val_summary.append([
+                        "Monte Carlo P25–P75",
+                        f"{_price_fmt(_mc_p25, _info)} – {_price_fmt(_mc_p75, _info)}",
+                        f"{_disc_mc:+.1f}% (mid)", "Scenario-weighted"])
+                if _tgt and _pr:
+                    _disc_tgt = (_tgt - _pr) / _pr * 100
+                    _val_summary.append([
+                        "Analyst Consensus", _price_fmt(_tgt, _info),
+                        f"{_disc_tgt:+.1f}%", "N/A"])
+
+                if len(_val_summary) > 1:
+                    _vs_tbl = Table(_val_summary, colWidths=[4.5*cm, 4*cm, 4*cm, 4*cm])
+                    _vs_tbl.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                        ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                        ('FONTNAME',   (0,1), (0,-1), 'Helvetica-Bold'),
+                        ('TEXTCOLOR',  (0,1), (0,-1), _NAVY),
+                        ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                        ('FONTSIZE',   (0,0), (-1,-1), 8),
+                        ('ALIGN',      (0,0), (-1,-1), 'LEFT'),
+                        ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                        ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                        ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                        ('TOPPADDING', (0,0), (-1,-1), 4),
+                        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                        ('LEFTPADDING',   (0,0), (-1,-1), 6),
+                    ]))
+                    _story.append(_vs_tbl)
+
+            # ────────────────────────────────────────────────────
+            # SECTION 7 — Sensitivity Analysis
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("7.  Sensitivity Analysis — WACC × Terminal Growth", _sub_title))
+            _an_mc  = _an.get('mc', {})
+            _base_ps_s = _an.get('dcf_ps') or (_an_mc.get('p50') if _an_mc else None)
+            if _base_ps_s:
+                _wacc_vals = [0.075, 0.085, 0.095, 0.105, 0.115]
+                _tg_vals   = [0.010, 0.020, 0.025, 0.030, 0.035]
+                _hdr = ["WACC \\ g"] + [f"{int(t*100)}%" for t in _tg_vals]
+                _sens_data = [_hdr]
+                for _wv in _wacc_vals:
+                    _row_s = [f"{_wv*100:.1f}%"]
+                    for _tgv in _tg_vals:
+                        _adj = _base_ps_s * (0.07 / (_wv - _tgv)) if (_wv - _tgv) > 0 else _base_ps_s
+                        _row_s.append(f"{_cpfx}{_adj:.0f}")
+                    _sens_data.append(_row_s)
+                _sw = (16.4*cm) / (len(_tg_vals) + 1)
+                _sens_tbl = Table(_sens_data, colWidths=[2.4*cm] + [_sw]*len(_tg_vals))
+                _ts_style = [
+                    ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                    ('BACKGROUND', (0,0), (0,-1), _NAVY),
+                    ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                    ('TEXTCOLOR',  (0,0), (0,-1), _WHITE),
+                    ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTNAME',   (0,0), (0,-1), 'Helvetica-Bold'),
+                    ('FONTSIZE',   (0,0), (-1,-1), 7.5),
+                    ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
+                    ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                    ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                    ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                    ('TOPPADDING', (0,0), (-1,-1), 3),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+                ]
+                # Colour cells green/red vs current price
+                for _ri, _wv in enumerate(_wacc_vals):
+                    for _ci, _tgv in enumerate(_tg_vals):
+                        _adj = _base_ps_s * (0.07 / (_wv - _tgv)) if (_wv - _tgv) > 0 else _base_ps_s
+                        if _pr:
+                            _ts_style.append(
+                                ('BACKGROUND', (_ci+1, _ri+1), (_ci+1, _ri+1),
+                                 _LGRN if _adj > _pr * 1.05 else (_LRED if _adj < _pr * 0.95 else _WHITE)))
+                _sens_tbl.setStyle(TableStyle(_ts_style))
+                _story.append(_sens_tbl)
+                if _pr:
+                    _story.append(Paragraph(
+                        f"Green = >5% above current price ({_price_fmt(_pr, _info)}).  "
+                        "Red = >5% below.  Base WACC 9.5%, base g 2.5%.", _muted))
+            else:
+                _story.append(Paragraph("Run the DCF in the AI chat to populate sensitivity data.", _muted))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 8 — Technical Analysis
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("8.  Technical Analysis & Timing", _sub_title))
+
+            # Compute live technicals from hist data
+            _tech_summary = []
+            if _hist is not None and not _hist.empty and _pr:
+                try:
+                    import numpy as _npdf
+                    _cl = _hist['Close']
+                    _ma50  = float(_cl.tail(50).mean())  if len(_cl) >= 50  else None
+                    _ma200 = float(_cl.tail(200).mean()) if len(_cl) >= 200 else None
+                    _52h   = float(_cl.tail(252).max())  if len(_cl) >= 20  else None
+                    _52l   = float(_cl.tail(252).min())  if len(_cl) >= 20  else None
+                    # RSI
+                    _delta = _cl.diff()
+                    _gain  = _delta.clip(lower=0).rolling(14).mean()
+                    _loss  = (-_delta.clip(upper=0)).rolling(14).mean()
+                    _rs    = _gain / _loss.replace(0, _npdf.nan)
+                    _rsi   = float((100 - 100 / (1 + _rs)).iloc[-1]) if not _rs.empty else None
+                    # MACD
+                    _ema12 = _cl.ewm(span=12, adjust=False).mean()
+                    _ema26 = _cl.ewm(span=26, adjust=False).mean()
+                    _macd  = float((_ema12 - _ema26).iloc[-1])
+                    _sig   = float((_ema12 - _ema26).ewm(span=9, adjust=False).mean().iloc[-1])
+                    _macd_bull = _macd > _sig
+
+                    if _ma50:
+                        _v50 = (_pr/_ma50 - 1)*100
+                        _tech_summary.append(["50-Day MA", _price_fmt(_ma50, _info),
+                                              f"Price {'▲' if _v50>=0 else '▼'} {abs(_v50):.1f}%",
+                                              "Bullish" if _v50 >= 0 else "Bearish"])
+                    if _ma200:
+                        _v200 = (_pr/_ma200 - 1)*100
+                        _tech_summary.append(["200-Day MA", _price_fmt(_ma200, _info),
+                                              f"Price {'▲' if _v200>=0 else '▼'} {abs(_v200):.1f}%",
+                                              "Bullish" if _v200 >= 0 else "Bearish"])
+                    if _52h:
+                        _pct_from_h = (_pr/_52h - 1)*100
+                        _tech_summary.append(["52-Week High", _price_fmt(_52h, _info),
+                                              f"{_pct_from_h:.1f}% from high", "—"])
+                    if _52l:
+                        _pct_from_l = (_pr/_52l - 1)*100
+                        _tech_summary.append(["52-Week Low", _price_fmt(_52l, _info),
+                                              f"+{_pct_from_l:.1f}% from low", "—"])
+                    if _rsi:
+                        _rsi_sig = "Overbought" if _rsi > 70 else ("Oversold" if _rsi < 30 else "Neutral")
+                        _tech_summary.append(["RSI (14)", f"{_rsi:.1f}",
+                                              _rsi_sig, "Bearish" if _rsi > 70 else ("Bullish" if _rsi < 30 else "Neutral")])
+                    _tech_summary.append(["MACD (12,26,9)", f"{'▲' if _macd_bull else '▼'} Signal",
+                                          f"MACD {'above' if _macd_bull else 'below'} Signal",
+                                          "Bullish" if _macd_bull else "Bearish"])
+                except Exception:
+                    pass
+
+            if _tech_summary:
+                _tech_hdr = [["Indicator", "Value", "Reading", "Signal"]]
+                _tech_tbl = Table(_tech_hdr + _tech_summary,
+                                  colWidths=[4*cm, 3.5*cm, 5*cm, 4*cm])
+                _t_style = TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                    ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                    ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTNAME',   (0,1), (0,-1), 'Helvetica-Bold'),
+                    ('TEXTCOLOR',  (0,1), (0,-1), _NAVY),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                    ('FONTSIZE',   (0,0), (-1,-1), 8),
+                    ('ALIGN',      (0,0), (-1,-1), 'LEFT'),
+                    ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                    ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                    ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                    ('TOPPADDING', (0,0), (-1,-1), 4),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                    ('LEFTPADDING',   (0,0), (-1,-1), 6),
+                ])
+                # Colour signal column
+                for _ri, _tr in enumerate(_tech_summary):
+                    _sig_val = _tr[3]
+                    _bg = _LGRN if 'Bullish' in _sig_val else (_LRED if 'Bearish' in _sig_val else _WHITE)
+                    _t_style.add('BACKGROUND', (3, _ri+1), (3, _ri+1), _bg)
+                _tech_tbl.setStyle(_t_style)
+                _story.append(_tech_tbl)
+
+            _tech_narr = _extract_section(
+                r'(?:50-day|200-day|RSI|MACD|support|resistance|trend|uptrend|downtrend).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _tech_narr:
+                _story.append(Spacer(1, 0.15*cm))
+                _story.append(Paragraph(_tech_narr[:800], _body))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 9 — Catalysts & Macro Risks
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("9.  Catalysts, Macro Risks & Event Calendar", _sub_title))
+            _earn_date = _info.get('earningsTimestamp') or _info.get('mostRecentQuarter')
+            _earn_str  = "—"
+            if _earn_date:
+                try:
+                    from datetime import datetime as _dtt
+                    _earn_str = _dtt.fromtimestamp(int(_earn_date)).strftime("%d %b %Y")
+                except Exception:
+                    pass
+            _next_earn = _info.get('earningsTimestampStart')
+            _next_str  = "—"
+            if _next_earn:
+                try:
+                    from datetime import datetime as _dtt2
+                    _next_str = _dtt2.fromtimestamp(int(_next_earn)).strftime("%d %b %Y")
+                except Exception:
+                    pass
+
+            _cat_rows = [
+                ["Event", "Date", "Market Expectation"],
+                ["Next Earnings", _next_str, "Consensus EPS varies — check live data"],
+                ["Most Recent Quarter", _earn_str, "—"],
+            ]
+            _cat_tbl = Table(_cat_rows, colWidths=[5*cm, 3.5*cm, 8*cm])
+            _cat_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                ('FONTSIZE',   (0,0), (-1,-1), 8),
+                ('ALIGN',      (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING',   (0,0), (-1,-1), 6),
+            ]))
+            _story.append(_cat_tbl)
+            _story.append(Spacer(1, 0.15*cm))
+
+            _cat_txt = _extract_section(
+                r'(?:catalyst|macro risk|interest rate|FX|regulation|earnings date).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _cat_txt:
+                _story.append(Paragraph(_cat_txt[:800], _body))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 10 — Management & Governance
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("10.  Management, Governance & Insider Activity", _sub_title))
+            _mgmt_txt = _extract_section(
+                r'(?:management|CEO|insider|compensation|governance|aligned).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _mgmt_txt:
+                _story.append(Paragraph(_mgmt_txt[:800], _body))
+
+            _ceo  = _info.get('companyOfficers', [{}])[0].get('name', '—') if _info.get('companyOfficers') else '—'
+            _mgmt_rows = [
+                ["Item", "Detail"],
+                ["Sector", f"{_sect}  /  {_ind}"],
+                ["CEO / Lead Officer", _ceo],
+                ["Audit Risk", str(_info.get('auditRisk', '—'))],
+                ["Board Risk", str(_info.get('boardRisk', '—'))],
+                ["Compensation Risk", str(_info.get('compensationRisk', '—'))],
+                ["Shareholder Rights", str(_info.get('shareHolderRightsRisk', '—'))],
+                ["Overall Governance", str(_info.get('overallRisk', '—'))],
+            ]
+            _mgmt_tbl = Table(_mgmt_rows, colWidths=[6*cm, 10.4*cm])
+            _mgmt_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME',   (0,1), (0,-1), 'Helvetica-Bold'),
+                ('TEXTCOLOR',  (0,1), (0,-1), _NAVY),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                ('FONTSIZE',   (0,0), (-1,-1), 8),
+                ('ALIGN',      (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING',   (0,0), (-1,-1), 6),
+            ]))
+            _story.append(_mgmt_tbl)
+
+            # ────────────────────────────────────────────────────
+            # SECTION 11 — Watchlist Entry / Exit / Stop
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("11.  Watchlist — Entry / Exit / Stop (Long & Short)", _sub_title))
+            _entry   = _an.get('entry', '')
+            _stop    = _an.get('stop', '')
+            _target  = _an.get('target', '')
+            _wl_txt  = _extract_section(
+                r'(?:entry|exit|stop|long|short|watchlist.*entry|entry.*price).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+
+            # Build watchlist table from conversation context
+            _wl_data = [
+                ["Direction", "Entry Zone", "Stop Loss", "Target", "R/R"],
+                ["Long",
+                 _entry or (f"{_price_fmt(_pr * 0.94, _info)} – {_price_fmt(_pr * 0.97, _info)}" if _pr else "—"),
+                 _stop or (_price_fmt(_pr * 0.90, _info) if _pr else "—"),
+                 _target or (_price_fmt(_pr * 1.13, _info) if _pr else "—"),
+                 "~2:1"],
+                ["Short",
+                 (_price_fmt(_pr * 1.04, _info) if _pr else "—"),
+                 (_price_fmt(_pr * 1.06, _info) if _pr else "—"),
+                 (_price_fmt(_pr * 0.94, _info) if _pr else "—"),
+                 "~1.5:1"],
+            ]
+            _wl_tbl = Table(_wl_data, colWidths=[2.5*cm, 4*cm, 3.2*cm, 3.2*cm, 3.5*cm])
+            _wl_style = TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('BACKGROUND', (0,1), (0,1), colors.HexColor('#DCFCE7')),
+                ('BACKGROUND', (0,2), (0,2), colors.HexColor('#FEE2E2')),
+                ('FONTNAME',   (0,1), (0,-1), 'Helvetica-Bold'),
+                ('ROWBACKGROUNDS', (1,1), (-1,-1), [_WHITE, _LGRAY]),
+                ('FONTSIZE',   (0,0), (-1,-1), 8),
+                ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                ('TOPPADDING', (0,0), (-1,-1), 5),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ])
+            _wl_tbl.setStyle(_wl_style)
+            _story.append(_wl_tbl)
+            _story.append(Spacer(1, 0.15*cm))
+            if _wl_txt:
+                _story.append(Paragraph(_wl_txt[:600], _body))
+
+            # Kill-switch criteria
+            _story.append(Paragraph("Kill-Switch Conditions", _sub_title))
+            _kills = _extract_section(
+                r'(?:kill.switch|exit criteria|thesis.*break|time stop|stop.*invalidation).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _kills:
+                _story.append(Paragraph(_kills[:600], _body))
+            else:
+                _story.append(Paragraph(
+                    f"Exit if: (1) price closes below stop level; (2) thesis-breaking guidance miss at next earnings; "
+                    f"(3) position remains range-bound beyond stated holding horizon with no breakout.", _body))
+
+            # ────────────────────────────────────────────────────
+            # SECTION 12 — Investment Scorecard
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("12.  Investment Scorecard", _sub_title))
+            _scorecard = _an.get('scorecard', [])
+            if _scorecard:
+                _sc_data = [["Category", "Score", "Weight", "Notes"]] + _scorecard
+                _sc_tbl = Table(_sc_data, colWidths=[5*cm, 2.5*cm, 2.5*cm, 6.4*cm])
+                _sc_tbl.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                    ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                    ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                    ('FONTSIZE',   (0,0), (-1,-1), 8),
+                    ('ALIGN',      (1,0), (2,-1), 'CENTER'),
+                    ('ALIGN',      (0,0), (0,-1), 'LEFT'),
+                    ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                    ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                    ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                    ('TOPPADDING', (0,0), (-1,-1), 4),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                    ('LEFTPADDING',   (0,0), (-1,-1), 6),
+                ]))
+                _story.append(_sc_tbl)
+            else:
+                # Build scorecard from raw data
+                def _sc_score(val, thresholds, scores):
+                    if val is None: return 3
+                    for t, s in zip(thresholds, scores):
+                        if val >= t: return s
+                    return scores[-1]
+
+                _auto_sc = [
+                    ["Business Quality & Moat",
+                     f"{_sc_score(_gm, [0.6,0.4,0.2], [5,4,3])}/5",
+                     "20%", f"Gross margin: {_pct(_gm)}"],
+                    ["Revenue Growth",
+                     f"{_sc_score(_revg, [0.2,0.1,0.05], [5,4,3])}/5",
+                     "15%", f"Revenue growth: {_pct(_revg)}"],
+                    ["Margin Quality & Trend",
+                     f"{_sc_score(_om, [0.25,0.15,0.05], [5,4,3])}/5",
+                     "10%", f"Op margin: {_pct(_om)}"],
+                    ["ROIC vs Cost of Capital",
+                     f"{_sc_score(_roe, [0.20,0.12,0.08], [5,4,3])}/5",
+                     "15%", f"ROE (proxy): {_pct(_roe)}"],
+                    ["Balance Sheet Strength",
+                     f"{_sc_score((1/_de if _de and _de>0 else None), [0.5,0.3,0.1], [5,4,3])}/5",
+                     "10%", f"D/E: {_fmt(_de, 0)}x"],
+                    ["Management & Capital Alloc.",
+                     "3/5", "10%", "See section 10"],
+                    ["Competitive Positioning",
+                     "3/5", "10%", f"Sector: {_sect}"],
+                    ["Earnings Quality",
+                     f"{_sc_score(_fv(_fcf)/_fv(_ni) if (_fv(_fcf) and _fv(_ni) and _fv(_ni)!=0) else None, [1.5,1.0,0.7], [5,4,3])}/5",
+                     "5%", "FCF/Net Income ratio"],
+                    ["Technical Setup",
+                     "3/5", "5%", "See section 8"],
+                ]
+                _sc2_data = [["Category", "Score", "Weight", "Notes"]] + _auto_sc
+                _sc2_tbl = Table(_sc2_data, colWidths=[5*cm, 2.5*cm, 2.5*cm, 6.4*cm])
+                _sc2_tbl.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                    ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                    ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [_WHITE, _LGRAY]),
+                    ('FONTSIZE',   (0,0), (-1,-1), 8),
+                    ('ALIGN',      (1,0), (2,-1), 'CENTER'),
+                    ('ALIGN',      (0,0), (0,-1), 'LEFT'),
+                    ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                    ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                    ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
+                    ('TOPPADDING', (0,0), (-1,-1), 4),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                    ('LEFTPADDING',   (0,0), (-1,-1), 6),
+                ]))
+                _story.append(_sc2_tbl)
+
+            # ────────────────────────────────────────────────────
+            # SECTION 13 — Fundamental vs Technical Matrix
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("13.  Fundamental vs Technical Matrix", _sub_title))
+            _ft_txt = _extract_section(
+                r'(?:Fundamental vs Technical|sits at.*Fundamental.*Technical|F/T Matrix).*?(?:\n\n|\Z)',
+                _conv_text, "")
+            _ft_matrix = [
+                ["", "Good Technical Setup", "Neutral Technical", "Poor Technical Setup"],
+                ["Strong Fundamentals", "✓ Strong Buy", "Buy on Dip", "Hold"],
+                ["Neutral Fundamentals", "Trade (momentum)", "Watchlist", "Avoid"],
+                ["Weak Fundamentals", "Short Candidate", "Short", "Strong Short"],
+            ]
+            _ft_tbl = Table(_ft_matrix, colWidths=[4.5*cm, 4*cm, 4*cm, 4*cm])
+            _ft_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), _NAVY),
+                ('BACKGROUND', (0,0), (0,-1), _NAVY),
+                ('TEXTCOLOR',  (0,0), (-1,0), _WHITE),
+                ('TEXTCOLOR',  (0,0), (0,-1), _WHITE),
+                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME',   (0,0), (0,-1), 'Helvetica-Bold'),
+                ('BACKGROUND', (1,1), (1,1), _LGRN),
+                ('BACKGROUND', (2,1), (2,1), colors.HexColor('#FEF9C3')),
+                ('BACKGROUND', (3,1), (3,1), colors.HexColor('#FEF9C3')),
+                ('BACKGROUND', (1,2), (1,2), colors.HexColor('#FEF9C3')),
+                ('BACKGROUND', (3,2), (3,2), _LRED),
+                ('BACKGROUND', (1,3), (1,3), _LRED),
+                ('BACKGROUND', (2,3), (2,3), _LRED),
+                ('BACKGROUND', (3,3), (3,3), _LRED),
+                ('FONTSIZE',   (0,0), (-1,-1), 8),
+                ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+                ('BOX',        (0,0), (-1,-1), 0.5, _MGRAY),
+                ('INNERGRID',  (0,0), (-1,-1), 0.3, _MGRAY),
                 ('TOPPADDING', (0,0), (-1,-1), 5),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 5),
             ]))
-            _story.append(_tbl)
-            _story.append(Spacer(1, 8))
+            _story.append(_ft_tbl)
+            if _ft_txt:
+                _story.append(Spacer(1, 0.15*cm))
+                _story.append(Paragraph(_ft_txt[:400], _body))
 
-            for _label, _text in [("Investment Thesis", _thesis), ("Entry Logic", _entry), ("Key Risk", _risk_txt)]:
-                if _text and _text != '—':
-                    _story.append(Paragraph(f"<b>{_label}</b>", _h3))
-                    _story.append(Paragraph(str(_text)[:1200], _body))
-                    _story.append(Spacer(1, 4))
+            # ────────────────────────────────────────────────────
+            # SECTION 14 — Risk Factors & Bear Case
+            # ────────────────────────────────────────────────────
+            _story.append(Paragraph("14.  Risk Factors & Bear Case", _sub_title))
+            _risk_txt = _an.get('key_risk', '')
+            _bear_txt = _extract_section(
+                r'(?:bear case|what would make.*wrong|risk|permanently impair|disruption).*?(?:\n\n\n|\Z)',
+                _conv_text, "")
+            if _bear_txt:
+                _story.append(Paragraph(_bear_txt[:1000], _body))
+            elif _risk_txt:
+                _story.append(Paragraph(_risk_txt[:600], _body))
+            else:
+                _story.append(Paragraph(
+                    f"Key risks include sector-specific disruption, interest rate sensitivity, "
+                    f"FX exposure (for internationally diversified companies), regulatory changes, "
+                    f"and deterioration in the fundamental moat. See conversation for stock-specific analysis.", _body))
 
-            _story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#E5E7EB'), spaceAfter=10))
+            _story.append(PageBreak())
 
-        # ── Disclaimer ──
-        _story.append(Spacer(1, 10))
-        _disc = ("This report was produced by Fintiq's AI Investment Companion through a structured analytical "
-                 "conversation covering business quality, valuation (3-phase DCF), and technical analysis. "
-                 "All data sourced from Yahoo Finance at time of analysis. Past performance does not guarantee "
-                 "future results. Fintiq is not authorised or regulated by the FCA. This is not financial advice.")
-        _story.append(Paragraph(_disc, _muted))
+        # ════════════════════════════════════════════════════════
+        # DISCLAIMER
+        # ════════════════════════════════════════════════════════
+        _story.append(Paragraph("15.  Important Disclaimer", _sub_title))
+        _disc_lines = [
+            ("Fintiq AI Research is produced by an artificial intelligence system trained to replicate "
+             "structured equity analysis methodology. It is NOT financial advice, investment advice, or a "
+             "recommendation to buy, sell, or hold any security."),
+            ("This report was generated through an AI-guided conversation covering business quality, "
+             "valuation (3-phase DCF with McKinsey terminal value, Monte Carlo simulation), technical "
+             "analysis, and risk assessment. All financial data is sourced from Yahoo Finance at the "
+             "time of analysis. Fintiq does not guarantee the accuracy, completeness, or timeliness of "
+             "the data."),
+            ("Fintiq Limited is not authorised or regulated by the Financial Conduct Authority (FCA) or "
+             "any other financial regulatory body. No regulatory protections apply to use of this report."),
+            ("Past performance is not a reliable indicator of future results. The value of investments "
+             "can fall as well as rise. You may receive back less than you invest."),
+            ("Always consult a qualified, FCA-authorised financial adviser before making any investment "
+             "decision. Do not rely on this report as the sole basis for any investment."),
+        ]
+        for _dl in _disc_lines:
+            _story.append(Paragraph(_dl, _muted))
+            _story.append(Spacer(1, 4))
+
+        _story.append(Spacer(1, 0.5*cm))
+        _story.append(HRFlowable(width="100%", thickness=2, color=_GOLD, spaceAfter=6))
+        _story.append(Paragraph(
+            f"Fintiq Research  ·  Generated {_now_full}  ·  fintiq.uk  ·  "
+            "Not financial advice — educational purposes only",
+            _sty('FTR', fontSize=7, textColor=_DGRAY, alignment=TA_CENTER, leading=10)))
 
         _doc.build(_story)
         return _buf.getvalue()
-    except Exception:
+    except Exception as _e:
+        import traceback
+        print(f"PDF generation error: {_e}\n{traceback.format_exc()}")
         return None
 
 
@@ -7154,6 +8159,24 @@ div[data-testid="stChatInput"] > div {
             _display_reply = _re_strip.sub(
                 r'---CONFIRM_FETCH---.*?(?:---|$)',
                 '', _reply, flags=_re_strip.DOTALL).strip()
+
+            # ── Post-process: fix common AI formatting glitches ──────
+            def _fix_reply_fmt(txt: str) -> str:
+                import re as _r
+                # Fix missing space after % sign followed by letter: +12.4%surprise → +12.4% surprise
+                txt = _r.sub(r'(%)([\w])', r'\1 \2', txt)
+                # Fix missing space after $ amount followed by letter: $221/share → $221 / share (slash)
+                txt = _r.sub(r'(\$[\d,.]+)([A-Za-z])', r'\1 \2', txt)
+                # Fix missing space before opening paren preceded by letter: foo(bar) → foo (bar)
+                txt = _r.sub(r'([a-zA-Z0-9])(\()', r'\1 \2', txt)
+                # Ensure decimal in numbers like 221 that appear as intrinsic values (skip — risky)
+                # Fix lone * used as italics without closing * on same line — remove stray asterisk
+                txt = _r.sub(r'(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)', r'*\1*', txt)
+                # Fix ---\n or —\n at very end of a line that creates extra horizontal rule noise
+                txt = _r.sub(r'\n---\n', '\n\n---\n\n', txt)
+                return txt
+
+            _display_reply = _fix_reply_fmt(_display_reply or _reply)
             _SS.cp_msgs.append({"role": "assistant", "content": _display_reply or _reply})
 
             # ── Auto-save session to /tmp for reconnect restore ────
@@ -7199,48 +8222,54 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
 
         _pb_stages = [
             ("🔎 Stage 1 — Business Quality & Moat", [
-                "What does [Company] actually do, and how does it make money? Explain the business model simply.",
-                "What is [Company]'s competitive moat — cost advantage, network effects, switching costs, or brand? How durable is it?",
-                "Who are [Company]'s 3 main competitors? Compare their gross margins, revenue growth, and market share.",
-                "Is [Company]'s revenue recurring (subscriptions, contracts) or transactional? What does that mean for earnings predictability?",
-                "What does the Fama-French factor analysis tell us about [Company]'s risk-adjusted return history?",
-                "What would make me wrong on [Company]? What are the 2-3 things that could permanently impair this business?",
-                "What is [Company]'s ROIC trend over the last 5 years — is the moat strengthening or eroding?",
-                "What is [Company]'s FCF conversion rate (FCF ÷ net income)? Is earnings quality high or is there a gap?",
-                "Break down [Company]'s revenue and margin by segment. Which segment drives profit, which is drag, and where is growth coming from?",
-                "How is management compensated — are their incentives (bonuses, equity grants) aligned with long-term shareholder value?",
-                "What does consensus expect for [Company]'s next 12 months — and where do you think consensus is wrong?",
+                "What does [Company] actually do, and how does it make money? Break down the revenue model — subscription vs transactional vs services — and what percentage each contributes.",
+                "What is [Company]'s competitive moat — cost advantage, network effects, switching costs, or brand? How durable is each source, and which is most at risk from AI or structural disruption?",
+                "Who are [Company]'s 3 main competitors? Produce a comparison table: gross margins, operating margins, revenue growth, EV/EBITDA, and market share for each.",
+                "Is [Company]'s revenue recurring (subscriptions, contracts) or transactional? What does that mean for earnings predictability, churn risk, and downside protection in a recession?",
+                "What is [Company]'s ROIC trend over the last 5 years — is the moat strengthening or eroding? Is ROIC above or below the cost of capital?",
+                "What is [Company]'s FCF conversion rate (FCF ÷ net income)? Is earnings quality high or is there a gap between GAAP earnings and cash? What explains any gap — working capital, capex, or stock-based compensation?",
+                "Break down [Company]'s revenue and operating margin by segment. Which segment drives profit, which is a drag, and where is growth actually coming from?",
+                "What does the Fama-French 4-factor analysis tell us about [Company]'s risk-adjusted return history? If FF4 data is unavailable, build a directional factor proxy using beta, P/B, market cap, and 12-month momentum.",
+                "How is management compensated — are their incentives (bonuses, equity grants, performance thresholds) aligned with long-term shareholder value creation, or do they reward revenue over returns?",
+                "Does [Company] have an active share buyback programme? What is the buyback yield, is it funded from FCF or debt, and is management buying back shares at sensible prices relative to intrinsic value?",
+                "What does consensus expect for [Company]'s next 12 months in terms of revenue, EPS, and margin? Where specifically do you think consensus is wrong — too optimistic or too conservative?",
+                "What would make me wrong on [Company]? Name the 2-3 things that could permanently impair this business — not cyclical headwinds, but structural threats that change the moat durability.",
             ]),
             ("💰 Stage 2 — Valuation", [
-                "Walk me through a DCF for [Company] using conservative, base, and bull case revenue growth assumptions.",
-                "What is [Company] trading at on EV/EBITDA, P/E, and P/FCF versus its 5-year average and versus sector peers?",
-                "At the current price, what growth rate is the market implying for [Company]? Is that realistic?",
-                "What is the margin of safety — how much could the business disappoint and the stock still be reasonably priced?",
-                "Run a WACC sensitivity: what does intrinsic value look like at 7%, 9%, and 11% discount rates?",
-                "What is the Graham Number for [Company], and what does it tell us about whether it's speculative or value-priced?",
-                "What does [Company]'s net debt / EBITDA and interest coverage ratio look like? Can they fund growth without diluting shareholders?",
+                "Build the WACC for [Company] from first principles: risk-free rate, equity risk premium, beta, size premium, cost of debt, and capital structure weights. Show the full calculation — don't just state a number.",
+                "What is [Company] currently trading at on EV/EBITDA, P/E (trailing and forward), P/FCF, and EV/Revenue? Produce a table comparing these multiples to: (1) the sector average, (2) [Company]'s own 5-year average, and (3) the closest 2-3 peers. Where is the premium or discount, and is it justified?",
+                "Walk me through a 3-phase DCF for [Company] using the McKinsey Value Driver Formula for terminal value: TV = NOPAT(yr11) × (1 − g/RONIC) / (WACC − g). Assume RONIC of 15% for software/SaaS or 12% for mature industrials unless we discuss otherwise. Show all working.",
+                "At the current price, what revenue growth rate and margin level is the market implying for [Company]? Is that realistic given the competitive dynamics and historical track record?",
+                "Run the WACC × terminal growth sensitivity grid for [Company]: a 5×5 table showing intrinsic value per share at WACC from 7.5% to 11.5% and terminal growth from 1% to 3.5%. Colour code: green = above current price, red = below.",
+                "What is the margin of safety on [Company]? If the base case DCF is wrong by 20% on the downside, does the current price still look attractive? What is the break-even assumption set?",
+                "What does [Company]'s net debt / EBITDA and interest coverage ratio look like? If net debt/EBITDA > 3x, flag the refinancing risk and whether FCF is sufficient to deleverage without equity issuance.",
+                "What is the Graham Number for [Company], and what does it tell us about whether the stock is speculative or value-priced relative to book value and earnings?",
+                "Translate the DCF assumptions into a forward TSR decomposition: performance contribution (earnings growth), yield contribution (FCF/dividend yield), and valuation re-rating (multiple expansion/contraction). Does the implied TSR beat the market benchmark?",
             ]),
             ("📈 Stage 3 — Technical & Timing", [
-                "Where is [Company] trading relative to its 50-day and 200-day moving averages? What does that signal?",
-                "What is the RSI for [Company] right now — is it overbought, oversold, or neutral?",
-                "Where are the key support and resistance levels for [Company]? What would a good entry zone look like for both long and short?",
-                "Is [Company] in a downtrend, uptrend, or base formation? What technical pattern is setting up?",
-                "What is the short interest for [Company]? Could a short squeeze be a catalyst?",
-                "What is the options market implying for [Company]'s next move — what is the implied volatility and expected move into earnings?",
+                "What is the overall trend structure for [Company] — uptrend (higher highs, higher lows), downtrend (lower highs, lower lows), or base formation? Where is price relative to the 52-week range?",
+                "Where is [Company] relative to its 50-day and 200-day moving averages? Is a golden cross or death cross forming? What does the MA structure tell us about momentum?",
+                "What is the RSI (14) for [Company] right now — overbought (>70), oversold (<30), or neutral? What is the Stochastic reading on a shorter-term basis? Are they in agreement or diverging?",
+                "What is the MACD signal for [Company]? Is the MACD line above or below the signal line, and is the histogram expanding or contracting? Does MACD confirm or diverge from price action?",
+                "Where are the key support and resistance levels for [Company] from the 1-year chart? Give specific price levels. What would a good low-risk entry zone look like for both a long and a short position?",
+                "What does the options market tell us about [Company]? Cover: (1) current implied volatility and IV rank vs 52-week range — are options cheap or expensive? (2) expected move into earnings from the ATM straddle price, (3) put/call skew — are puts or calls bid up, and what does that tell us about institutional positioning?",
+                "What is the short interest for [Company] as a % of float? Is there squeeze potential, and what price action would trigger a squeeze?",
+                "Run the 'Why Now?' IC test for [Company]: Trend / Location / Trigger / Confirmation needed / Entry quality (A+/B/C) / Stop-loss level / R/R ratio. Is this an A+ setup, a watchlist-and-wait, or a no-trade?",
             ]),
-            ("⚡ Stage 4 — Catalysts & Risk", [
-                "When is [Company]'s next earnings date, and what does the market expect? What would a positive or negative surprise look like?",
-                "What specific catalysts could close the gap between [Company]'s current price and intrinsic value in the next 6-12 months?",
-                "What are the biggest macro risks to [Company] — interest rates, FX, regulation, commodity prices?",
-                "Has management been buying or selling [Company] shares recently? What does insider activity suggest?",
-                "What is [Company]'s track record on guidance — do they beat, miss, or hit targets? How credible is management?",
+            ("⚡ Stage 4 — Catalysts, Risk & Macro", [
+                "When is [Company]'s next earnings date? What does the market expect on EPS, revenue, and guidance? What would a genuine positive surprise look like vs a genuine negative surprise — not just a beat/miss, but what the market would re-rate on?",
+                "What is [Company]'s track record on guidance — do they consistently beat, miss, or hit? Is there a pattern (e.g. EPS beats but revenue guides down)? How much credibility should we give management's forward guidance?",
+                "What specific catalysts could close the gap between [Company]'s current price and DCF intrinsic value over the next 6-12 months? Rank them by probability and magnitude of impact.",
+                "What are the biggest macro risks to [Company]? Cover: interest rate sensitivity (discount rate and demand), FX exposure (revenue by geography vs reporting currency), regulatory risk (any active investigations or pending legislation), and commodity/input cost exposure.",
+                "Has management been buying or selling [Company] shares in the open market in the last 6 months? State the Form 4 details: who bought/sold, at what price, how much, and as what % of their holding. What does the net insider activity signal?",
+                "What is the bear case for [Company] — the scenario a short seller would construct? What multiple, growth rate, and margin assumptions would justify a 30-40% lower price? How probable is that scenario?",
             ]),
-            ("✅ Stage 5 — Decision", [
-                "Summarise the full investment case for [Company]: quality, value, timing, and the key catalyst.",
-                "Given everything we've covered on [Company], what is the probability-weighted expected return over my investment horizon?",
-                "What position size in [Company] would be appropriate given my risk appetite and portfolio concentration?",
-                "What would cause me to sell [Company]? Define the exit criteria before I buy.",
-                "Add [Company] to my watchlist with clear entry, exit, and stop prices for both long and short, and generate a research summary.",
+            ("✅ Stage 5 — Decision & Portfolio Construction", [
+                "Summarise the full investment case for [Company] in four sentences: one on quality (moat + ROIC), one on value (DCF discount + multiples vs peers), one on timing (technical setup + catalyst), and one on the key risk that could break the thesis.",
+                "Given everything we've covered on [Company], what is the probability-weighted expected return over my investment horizon? Break it down by scenario (bull/base/bear) with explicit probabilities that don't sum to 100% by accident.",
+                "What position size in [Company] would be appropriate given my moderate risk appetite and a concentrated watchlist of up to 5 stocks? Apply the Kelly criterion directionally — what fraction of capital does the edge justify?",
+                "What would cause me to sell [Company]? Define three exit triggers before entry: (1) price stop (technical invalidation level), (2) thesis break (the specific fundamental or news event that changes the investment case), (3) time stop (if the thesis hasn't played out by X date, reassess rather than hold indefinitely).",
+                "Add [Company] to my watchlist with specific entry zone, stop loss, and target for both a long and a short trade. Include the R/R ratio and the single most important thing to monitor each week to know whether the thesis is on track.",
             ]),
         ]
 
@@ -7260,8 +8289,10 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
 
         st.markdown(
             '<div style="font-size:0.65rem;color:#334155;margin-top:10px;padding-top:8px;border-top:1px solid #1e293b">'
-            '💡 Tip: Work through the stages in order. Each stage builds on the last — '
-            'you cannot time a stock you don\'t understand, and you cannot value a stock whose moat you haven\'t stress-tested.'
+            '💡 Work through the stages in order — each builds on the last. '
+            'Stage 1 establishes what you own. Stage 2 tells you what it\'s worth. '
+            'Stage 3 tells you when to buy it. Stage 4 tells you what could go wrong. '
+            'Stage 5 forces the discipline: position size, exit criteria, and a single weekly check — before you enter.'
             '</div>', unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════════
@@ -7977,30 +9008,6 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
                                 _qt.append('</table></div>')
                                 st.markdown(''.join(_qt), unsafe_allow_html=True)
 
-                    # Remove stock button
-                    if _stage in ('fundamental','valuation','technical'):
-                        if st.button(f"🗑 Remove {_tk}", key=f"_rm_{_tk}", use_container_width=True,
-                                     help="Remove this stock from the analysis"):
-                            _rm_confirm_key = f"_rm_confirm_{_tk}"
-                            if not _SS.get(_rm_confirm_key):
-                                _SS[_rm_confirm_key] = True
-                                st.rerun()
-                        _rm_confirm_key = f"_rm_confirm_{_tk}"
-                        if _SS.get(_rm_confirm_key):
-                            st.warning(f"Remove **{_tk}** from this session?")
-                            _rc1, _rc2 = st.columns(2)
-                            with _rc1:
-                                if st.button("Yes, remove", key=f"_rm_yes_{_tk}", type="primary"):
-                                    _SS.cp_data.pop(_tk, None)
-                                    _SS[_rm_confirm_key] = False
-                                    _SS.cp_msgs.append({"role": "assistant",
-                                        "content": f"I've removed {_tk} from the analysis. We're now focusing on: {', '.join(k for k in _SS.cp_data if not _SS.cp_data[k].get('error', False))}."})
-                                    st.rerun()
-                            with _rc2:
-                                if st.button("Cancel", key=f"_rm_no_{_tk}"):
-                                    _SS[_rm_confirm_key] = False
-                                    st.rerun()
-
                     # Price chart — always available once data loaded, inside expander
                     if not _td.get('error'):
                         with st.expander("📈 Price & Technical Analysis"):
@@ -8158,6 +9165,46 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
                             if _cur_price:
                                 st.caption(f"Green = above current price ({_cur_price:.2f})  |  Red = below current price")
 
+                    # ── Remove stock button (after charts) ──────────────
+                    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+                    _rm_confirm_key = f"_rm_confirm_{_tk}"
+                    if not _SS.get(_rm_confirm_key):
+                        if st.button(f"🗑 Remove {_tk}", key=f"_rm_{_tk}",
+                                     use_container_width=True,
+                                     help="Remove this stock from the analysis"):
+                            _SS[_rm_confirm_key] = True
+                            st.rerun()
+                    else:
+                        st.warning(f"Remove **{_tk}** from this session?")
+                        _rc1, _rc2 = st.columns(2)
+                        with _rc1:
+                            if st.button("Yes, remove", key=f"_rm_yes_{_tk}", type="primary"):
+                                _SS.cp_data.pop(_tk, None)
+                                _SS[_rm_confirm_key] = False
+                                _SS.cp_msgs.append({"role": "assistant",
+                                    "content": f"I've removed {_tk} from the analysis. Remaining: {', '.join(k for k in _SS.cp_data if not _SS.cp_data[k].get('error', False)) or 'none'}."})
+                                st.rerun()
+                        with _rc2:
+                            if st.button("Cancel", key=f"_rm_no_{_tk}"):
+                                _SS[_rm_confirm_key] = False
+                                st.rerun()
+
+    # ── PDF download — available from finalise stage onward, or whenever stocks are loaded ──
+    if _SS.cp_data and _stage in ('finalise', 'report'):
+        _ts2 = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')
+        _pdf_bytes_early = _comp_generate_report_pdf(
+            list(_SS.cp_data.keys()),
+            _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses,
+            msgs=_SS.get('cp_msgs', []))
+        if _pdf_bytes_early:
+            st.download_button(
+                "📄 Download Equity Research Report (PDF)",
+                data=_pdf_bytes_early,
+                file_name=f"fintiq_equity_research_{_ts2}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                help="Investment-bank-quality research report covering all 15 sections")
+
     # Report download (shows below cards when report generated)
     if _stage == 'report' and _SS.cp_report:
         _ts = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')
@@ -8172,7 +9219,8 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
         with _dl_col2:
             _pdf_bytes = _comp_generate_report_pdf(
                 _SS.cp_ctx.get('watchlist', []),
-                _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses)
+                _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses,
+                msgs=_SS.get('cp_msgs', []))
             if _pdf_bytes:
                 st.download_button(
                     "📄 Download Research Report (PDF)",
