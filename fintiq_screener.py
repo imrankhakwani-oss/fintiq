@@ -3214,14 +3214,36 @@ def _make_bulletin(_cache_key: str) -> dict:
                 messages=[{"role": "user", "content": _prompt}]
             )
             _raw = next(b.text for b in _resp.content if hasattr(b, 'text')).strip()
+            # Strip markdown code fences
             if _raw.startswith("```"):
                 _lines = _raw.split("\n")
                 _raw = "\n".join(_lines[1:])
                 if _raw.rstrip().endswith("```"):
                     _raw = _raw.rstrip()[:-3].rstrip()
+            # Extract JSON using brace-depth scanning (handles trailing text after closing })
             _j_start = _raw.find('{')
-            _j_end   = _raw.rfind('}') + 1
-            if _j_start >= 0 and _j_end > _j_start:
+            if _j_start >= 0:
+                _depth = 0
+                _in_str = False
+                _esc    = False
+                _j_end  = _j_start
+                for _ci, _ch in enumerate(_raw[_j_start:], start=_j_start):
+                    if _esc:
+                        _esc = False
+                        continue
+                    if _ch == '\\' and _in_str:
+                        _esc = True
+                        continue
+                    if _ch == '"':
+                        _in_str = not _in_str
+                    elif not _in_str:
+                        if _ch == '{':
+                            _depth += 1
+                        elif _ch == '}':
+                            _depth -= 1
+                            if _depth == 0:
+                                _j_end = _ci + 1
+                                break
                 _raw = _raw[_j_start:_j_end]
             _parsed = _json.loads(_raw)
             _parsed.update({"fallback": False, "timestamp": _now.strftime("%H:%M GMT"),
@@ -10257,6 +10279,20 @@ Return ONLY valid JSON (no markdown):
                             if _raw.startswith("```"):
                                 _raw = _raw.split("```")[1]
                                 if _raw.startswith("json"): _raw = _raw[4:]
+                            # Brace-depth extraction — handles trailing text
+                            _js = _raw.find('{')
+                            if _js >= 0:
+                                _dp=0; _ins=False; _es=False; _je=_js
+                                for _xi, _xc in enumerate(_raw[_js:], start=_js):
+                                    if _es: _es=False; continue
+                                    if _xc=='\\' and _ins: _es=True; continue
+                                    if _xc=='"': _ins=not _ins
+                                    elif not _ins:
+                                        if _xc=='{': _dp+=1
+                                        elif _xc=='}':
+                                            _dp-=1
+                                            if _dp==0: _je=_xi+1; break
+                                _raw = _raw[_js:_je]
                             _parsed = _json.loads(_raw)
                             # Directly write into slider session-state keys so they update immediately
                             for _sk, _dk in _slider_key_map:
