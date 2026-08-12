@@ -3088,10 +3088,10 @@ def _get_api_key() -> str:
             pass
     return _key or ""
 
-@st.cache_data(ttl=14400, show_spinner=False)
+@st.cache_data(ttl=43200, show_spinner=False)
 def _make_bulletin(_cache_key: str) -> dict:
     """Fetch market data + call Claude. Only called when API key is confirmed present.
-    Cached 4 hours. Fallback is handled by the caller — never cached here."""
+    Cached 12 hours (2 bulletins/day). Fallback is handled by the caller — never cached here."""
     import os as _os_b, json as _json
     from datetime import datetime as _dt
 
@@ -3333,26 +3333,20 @@ def _make_bulletin_fallback() -> dict:
 @st.fragment
 def _render_bulletin():
     import json as _bj, os as _bos
-    # Five bulletin windows (all GMT) — new bulletin at each boundary:
-    #   00:00–05:59  carry yesterday's 21:00 bulletin  → next update 06:00 today
-    #   06:00–11:59  pre-UK open bulletin              → next update 12:00
-    #   12:00–16:59  pre-US open bulletin              → next update 17:00
-    #   17:00–20:59  UK close / US afternoon bulletin  → next update 21:00
-    #   21:00–23:59  US close bulletin                 → next update 06:00 tomorrow
+    # Two bulletin windows per day (all GMT) — 2 API calls/day maximum:
+    #   00:00–07:59  carry yesterday's 20:00 bulletin  → next update 08:00 today
+    #   08:00–19:59  morning bulletin (pre-market)     → next update 20:00
+    #   20:00–23:59  evening bulletin (US close)       → next update 08:00 tomorrow
     _now_dt = __import__('datetime').datetime.utcnow()
     _now_h  = _now_dt.hour
-    if   _now_h < 6:
-        # Still running on yesterday's 21:00 bulletin
+    if _now_h < 8:
+        # Still running on yesterday's 20:00 bulletin
         _yday = (_now_dt - __import__('datetime').timedelta(days=1)).strftime('%Y%m%d')
-        _slot = '2100'; _b_key = _yday + _slot; _next_slot_label = '06:00 GMT (today)'
-    elif _now_h < 12:
-        _slot = '0600'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '12:00 GMT'
-    elif _now_h < 17:
-        _slot = '1200'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '17:00 GMT'
-    elif _now_h < 21:
-        _slot = '1700'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '21:00 GMT'
+        _slot = '2000'; _b_key = _yday + _slot; _next_slot_label = '08:00 GMT (today)'
+    elif _now_h < 20:
+        _slot = '0800'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '20:00 GMT'
     else:
-        _slot = '2100'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '06:00 GMT (+1d)'
+        _slot = '2000'; _b_key = _now_dt.strftime('%Y%m%d') + _slot; _next_slot_label = '08:00 GMT (+1d)'
     _api_key = _get_api_key()
 
     if _api_key:
@@ -3390,7 +3384,19 @@ def _render_bulletin():
                         pass  # /tmp write failure is non-fatal
                 except Exception as _bull_err:
                     st.session_state[_ss_key] = _make_bulletin_fallback()
-                    st.session_state['_bulletin_last_error'] = str(_bull_err)
+                    # Store a clean, user-friendly error — never raw API JSON
+                    _be_str = str(_bull_err).lower()
+                    if 'credit' in _be_str or 'balance' in _be_str or ('400' in _be_str and 'cred' in _be_str):
+                        _clean_err = "credit_low"
+                    elif '401' in _be_str or 'authentication' in _be_str or 'api key' in _be_str:
+                        _clean_err = "auth_error"
+                    elif '529' in _be_str or 'overload' in _be_str:
+                        _clean_err = "overloaded"
+                    elif 'timeout' in _be_str:
+                        _clean_err = "timeout"
+                    else:
+                        _clean_err = "api_error"
+                    st.session_state['_bulletin_last_error'] = _clean_err
 
         _bulletin = st.session_state[_ss_key]
     else:
@@ -3583,10 +3589,17 @@ def _render_bulletin():
 </div>""", unsafe_allow_html=True)
 
     if _bulletin.get("fallback"):
-        _bull_err_msg = st.session_state.get('_bulletin_last_error', '')
-        if _bull_err_msg:
-            st.caption(f"⚠️ Bulletin error: {_bull_err_msg[:200]}")
-        else:
+        _bull_err_code = st.session_state.get('_bulletin_last_error', '')
+        _err_messages = {
+            'credit_low':  "⚠️ AI bulletin paused — Anthropic credit balance is too low. Top up at console.anthropic.com → Plans & Billing. Showing rules-based data in the meantime.",
+            'auth_error':  "⚠️ AI bulletin paused — Anthropic API key issue. Check ANTHROPIC_API_KEY in Railway Variables.",
+            'overloaded':  "⚠️ AI bulletin paused — Anthropic servers temporarily overloaded. Will retry on next refresh.",
+            'timeout':     "⚠️ AI bulletin paused — request timed out. Will retry on next refresh.",
+            'api_error':   "⚠️ AI bulletin paused — API error. Showing rules-based data in the meantime.",
+        }
+        if _bull_err_code in _err_messages:
+            st.caption(_err_messages[_bull_err_code])
+        elif not _bull_err_code:
             st.caption("ℹ️ Set ANTHROPIC_API_KEY on Railway to enable full AI bulletin.")
     st.markdown('<div style="margin-bottom:20px"></div>', unsafe_allow_html=True)
 
@@ -4282,24 +4295,140 @@ def _comp_execute_tool(tool_name: str, tool_input: dict) -> str:
     return f"Unknown tool: {tool_name}"
 
 
-def _comp_ai(messages: list, system: str) -> str:
-    """Claude call with tool use loop. Returns final text response."""
+def _comp_summarise_history(msgs: list, stage: str, ctx: dict) -> str:
+    """Summarise a list of conversation turns into a compact paragraph using Haiku.
+    Called when conversation exceeds the recent-turns window.
+    Returns a single string ≤300 words suitable for injecting as a system-level summary.
+    Result is cached in session_state['cp_hist_summary'] so it's only recomputed when
+    the summarisation window changes (i.e. when new turns age past the recent window)."""
+    _k = _get_api_key()
+    if not _k or not msgs:
+        return ""
+    try:
+        import anthropic as _a
+        _client = _a.Anthropic(api_key=_k)
+        # Build a compact transcript of just the turns to summarise
+        _transcript = ""
+        for _m in msgs:
+            _role = "User" if _m.get('role') == 'user' else "AI"
+            _content = _m.get('content', '')
+            if isinstance(_content, str):
+                _transcript += f"\n{_role}: {_content[:800]}"  # cap each turn at 800 chars
+        _tickers = ', '.join(ctx.get('watchlist', []) or list(ctx.get('proposed_tickers', [])))
+        _sys = (
+            "You are a financial analyst session summariser. "
+            "Produce a concise factual summary (max 200 words) of the conversation excerpt below. "
+            "Capture: stocks being analysed, key metrics discussed (WACC, DCF, P/E etc.), "
+            "analytical conclusions reached, and any user preferences or decisions made. "
+            "Write in past tense. No bullet points. No filler phrases."
+        )
+        _prompt = (
+            f"Conversation stage: {stage}. Stocks: {_tickers or 'not yet determined'}.\n"
+            f"Transcript to summarise:{_transcript}"
+        )
+        _r = _client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=400,
+            system=_sys,
+            messages=[{"role": "user", "content": _prompt}]
+        )
+        _summary = ""
+        for _b in _r.content:
+            _btype = _b.get('type') if isinstance(_b, dict) else getattr(_b, 'type', '')
+            if _btype == 'text':
+                _summary += _b.get('text','') if isinstance(_b, dict) else getattr(_b, 'text', '')
+        return _summary.strip()
+    except Exception:
+        return ""
+
+
+def _is_simple_query(msg: str) -> bool:
+    """Return True if query is short/conversational — safe to route to Haiku.
+    Simple = under 100 chars AND no financial-analysis keywords."""
+    if len(msg.strip()) > 100:
+        return False
+    _analysis_kw = [
+        'wacc','dcf','pe ratio','ev/ebitda','technical','valuation','analyse','analyze',
+        'fundamental','earnings','forecast','model','rsi','macd','support','resistance',
+        'beta','alpha','margin','revenue','cashflow','cash flow','debt','equity','buyback',
+        'dividend','growth rate','terminal value','monte carlo','ff4','fama','french',
+        'factor','sensitivity','scenario','options','volatility','iv rank','straddle',
+        'skew','puts','calls','short interest','graham','roic','nopat','ebitda',
+        'competitor','peer','sector','industry','momentum','moving average',
+    ]
+    _m = msg.lower()
+    return not any(kw in _m for kw in _analysis_kw)
+
+
+def _comp_ai(messages: list, system: str, stage: str = '') -> str:
+    """Claude call with tool use loop. Returns final text response.
+    stage parameter controls max_tokens: valuation gets 8000, all others 3500.
+    Uses prompt caching on system prompt (90% cheaper after first call).
+    Routes simple/conversational queries to Haiku to save cost.
+    Tracks token usage in st.session_state['cp_tokens_in'] / ['cp_tokens_out']."""
     _k = _get_api_key()
     if not _k:
         return "API key not configured — please set ANTHROPIC_API_KEY in Railway Variables."
     import anthropic as _a
     _client = _a.Anthropic(api_key=_k)
     _msgs = list(messages)  # don't mutate caller's list
+
+    # ── Model routing ───────────────────────────────────────────────
+    # Simple/short queries go to Haiku (~15× cheaper per token).
+    # Everything analytical stays on Sonnet-5.
+    _last_user_msg = ''
+    for _m in reversed(_msgs):
+        if _m.get('role') == 'user':
+            _c = _m.get('content', '')
+            _last_user_msg = _c if isinstance(_c, str) else ''
+            break
+    _use_haiku = _is_simple_query(_last_user_msg)
+    _model = "claude-haiku-4-5-20251001" if _use_haiku else "claude-sonnet-5"
+
+    # Stage-aware token budget.
+    _max_tok = 8000 if stage == 'valuation' else (1500 if _use_haiku else 3500)
+
+    # ── Token pricing ───────────────────────────────────────────────
+    # Sonnet-5: $3.00/M in, $15.00/M out; cache write $3.75/M, cache read $0.30/M
+    # Haiku:    $0.80/M in, $4.00/M out
+    _PRICE_IN   = 0.80 / 1_000_000 if _use_haiku else 3.0  / 1_000_000
+    _PRICE_OUT  = 4.0  / 1_000_000 if _use_haiku else 15.0 / 1_000_000
+    _PRICE_CACHE_WRITE = 3.75 / 1_000_000
+    _PRICE_CACHE_READ  = 0.30 / 1_000_000
+
+    # ── Prompt caching — wrap system prompt so Anthropic caches it ──
+    # After the first call per session the system prompt costs 90% less.
+    _sys_block = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
     try:
-        _max_rounds = 6  # prevent infinite tool loops
+        _max_rounds = 4  # reduced from 6 — limits tool-loop API calls per turn
         for _round in range(_max_rounds):
             _r = _client.messages.create(
-                model="claude-sonnet-5",
-                max_tokens=8000,
-                system=system,
+                model=_model,
+                max_tokens=_max_tok,
+                system=_sys_block,
                 messages=_msgs,
                 tools=_COMP_TOOLS
             )
+            # ── Track token usage in session state ──────────────
+            _usage = getattr(_r, 'usage', None)
+            if _usage:
+                _in_tok           = getattr(_usage, 'input_tokens', 0) or 0
+                _out_tok          = getattr(_usage, 'output_tokens', 0) or 0
+                _cache_write_tok  = getattr(_usage, 'cache_creation_input_tokens', 0) or 0
+                _cache_read_tok   = getattr(_usage, 'cache_read_input_tokens', 0) or 0
+                _SS = st.session_state
+                _SS['cp_tokens_in']  = _SS.get('cp_tokens_in', 0)  + _in_tok
+                _SS['cp_tokens_out'] = _SS.get('cp_tokens_out', 0) + _out_tok
+                # Cost = regular tokens + cache write premium + cache read (cheap)
+                _turn_cost = (
+                    _in_tok          * _PRICE_IN
+                    + _out_tok       * _PRICE_OUT
+                    + _cache_write_tok * _PRICE_CACHE_WRITE
+                    + _cache_read_tok  * _PRICE_CACHE_READ
+                )
+                _SS['cp_cost_usd'] = _SS.get('cp_cost_usd', 0.0) + _turn_cost
+
             # Collect text and tool_use blocks
             _text_blocks = []
             _tool_blocks = []
@@ -7803,8 +7932,14 @@ with tab_comp:
     # ════════════════════════════════════════════════════════════
     if not _SS.cp_msgs:
         _bull_ctx = ""
-        _bk = __import__('datetime').datetime.now().strftime('%Y%m%d') + \
-              str(__import__('datetime').datetime.now().hour // 4)
+        # Match bulletin's 2-slot schedule: 0800 or 2000
+        _bk_h = __import__('datetime').datetime.utcnow().hour
+        _bk_slot = '0800' if 8 <= _bk_h < 20 else '2000'
+        _bk_day = (__import__('datetime').datetime.utcnow()
+                   if _bk_h >= 8
+                   else __import__('datetime').datetime.utcnow() - __import__('datetime').timedelta(days=1)
+                   ).strftime('%Y%m%d') if _bk_h < 8 else __import__('datetime').datetime.utcnow().strftime('%Y%m%d')
+        _bk = _bk_day + _bk_slot
         _bul = _SS.get(f'bulletin_ai_{_bk}', {})
         _call = _bul.get('the_call', {}) if isinstance(_bul, dict) else {}
         _hl = _call.get('headline', '') if isinstance(_call, dict) else ''
@@ -7852,21 +7987,66 @@ with tab_comp:
         _ts_lines.append("")
     _transcript_txt = "\n".join(_ts_lines)
 
-    # ── Header — title + stage badge only ────────────────────────
+    # ── Credit clock — session budget tracker ────────────────────
+    _SESSION_BUDGET = 2.00   # $ per session hard limit
+    _WARN_THRESHOLD = 0.70   # show amber warning at 70% used
+    _cost_used  = _SS.get('cp_cost_usd', 0.0)
+    _cost_pct   = min(_cost_used / _SESSION_BUDGET, 1.0)
+    _cost_left  = max(_SESSION_BUDGET - _cost_used, 0.0)
+    _tok_in     = _SS.get('cp_tokens_in', 0)
+    _tok_out    = _SS.get('cp_tokens_out', 0)
+    _budget_hit = _cost_used >= _SESSION_BUDGET
+
+    # Colour: green → amber → red
+    if _cost_pct < _WARN_THRESHOLD:
+        _bar_col = '#22c55e'; _txt_col = '#86efac'
+    elif _cost_pct < 1.0:
+        _bar_col = '#F59E0B'; _txt_col = '#FCD34D'
+    else:
+        _bar_col = '#ef4444'; _txt_col = '#fca5a5'
+
+    _bar_w = int(_cost_pct * 100)
+    _cost_display = f"${_cost_used:.3f} / ${_SESSION_BUDGET:.2f}"
+    _left_display = f"${_cost_left:.3f} left" if not _budget_hit else "Session limit reached"
+
+    # ── Header — title + stage badge + credit clock ───────────────
     st.markdown(
-        f'<div style="display:flex;align-items:center;gap:12px;padding:6px 0 2px">'
+        f'<div style="display:flex;align-items:center;gap:12px;padding:6px 0 2px;flex-wrap:wrap">'
         f'<span style="font-size:1.25rem;font-weight:800;color:#E2E8F0;letter-spacing:-0.01em">🤖 AI Equity Analyst</span>'
         f'<span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;'
         f'color:{_scol};background:linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03));'
         f'padding:3px 10px;border-radius:20px;border:1px solid {_scol}60;'
         f'box-shadow:0 0 8px {_scol}20">{_sico} {_slbl}</span>'
+        f'<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'
+        f'  <div style="font-size:0.62rem;color:#64748B;text-align:right;line-height:1.4">'
+        f'    <span style="color:{_txt_col};font-weight:700">{_cost_display}</span><br>'
+        f'    <span style="color:#475569">{_left_display}</span>'
+        f'  </div>'
+        f'  <div style="width:90px;height:8px;background:#1E293B;border-radius:4px;overflow:hidden;border:1px solid #334155">'
+        f'    <div style="width:{_bar_w}%;height:100%;background:{_bar_col};border-radius:4px;'
+        f'    transition:width 0.4s ease"></div>'
+        f'  </div>'
+        f'</div>'
         f'</div>', unsafe_allow_html=True)
+
+    if _budget_hit:
+        st.error(
+            f"⛔ Session credit limit of ${_SESSION_BUDGET:.2f} reached "
+            f"({_tok_in:,} input + {_tok_out:,} output tokens). "
+            f"Start a **New Session** (🔄) to continue your analysis.",
+            icon=None)
+    elif _cost_pct >= _WARN_THRESHOLD:
+        st.warning(
+            f"⚠️ {int(_cost_pct*100)}% of session budget used — "
+            f"${_cost_left:.3f} remaining. Consider wrapping up or starting a new session.",
+            icon=None)
 
     # ── Reset button (kept for new session — hidden in toolbar below) ──
     def _do_reset():
         for _k in ['cp_msgs','cp_stage','cp_ctx','cp_data','cp_analyses',
                    'cp_report','cp_new_ticks','cp_show_resume','cp_name_map',
-                   'cp_auto_restore_checked']:
+                   'cp_auto_restore_checked',
+                   'cp_tokens_in','cp_tokens_out','cp_cost_usd']:
             if _k in _SS: del _SS[_k]
         try:
             import os as _osrst
@@ -7956,11 +8136,13 @@ div[data-testid="stChatInput"] > div {
         background: rgba(13,31,53,0.6) !important;
     }
     </style>""", unsafe_allow_html=True)
-    _typed_input = st.chat_input("Ask about a stock, a sector, or a comparison…", key="cp_input")
+    # Block input if session budget exhausted
+    _typed_input = None if _budget_hit else st.chat_input(
+        "Ask about a stock, a sector, or a comparison…", key="cp_input")
     if _typed_input:
         _user_input = _typed_input
 
-    if _user_input:
+    if _user_input and not _budget_hit:
             # Add user message
             _SS.cp_msgs.append({"role": "user", "content": _user_input})
 
@@ -8136,10 +8318,42 @@ div[data-testid="stChatInput"] > div {
 
                 # ── Build AI response ─────────────────────────────
                 _sys = _comp_system_prompt(_SS.cp_stage, _SS.cp_ctx, _SS.cp_data)
-                # Pass last 12 messages for context (keep tokens reasonable)
-                _hist = [{"role": m["role"], "content": m["content"]}
-                         for m in _SS.cp_msgs[-12:]]
-                _reply = _comp_ai(_hist, _sys)
+
+                # ── Conversation history: summarise + keep recent ──
+                # Strategy: keep last 3 turns verbatim; summarise everything older
+                # into a compact paragraph via Haiku. Summary is cached in session_state
+                # so it's only recomputed when the window shifts (not every turn).
+                _RECENT_TURNS = 3
+                _all_msgs = _SS.cp_msgs  # full message list
+                if len(_all_msgs) > _RECENT_TURNS * 2:
+                    # Turns to summarise = everything except the most recent _RECENT_TURNS
+                    _older_msgs  = _all_msgs[:-(  _RECENT_TURNS)]
+                    _recent_msgs = _all_msgs[-(_RECENT_TURNS):]
+                    # Cache key: number of older turns (changes when new turns age in)
+                    _sum_key = f"cp_hist_summary_{len(_older_msgs)}"
+                    if _sum_key not in _SS:
+                        # Clear previous cached summaries to free memory
+                        for _old_key in [k for k in _SS.keys() if k.startswith('cp_hist_summary_')]:
+                            del _SS[_old_key]
+                        _SS[_sum_key] = _comp_summarise_history(
+                            _older_msgs, _SS.cp_stage, _SS.cp_ctx)
+                    _summary_text = _SS.get(_sum_key, '')
+                    if _summary_text:
+                        # Inject summary as a synthetic exchange so Claude understands prior context
+                        _hist = [
+                            {"role": "user",
+                             "content": f"[Earlier conversation summary — treat as established context]: {_summary_text}"},
+                            {"role": "assistant",
+                             "content": "Understood. I have the context from our earlier analysis and will continue from there."},
+                        ] + [{"role": m["role"], "content": m["content"]} for m in _recent_msgs]
+                    else:
+                        # Summarisation failed — fall back to recent turns only
+                        _hist = [{"role": m["role"], "content": m["content"]} for m in _recent_msgs]
+                else:
+                    # Session still short — send full history
+                    _hist = [{"role": m["role"], "content": m["content"]} for m in _all_msgs]
+
+                _reply = _comp_ai(_hist, _sys, stage=_SS.cp_stage)
 
                 # ── Update dynamic name map from AI reply ─────────
                 if 'cp_name_map' not in _SS: _SS.cp_name_map = {}
