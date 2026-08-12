@@ -4358,7 +4358,24 @@ def _comp_ai(messages: list, system: str) -> str:
 
     except Exception as _e:
         _msg = str(_e) or type(_e).__name__
-        return f"Connection issue ({_msg[:100]}) — please try again."
+        _msg_lo = _msg.lower()
+        # Detect specific Anthropic API error types and show friendly messages
+        if '401' in _msg or 'authentication' in _msg_lo or ('cred' in _msg_lo and 'invalid' in _msg_lo):
+            return "⚠️ API key issue — the Anthropic API key appears to be invalid or has expired. Please check the ANTHROPIC_API_KEY environment variable in Railway."
+        if 'credit' in _msg_lo or 'balance' in _msg_lo or ('400' in _msg and 'cred' in _msg_lo):
+            return "⚠️ API credit balance is too low. Please top up the Anthropic account at console.anthropic.com to continue."
+        if '529' in _msg or 'overloaded' in _msg_lo:
+            return "⚠️ Anthropic's servers are temporarily overloaded. Please wait a moment and try again."
+        if 'context' in _msg_lo and ('window' in _msg_lo or 'token' in _msg_lo or 'length' in _msg_lo):
+            return "⚠️ The conversation has become very long and hit the context limit. Please start a new session (🔄) — your analysis can continue from where you left off."
+        if 'max_tokens' in _msg_lo or 'too long' in _msg_lo:
+            return "Response was too long — please ask me to continue or break the question into smaller parts."
+        if '500' in _msg or '503' in _msg or 'server' in _msg_lo:
+            return "⚠️ Anthropic API server error. Please try again in a moment."
+        if 'timeout' in _msg_lo or 'timed out' in _msg_lo:
+            return "⚠️ Request timed out. Please try again."
+        # Generic fallback — never show raw API JSON to the user
+        return "⚠️ Something went wrong with the AI connection. Please try again in a moment."
 
 
 def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
@@ -4444,13 +4461,22 @@ YOUR JOB IN THIS STAGE:
    - Mechanical EPS effect: if share count is declining X%pa, EPS grows X% faster than net income — retail investors often miss this and double-count growth
    - Quality check: is the buyback funded from FCF (sustainable) or debt (increases leverage risk)?
    - Conviction check: is management buying back shares when they're cheap or when they're expensive? Buybacks above intrinsic value destroy value for remaining shareholders.
-7. FAMA-FRENCH FACTOR ANALYSIS (MANDATORY): You MUST discuss the FF4 factor signal from the data above.
+7. FAMA-FRENCH FACTOR ANALYSIS (MANDATORY — YOU MUST PRODUCE THIS SECTION FOR EVERY STOCK, NO EXCEPTIONS): You MUST discuss the FF4 factor signal from the data above.
    - State the signal (STRONG ALPHA / MARGINAL / AVOID) and what it means in plain English
    - Explain the alpha, beta, SMB, HML, MOM loadings in context
    - Flag: "This is US-calibrated data — treat directionally for non-US stocks. Updated weekly."
    - If factor data unavailable: DO NOT say "not available" and move on. Instead, state clearly WHY it is unavailable — e.g. "CRM is not in the pre-screened FF4 universe — this typically means the stock failed the data quality filter (requires 12+ months of clean price history with no gaps) or is too recently listed. This is a data coverage limitation, NOT a negative signal about the stock." Then build a qualitative proxy: (a) Beta from stock data → market risk loading; (b) Market cap → SMB loading direction (large-cap tilts negative SMB = no small-cap premium); (c) P/B ratio → HML loading (high P/B = growth tilt = negative HML); (d) 12-month momentum → MOM loading. Present this as: "Directional factor proxy (not a regression): Market beta X.XX | SMB: [large-cap, likely −ve] | HML: [P/B Xx → growth tilt, −ve HML] | MOM: [+/−, trailing 12m return]". Always be explicit that this is a qualitative proxy, not a run regression.
    - NEVER simply say "not available" and move on — always give the user something analytical about factor exposure.
-8. Compare to sector/industry peers: reference the sector context, typical margins and valuations for this industry. If the user asks for live peer data you don't have, offer to add those tickers to the session.
+8. Compare to sector/industry peers: ALWAYS produce a competitor comparison table when the user asks (or proactively at stage opening). The table MUST include these exact columns — never omit any:
+   | Metric | [Company] | Competitor 1 | Competitor 2 | Competitor 3 |
+   |---|---|---|---|---|
+   | Revenue | | | | |
+   | Gross margin | | | | |
+   | Operating margin | | | | |
+   | Net margin | | | | |
+   | EV/EBITDA | | | | |
+   | Market share (%) | | | | |
+   If live peer data is unavailable, use general knowledge and flag it clearly. Never produce a competitor table without EV/EBITDA and market share — those two columns are mandatory. If you don't know the exact market share figure, use directional language (e.g. "#1 by volume", "~15% share") and flag it as estimated.
 9. SHORT INTEREST & POSITIONING: Comment on short interest % (from data if available) — a heavily shorted stock has squeeze potential but also signals bearish informed money.
 10. FLAG NEXT EARNINGS: Mention the next earnings date if available in data — this is the most important near-term catalyst for any thesis.
 11. Flag any behavioural biases in user reasoning (recency, momentum-chasing, anchoring)
@@ -4603,7 +4629,7 @@ YOUR JOB — BE SPECIFIC, NOT GENERIC:
    - Ideal entry zone (price level where risk/reward is best)
    - Stop-loss reference point
    - Target exit zone based on resistance
-7. OPTIONS MARKET INTELLIGENCE (MANDATORY — produce this before the Why Now? test):
+7. OPTIONS MARKET INTELLIGENCE (MANDATORY — YOU MUST PRODUCE THIS SECTION. Do not skip it. Do not move to item 8 without completing this. If you forget, the user will get an incomplete analysis):
    The options market is the smartest money in the room — it prices in what equity investors miss. Always cover:
    - IMPLIED VOLATILITY & IV RANK: "Current IV is approximately X% (from the stock's options chain context). IV rank of Y% means current IV is at the Yth percentile of its 52-week range — [low = options cheap, good to buy protection / high = options expensive, smart money is hedging]."
    - EXPECTED MOVE: "The at-the-money straddle implies a ±X% move into the next earnings print (approx. $X to $Y range around current price of $Z). This is the market's best estimate of the binary risk."
@@ -8196,16 +8222,35 @@ div[data-testid="stChatInput"] > div {
             def _fix_reply_fmt(txt: str) -> str:
                 import re as _r
                 # Fix missing space after % sign followed by letter: +12.4%surprise → +12.4% surprise
-                txt = _r.sub(r'(%)([\w])', r'\1 \2', txt)
-                # Fix missing space after $ amount followed by letter: $221/share → $221 / share (slash)
+                txt = _r.sub(r'([\d])(%)([\w])', r'\1\2 \3', txt)
+                # Fix missing space after $ amount followed by a letter: $221B → $221 B
                 txt = _r.sub(r'(\$[\d,.]+)([A-Za-z])', r'\1 \2', txt)
-                # Fix missing space before opening paren preceded by letter: foo(bar) → foo (bar)
-                txt = _r.sub(r'([a-zA-Z0-9])(\()', r'\1 \2', txt)
-                # Ensure decimal in numbers like 221 that appear as intrinsic values (skip — risky)
-                # Fix lone * used as italics without closing * on same line — remove stray asterisk
-                txt = _r.sub(r'(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)', r'*\1*', txt)
-                # Fix ---\n or —\n at very end of a line that creates extra horizontal rule noise
-                txt = _r.sub(r'\n---\n', '\n\n---\n\n', txt)
+                # Fix missing space before opening paren preceded by letter/digit: foo(bar) → foo (bar)
+                # but don't touch markdown links like [text](url)
+                txt = _r.sub(r'([a-zA-Z0-9])(\()(?!\[)', r'\1 \2', txt)
+                # Fix stray lone asterisk at start of line (bullet-point asterisks are fine)
+                # Remove asterisk that has no matching partner on the same line
+                def _fix_asterisks(line: str) -> str:
+                    # Count single asterisks (not **bold**)
+                    # Replace *word* with _word_ for cleaner italics rendering in markdown
+                    # First protect **bold** by temporarily replacing
+                    line = _r.sub(r'\*\*(.+?)\*\*', r'@@BOLD@@\1@@BOLD@@', line)
+                    # Now count remaining single *
+                    stars = [m.start() for m in _r.finditer(r'\*', line)]
+                    if len(stars) % 2 != 0:
+                        # Odd number of asterisks — remove the lone trailing one
+                        line = line[:stars[-1]] + line[stars[-1]+1:]
+                    # Restore bold
+                    line = line.replace('@@BOLD@@', '**')
+                    return line
+                lines = txt.split('\n')
+                txt = '\n'.join(_fix_asterisks(l) for l in lines)
+                # Fix missing space after closing bracket in citations: [1]word → [1] word
+                txt = _r.sub(r'(\])([A-Za-z])', r'\1 \2', txt)
+                # Normalise --- separators to have blank lines around them
+                txt = _r.sub(r'(?<!\n)\n---\n(?!\n)', '\n\n---\n\n', txt)
+                # Fix ×digit missing space: 10×the → 10× the
+                txt = _r.sub(r'(×)([A-Za-z])', r'\1 \2', txt)
                 return txt
 
             _display_reply = _fix_reply_fmt(_display_reply or _reply)
@@ -8374,7 +8419,10 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
 
     if _SS.cp_data:
         _card_label = f"📊 Stock Cards — {', '.join(list(_SS.cp_data.keys())[:5])}"
-        with st.expander(_card_label, expanded=True):
+        # Default open; stays open across reruns unless user manually closes
+        if '_cards_exp' not in _SS:
+            _SS['_cards_exp'] = True
+        with st.expander(_card_label, expanded=_SS.get('_cards_exp', True)):
             _tickers_to_show = list(_SS.cp_data.keys())[:5]   # cap at 5
             _ncols = len(_tickers_to_show)
             _card_cols = st.columns(_ncols, gap="small")
@@ -8849,8 +8897,11 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
                         st.markdown(_card_html, unsafe_allow_html=True)
 
                     # TSR deep-dive expander (always shown once data loaded)
+                    # State persisted in session_state so it doesn't collapse on rerun
                     if not _td.get('error'):
-                        with st.expander("📊 TSR Deep-Dive — Annual & Quarterly"):
+                        _tsr_exp_key = f"_tsr_exp_{_tk}"
+                        with st.expander("📊 TSR Deep-Dive — Annual & Quarterly",
+                                         expanded=_SS.get(_tsr_exp_key, False)):
                             _tsr_d = _comp_compute_tsr(_td)
 
                             # ── WHY TSR MATTERS ──
@@ -9040,9 +9091,12 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
                                 _qt.append('</table></div>')
                                 st.markdown(''.join(_qt), unsafe_allow_html=True)
 
-                    # Price chart — always available once data loaded, inside expander
-                    if not _td.get('error'):
-                        with st.expander("📈 Price & Technical Analysis"):
+                    # Price chart — shown full-width below card grid for 2+ stocks
+                    # For single stock, show inline; for multiple stocks, a stub here
+                    # (full-width charts rendered after the card columns close)
+                    if not _td.get('error') and _ncols == 1:
+                        with st.expander("📈 Price & Technical Analysis",
+                                         expanded=_SS.get(f'_chart_exp_{_tk}', False)):
                             import pandas as _pd_ch, plotly.graph_objects as _go_ch
                             from plotly.subplots import make_subplots as _msp
                             import numpy as _np_ch
@@ -9221,8 +9275,113 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
                                 _SS[_rm_confirm_key] = False
                                 st.rerun()
 
-    # ── PDF download — available from finalise stage onward, or whenever stocks are loaded ──
-    if _SS.cp_data and _stage in ('finalise', 'report'):
+    # ── Full-width charts section — shown when 2+ stocks are loaded ──────────
+    # (For single stock, charts are shown inline inside the card column above)
+    if _SS.cp_data and len(_SS.cp_data) >= 2:
+        _fw_tickers = list(_SS.cp_data.keys())[:5]
+        _fw_tab_labels = [f"📈 {_tk}" for _tk in _fw_tickers]
+        _fw_tabs = st.tabs(_fw_tab_labels)
+        for _fwi, _fwtk in enumerate(_fw_tickers):
+            with _fw_tabs[_fwi]:
+                _fwtd = _SS.cp_data[_fwtk]
+                if _fwtd.get('error'):
+                    st.warning(f"No data for {_fwtk}")
+                    continue
+                import pandas as _pd_fw, plotly.graph_objects as _go_fw, numpy as _np_fw
+                from plotly.subplots import make_subplots as _msp_fw
+                _per_key_fw = f"_cht_per_{_fwtk}"
+                _per_opts_fw = ['1W','1M','3M','YTD','1Y','5Y']
+                _per_cols_fw = st.columns(len(_per_opts_fw))
+                for _pi_fw, _po_fw in enumerate(_per_opts_fw):
+                    with _per_cols_fw[_pi_fw]:
+                        if st.button(_po_fw, key=f"_fw_pb_{_fwtk}_{_po_fw}",
+                                     use_container_width=True,
+                                     type="primary" if _SS.get(_per_key_fw,'1Y')==_po_fw else "secondary"):
+                            _SS[_per_key_fw] = _po_fw
+                _sel_fw = _SS.get(_per_key_fw, '1Y')
+                _fw_cache_key = f"_fwhist_{_fwtk}_{_sel_fw}"
+                if _fw_cache_key not in _SS:
+                    try:
+                        import yfinance as _yf_fw
+                        _yf_fw_map = {'1W':'5d','1M':'1mo','3M':'3mo','YTD':'ytd','1Y':'1y','5Y':'5y'}
+                        _raw_fw = _yf_fw.Ticker(_fwtk).history(period=_yf_fw_map[_sel_fw], interval='1d', auto_adjust=True)
+                        _SS[_fw_cache_key] = _raw_fw if not _raw_fw.empty else _fwtd.get('hist')
+                    except Exception:
+                        _SS[_fw_cache_key] = _fwtd.get('hist')
+                _fw_h = _SS.get(_fw_cache_key) or _fwtd.get('hist')
+                if _fw_h is not None and not _fw_h.empty:
+                    _fw_df = _fw_h[['Close']].copy()
+                    _fw_df.index = _pd_fw.to_datetime(_fw_df.index).tz_localize(None)
+                    _fw_df['MA20']  = _fw_df['Close'].rolling(20).mean()
+                    _fw_df['MA50']  = _fw_df['Close'].rolling(50).mean()
+                    _fw_df['MA200'] = _fw_df['Close'].rolling(200).mean()
+                    _dlt = _fw_df['Close'].diff()
+                    _gn  = _dlt.clip(lower=0).rolling(14).mean()
+                    _ls  = (-_dlt.clip(upper=0)).rolling(14).mean()
+                    _fw_df['RSI'] = 100 - 100 / (1 + _gn / _ls.replace(0, _np_fw.nan))
+                    _e12 = _fw_df['Close'].ewm(span=12,adjust=False).mean()
+                    _e26 = _fw_df['Close'].ewm(span=26,adjust=False).mean()
+                    _fw_df['MACD']   = _e12 - _e26
+                    _fw_df['Signal'] = _fw_df['MACD'].ewm(span=9,adjust=False).mean()
+                    _fw_df['Hist']   = _fw_df['MACD'] - _fw_df['Signal']
+                    _macd_fw_key = f"_fw_macd_{_fwtk}"
+                    _show_fw_macd = st.checkbox("Show MACD", key=_macd_fw_key, value=False)
+                    _rows_fw = 3 if _show_fw_macd else 2
+                    _rh_fw = [0.5, 0.25, 0.25] if _show_fw_macd else [0.65, 0.35]
+                    _sp_fw = [_fwtk, 'RSI(14)'] + (['MACD(12,26,9)'] if _show_fw_macd else [])
+                    _fig_fw = _msp_fw(rows=_rows_fw, cols=1, shared_xaxes=True,
+                                      vertical_spacing=0.06, row_heights=_rh_fw,
+                                      subplot_titles=_sp_fw)
+                    _fig_fw.add_trace(_go_fw.Scatter(x=_fw_df.index, y=_fw_df['Close'],
+                        name='Price', line=dict(color='#10B981',width=2),
+                        hovertemplate='%{x|%d %b %Y}<br>Close: %{y:.2f}<extra></extra>'), row=1, col=1)
+                    _fig_fw.add_trace(_go_fw.Scatter(x=_fw_df.index, y=_fw_df['MA20'],
+                        name='MA20', line=dict(color='#F59E0B',width=1,dash='dot'),
+                        hovertemplate='MA20: %{y:.2f}<extra></extra>'), row=1, col=1)
+                    _fig_fw.add_trace(_go_fw.Scatter(x=_fw_df.index, y=_fw_df['MA50'],
+                        name='MA50', line=dict(color='#818CF8',width=1.2,dash='dot'),
+                        hovertemplate='MA50: %{y:.2f}<extra></extra>'), row=1, col=1)
+                    if len(_fw_df) >= 200:
+                        _fig_fw.add_trace(_go_fw.Scatter(x=_fw_df.index, y=_fw_df['MA200'],
+                            name='MA200', line=dict(color='#F472B6',width=1.2,dash='dash'),
+                            hovertemplate='MA200: %{y:.2f}<extra></extra>'), row=1, col=1)
+                    _fig_fw.add_trace(_go_fw.Scatter(x=_fw_df.index, y=_fw_df['RSI'],
+                        name='RSI', line=dict(color='#38BDF8',width=1.2),
+                        hovertemplate='RSI: %{y:.1f}<extra></extra>'), row=2, col=1)
+                    _fig_fw.add_hline(y=70, line_dash='dot', line_color='#ef4444', line_width=0.8, row=2, col=1)
+                    _fig_fw.add_hline(y=30, line_dash='dot', line_color='#22c55e', line_width=0.8, row=2, col=1)
+                    _fig_fw.update_yaxes(range=[0,100], row=2, col=1, tickfont=dict(size=9))
+                    if _show_fw_macd:
+                        _bc_fw = ['#22c55e' if v >= 0 else '#ef4444' for v in _fw_df['Hist'].fillna(0)]
+                        _fig_fw.add_trace(_go_fw.Scatter(x=_fw_df.index, y=_fw_df['MACD'],
+                            name='MACD', line=dict(color='#10B981',width=1.2),
+                            hovertemplate='MACD: %{y:.3f}<extra></extra>'), row=3, col=1)
+                        _fig_fw.add_trace(_go_fw.Scatter(x=_fw_df.index, y=_fw_df['Signal'],
+                            name='Signal', line=dict(color='#F59E0B',width=1,dash='dot'),
+                            hovertemplate='Signal: %{y:.3f}<extra></extra>'), row=3, col=1)
+                        _fig_fw.add_trace(_go_fw.Bar(x=_fw_df.index, y=_fw_df['Hist'],
+                            name='Histogram', marker_color=_bc_fw, opacity=0.6,
+                            hovertemplate='Hist: %{y:.3f}<extra></extra>'), row=3, col=1)
+                    _fig_fw.update_layout(
+                        height=560 if _show_fw_macd else 420,
+                        margin=dict(l=10, r=10, t=30, b=10),
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                        font=dict(size=11, color='#94A3B8'),
+                        legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                                    font=dict(size=10), bgcolor='rgba(0,0,0,0)'),
+                        hovermode='x unified', showlegend=True)
+                    _fig_fw.update_xaxes(showgrid=False, tickfont=dict(size=10))
+                    _fig_fw.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)',
+                                         tickfont=dict(size=10), row=1, col=1)
+                    st.plotly_chart(_fig_fw, use_container_width=True,
+                                    config={"displayModeBar": True,
+                                            "modeBarButtonsToAdd": ["drawline","drawopenpath","eraseshape"]},
+                                    key=f"_fwcht_{_fwtk}_{_sel_fw}_{int(_show_fw_macd)}")
+                else:
+                    st.info(f"No price history available for {_fwtk}")
+
+    # ── PDF download — available from fundamental stage onward (not just finalise) ──
+    if _SS.cp_data and _stage in ('fundamental', 'valuation', 'technical', 'finalise', 'report'):
         _ts2 = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')
         _pdf_bytes_early = _comp_generate_report_pdf(
             list(_SS.cp_data.keys()),
