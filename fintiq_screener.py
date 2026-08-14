@@ -8079,23 +8079,24 @@ with tab_comp:
     # is always available on first render
     # ════════════════════════════════════════════════════════════
     if not _SS.cp_msgs:
-        _bull_ctx = ""
-        # Match bulletin's 2-slot schedule: 0800 or 2000
+        # Static opening greeting — no API call on page load (saves ~$0.015 per session).
+        # Optionally incorporate bulletin headline if already cached in session state.
         _bk_h = __import__('datetime').datetime.utcnow().hour
         _bk_slot = '0800' if 8 <= _bk_h < 20 else '2000'
-        _bk_day = (__import__('datetime').datetime.utcnow()
+        _bk_day = (__import__('datetime').datetime.utcnow().strftime('%Y%m%d')
                    if _bk_h >= 8
-                   else __import__('datetime').datetime.utcnow() - __import__('datetime').timedelta(days=1)
-                   ).strftime('%Y%m%d') if _bk_h < 8 else __import__('datetime').datetime.utcnow().strftime('%Y%m%d')
+                   else (__import__('datetime').datetime.utcnow() -
+                         __import__('datetime').timedelta(days=1)).strftime('%Y%m%d'))
         _bk = _bk_day + _bk_slot
         _bul = _SS.get(f'bulletin_ai_{_bk}', {})
         _call = _bul.get('the_call', {}) if isinstance(_bul, dict) else {}
         _hl = _call.get('headline', '') if isinstance(_call, dict) else ''
-        _bull_ctx = f" Today's market read: {_hl}" if _hl else ""
-        _open_sys = _comp_system_prompt('discovery', {}, {})
-        _open_msg = _comp_ai(
-            [{"role": "user", "content": f"Start the session with a brief, sharp opening — one sentence on the market, then ask what the user wants to work on. Under 50 words.{_bull_ctx}"}],
-            _open_sys)
+        if _hl:
+            _open_msg = (f"Markets are live. {_hl} "
+                         f"What would you like to analyse today — a specific stock, a sector, or a comparison?")
+        else:
+            _open_msg = ("Ready to work. Tell me what you'd like to analyse — a stock, sector, or comparison — "
+                         "and whether you're thinking long, short, or just exploring.")
         _SS.cp_msgs.append({"role": "assistant", "content": _open_msg})
 
     # ════════════════════════════════════════════════════════════
@@ -8136,26 +8137,27 @@ with tab_comp:
     _transcript_txt = "\n".join(_ts_lines)
 
     # ── Credit clock — session budget tracker ────────────────────
-    _SESSION_BUDGET = 2.00   # $ per session hard limit
-    _WARN_THRESHOLD = 0.70   # show amber warning at 70% used
-    _cost_used  = _SS.get('cp_cost_usd', 0.0)
-    _cost_pct   = min(_cost_used / _SESSION_BUDGET, 1.0)
-    _cost_left  = max(_SESSION_BUDGET - _cost_used, 0.0)
-    _tok_in     = _SS.get('cp_tokens_in', 0)
-    _tok_out    = _SS.get('cp_tokens_out', 0)
-    _budget_hit = _cost_used >= _SESSION_BUDGET
+    # Display in "credits" (1 credit = $0.01) — never show dollar amounts to users.
+    _SESSION_BUDGET   = 1.00          # $1.00 per session hard limit
+    _CREDITS_TOTAL    = 100           # 100 credits = $1.00
+    _WARN_CREDITS     = 25            # warn when ≤25 credits remain
+    _cost_used        = _SS.get('cp_cost_usd', 0.0)
+    _credits_used     = min(int(_cost_used * 100), _CREDITS_TOTAL)   # $0.01 = 1 credit
+    _credits_left     = max(_CREDITS_TOTAL - _credits_used, 0)
+    _cost_pct         = min(_cost_used / _SESSION_BUDGET, 1.0)
+    _budget_hit       = _credits_left == 0
 
     # Colour: green → amber → red
-    if _cost_pct < _WARN_THRESHOLD:
+    if _credits_left > _WARN_CREDITS:
         _bar_col = '#22c55e'; _txt_col = '#86efac'
-    elif _cost_pct < 1.0:
+    elif _credits_left > 0:
         _bar_col = '#F59E0B'; _txt_col = '#FCD34D'
     else:
         _bar_col = '#ef4444'; _txt_col = '#fca5a5'
 
-    _bar_w = int(_cost_pct * 100)
-    _cost_display = f"${_cost_used:.3f} / ${_SESSION_BUDGET:.2f}"
-    _left_display = f"${_cost_left:.3f} left" if not _budget_hit else "Session limit reached"
+    _bar_w         = int(_cost_pct * 100)
+    _cred_display  = f"💳 {_credits_left} credits"
+    _cred_sub      = "remaining" if not _budget_hit else "session ended"
 
     # ── Header — title + stage badge + credit clock ───────────────
     st.markdown(
@@ -8167,8 +8169,8 @@ with tab_comp:
         f'box-shadow:0 0 8px {_scol}20">{_sico} {_slbl}</span>'
         f'<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'
         f'  <div style="font-size:0.62rem;color:#64748B;text-align:right;line-height:1.4">'
-        f'    <span style="color:{_txt_col};font-weight:700">{_cost_display}</span><br>'
-        f'    <span style="color:#475569">{_left_display}</span>'
+        f'    <span style="color:{_txt_col};font-weight:700">{_cred_display}</span><br>'
+        f'    <span style="color:#475569">{_cred_sub}</span>'
         f'  </div>'
         f'  <div style="width:90px;height:8px;background:#1E293B;border-radius:4px;overflow:hidden;border:1px solid #334155">'
         f'    <div style="width:{_bar_w}%;height:100%;background:{_bar_col};border-radius:4px;'
@@ -8179,14 +8181,11 @@ with tab_comp:
 
     if _budget_hit:
         st.error(
-            f"⛔ Session credit limit of ${_SESSION_BUDGET:.2f} reached "
-            f"({_tok_in:,} input + {_tok_out:,} output tokens). "
-            f"Start a **New Session** (🔄) to continue your analysis.",
+            "⛔ Session credits exhausted. Start a **New Session** (🔄) to continue your analysis.",
             icon=None)
-    elif _cost_pct >= _WARN_THRESHOLD:
+    elif _credits_left <= _WARN_CREDITS:
         st.warning(
-            f"⚠️ {int(_cost_pct*100)}% of session budget used — "
-            f"${_cost_left:.3f} remaining. Consider wrapping up or starting a new session.",
+            f"⚠️ {_credits_left} credits remaining — consider wrapping up or starting a new session (🔄).",
             icon=None)
 
     # ── Reset button (kept for new session — hidden in toolbar below) ──
@@ -8643,9 +8642,15 @@ div[data-testid="stChatInput"] > div {
     # ════════════════════════════════════════════════════════════
     with st.expander("📋 Analyst Playbook — How a Hedge Fund Analyst Thinks About a Stock"):
         st.markdown("""
-<div style="font-size:0.72rem;color:#64748B;margin-bottom:10px">
+<div style="font-size:0.72rem;color:#64748B;margin-bottom:6px">
 Not sure what to ask? These are the questions a professional equity analyst works through systematically.
-Enter your company name below — it will replace <strong>[Company]</strong> in every question so you can copy and paste straight into chat.
+Enter your company name below and copy questions straight into chat.
+</div>
+<div style="font-size:0.70rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);
+border-radius:6px;padding:8px 12px;margin-bottom:10px;color:#94A3B8;line-height:1.7">
+<strong style="color:#FBBF24">💳 Budget guide:</strong>
+All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ starred questions</strong> (15 total) for a complete HF-grade picture within 40–50 credits.<br>
+<strong style="color:#FBBF24">🔧 Tool tip:</strong> Questions marked <strong style="color:#60a5fa">🔍</strong> trigger live web search. Questions marked <strong style="color:#34d399">📊</strong> pull live peer financials. These give the best data but use 2–3× more credits per question.
 </div>""", unsafe_allow_html=True)
 
         _pb_company = st.text_input(
@@ -8660,55 +8665,61 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
         _pb_label = _pb_company.strip() if _pb_company.strip() else '[Company]'
 
         _pb_stages = [
-            ("🔎 Stage 1 — Business Quality & Moat", [
-                "What does [Company] actually do, and how does it make money? Break down the revenue model — subscription vs transactional vs services — and what percentage each contributes.",
-                "What is [Company]'s competitive moat — cost advantage, network effects, switching costs, or brand? How durable is each source, and which is most at risk from AI or structural disruption?",
-                "Who are [Company]'s 3 main competitors? Produce a comparison table: gross margins, operating margins, revenue growth, EV/EBITDA, and market share for each.",
+            ("🎯 Stage 0 — Mandate & Intake (answer these first — shapes everything)", [
+                "⭐ I'm investing in [Company] through [personal account / ISA / SIPP / long-short fund]. My maximum acceptable loss on this position is [£/$ amount]. Is my thesis anchored to a specific catalyst or is this a 12–18 month fundamental call?",
+                "⭐ Before we build the analysis — present the 3 strongest arguments FOR the OPPOSITE of my current view on [Company]. Don't soften them. Then ask if I can counter each one.",
+                "⭐ Do I have any existing exposure to [Company] or closely correlated assets — directly, via sector ETFs, or through related equities? Help me think through portfolio-level correlation risk before sizing this position.",
+                "What is the single thing that, if it turned out to be true, would make me immediately reverse my thesis on [Company]? Help me articulate this before confirmation bias takes hold.",
+            ]),
+            ("🔎 Stage 1 — Business Quality & Moat (~15–20 credits)", [
+                "⭐ What does [Company] actually do, and how does it make money? Break down the revenue model — subscription vs transactional vs services — and what percentage each contributes. Which segment is the profit engine and which is the drag?",
+                "⭐ What is [Company]'s competitive moat — cost advantage, network effects, switching costs, or brand? How durable is each source, and which is most at risk from AI or structural disruption?",
+                "📊 Who are [Company]'s 3 main competitors? Fetch live peer financials and produce a comparison table: gross margins, operating margins, revenue growth, EV/EBITDA, and market share for each.",
                 "Is [Company]'s revenue recurring (subscriptions, contracts) or transactional? What does that mean for earnings predictability, churn risk, and downside protection in a recession?",
-                "What is [Company]'s ROIC trend over the last 5 years — is the moat strengthening or eroding? Is ROIC above or below the cost of capital?",
+                "⭐ What is [Company]'s ROIC trend over the last 5 years — is the moat strengthening or eroding? Is ROIC above or below the cost of capital? What does the trend tell us about the durability of the competitive advantage?",
                 "What is [Company]'s FCF conversion rate (FCF ÷ net income)? Is earnings quality high or is there a gap between GAAP earnings and cash? What explains any gap — working capital, capex, or stock-based compensation?",
                 "Break down [Company]'s revenue and operating margin by segment. Which segment drives profit, which is a drag, and where is growth actually coming from?",
                 "What does the Fama-French 4-factor analysis tell us about [Company]'s risk-adjusted return history? If FF4 data is unavailable, build a directional factor proxy using beta, P/B, market cap, and 12-month momentum.",
                 "How is management compensated — are their incentives (bonuses, equity grants, performance thresholds) aligned with long-term shareholder value creation, or do they reward revenue over returns?",
                 "Does [Company] have an active share buyback programme? What is the buyback yield, is it funded from FCF or debt, and is management buying back shares at sensible prices relative to intrinsic value?",
-                "What does consensus expect for [Company]'s next 12 months in terms of revenue, EPS, and margin? Where specifically do you think consensus is wrong — too optimistic or too conservative?",
-                "What would make me wrong on [Company]? Name the 2-3 things that could permanently impair this business — not cyclical headwinds, but structural threats that change the moat durability.",
+                "🔍 What does consensus expect for [Company]'s next 12 months in terms of revenue, EPS, and margin? Where specifically do you think consensus is wrong — too optimistic or too conservative?",
+                "⭐ What would make me wrong on [Company]? Name the 2–3 things that could permanently impair this business — not cyclical headwinds, but structural threats that change the moat durability.",
             ]),
-            ("💰 Stage 2 — Valuation", [
-                "Build the WACC for [Company] from first principles: risk-free rate, equity risk premium, beta, size premium, cost of debt, and capital structure weights. Show the full calculation — don't just state a number.",
-                "What is [Company] currently trading at on EV/EBITDA, P/E (trailing and forward), P/FCF, and EV/Revenue? Produce a table comparing these multiples to: (1) the sector average, (2) [Company]'s own 5-year average, and (3) the closest 2-3 peers. Where is the premium or discount, and is it justified?",
-                "Walk me through a 3-phase DCF for [Company] using the McKinsey Value Driver Formula for terminal value: TV = NOPAT(yr11) × (1 − g/RONIC) / (WACC − g). Assume RONIC of 15% for software/SaaS or 12% for mature industrials unless we discuss otherwise. Show all working.",
-                "At the current price, what revenue growth rate and margin level is the market implying for [Company]? Is that realistic given the competitive dynamics and historical track record?",
-                "Run the WACC × terminal growth sensitivity grid for [Company]: a 5×5 table showing intrinsic value per share at WACC from 7.5% to 11.5% and terminal growth from 1% to 3.5%. Colour code: green = above current price, red = below.",
+            ("💰 Stage 2 — Valuation (~25–35 credits)", [
+                "⭐ Build the WACC for [Company] from first principles: risk-free rate, equity risk premium, beta, size premium, cost of debt, and capital structure weights. If [Company] has material revenue in China or EM markets, add a country risk premium. Show the full calculation and produce a WACC sensitivity table (ERP ±1%, beta ±0.3).",
+                "📊 What is [Company] currently trading at on EV/EBITDA, P/E (trailing and forward), P/FCF, and EV/Revenue? Produce a table comparing these multiples to: (1) the sector average, (2) [Company]'s own 5-year average, and (3) the closest 2–3 peers. Where is the premium or discount, and is it justified?",
+                "Does [Company] have 2 or more materially different business segments? If yes, run a sum-of-the-parts (SOTP) valuation — value each segment separately using the appropriate method (EV/EBITDA for mature segments, DCF or EV/Revenue for high-growth, probability-weighted TAM for speculative pre-revenue segments) and sum to an equity value per share.",
+                "⭐ Walk me through a 3-phase DCF for [Company] showing the full free cash flow bridge for each year: Revenue → Operating margin → EBIT → cash taxes → NOPAT → net working capital change → maintenance capex (split from growth capex) → D&A → unlevered FCF. Use the McKinsey Value Driver Formula for terminal value. Show all working and disclose your SBC treatment.",
+                "At the current price, what revenue growth rate and margin level is the market implying for [Company]? Is that realistic given the competitive dynamics and historical track record? What is the variant perception — where do I disagree with the market's implied probability?",
+                "⭐ Run the sensitivity tables in the correct order: (1) WACC × terminal growth rate — 5×5 grid, green = above current price, red = below. (2) Operating margin × revenue growth. Both tables as per-share equity values.",
                 "What is the margin of safety on [Company]? If the base case DCF is wrong by 20% on the downside, does the current price still look attractive? What is the break-even assumption set?",
                 "What does [Company]'s net debt / EBITDA and interest coverage ratio look like? If net debt/EBITDA > 3x, flag the refinancing risk and whether FCF is sufficient to deleverage without equity issuance.",
-                "What is the Graham Number for [Company], and what does it tell us about whether the stock is speculative or value-priced relative to book value and earnings?",
-                "Translate the DCF assumptions into a forward TSR decomposition: performance contribution (earnings growth), yield contribution (FCF/dividend yield), and valuation re-rating (multiple expansion/contraction). Does the implied TSR beat the market benchmark?",
+                "Translate the DCF assumptions into: (1) bull/base/bear scenarios with explicit probabilities and a probability-weighted expected value, (2) a forward TSR decomposition showing performance contribution, yield contribution, and valuation re-rating. Does the implied TSR beat the market benchmark?",
             ]),
-            ("📈 Stage 3 — Technical & Timing", [
-                "What is the overall trend structure for [Company] — uptrend (higher highs, higher lows), downtrend (lower highs, lower lows), or base formation? Where is price relative to the 52-week range?",
-                "Where is [Company] relative to its 50-day and 200-day moving averages? Is a golden cross or death cross forming? What does the MA structure tell us about momentum?",
-                "What is the RSI (14) for [Company] right now — overbought (>70), oversold (<30), or neutral? What is the Stochastic reading on a shorter-term basis? Are they in agreement or diverging?",
-                "What is the MACD signal for [Company]? Is the MACD line above or below the signal line, and is the histogram expanding or contracting? Does MACD confirm or diverge from price action?",
-                "Where are the key support and resistance levels for [Company] from the 1-year chart? Give specific price levels. What would a good low-risk entry zone look like for both a long and a short position?",
-                "What does the options market tell us about [Company]? Cover: (1) current implied volatility and IV rank vs 52-week range — are options cheap or expensive? (2) expected move into earnings from the ATM straddle price, (3) put/call skew — are puts or calls bid up, and what does that tell us about institutional positioning?",
-                "What is the short interest for [Company] as a % of float? Is there squeeze potential, and what price action would trigger a squeeze?",
-                "Run the 'Why Now?' IC test for [Company]: Trend / Location / Trigger / Confirmation needed / Entry quality (A+/B/C) / Stop-loss level / R/R ratio. Is this an A+ setup, a watchlist-and-wait, or a no-trade?",
+            ("📈 Stage 3 — Technical & Timing (~15–20 credits)", [
+                "What is the overall trend structure for [Company] — uptrend (higher highs, higher lows), downtrend (lower highs, lower lows), or base formation? Where is price relative to the 52-week range, and what does the MA50/MA200 structure tell us about momentum?",
+                "What is the RSI (14) for [Company] — overbought (>70), oversold (<30), or neutral? What is the MACD signal — is the histogram expanding or contracting, and does momentum confirm or diverge from price action?",
+                "⭐ Where are the key support and resistance levels for [Company] from the 1-year chart? Give specific price levels. Based on the options-implied expected move (IV × √(days/365)), what is the realistic stop-loss range — not arbitrary S/R but the market's own estimate of binary risk?",
+                "⭐ What does the options market tell us about [Company]? Cover: (1) IV rank vs 52-week range — are options cheap or expensive? (2) ATM straddle expected move into next earnings. (3) put/call skew — what does institutional positioning tell us? (4) near-term vs long-dated IV — event risk or structural concern?",
+                "What is the short interest for [Company] as a % of float, and is it rising or falling? Is there squeeze potential, and what price action would trigger a squeeze? What is the estimated borrow cost for a short position?",
+                "⭐ Run the 'Why Now?' IC test for [Company]: Trend / Location / Trigger / Confirmation needed / Entry quality (A+/B/C) / Stop-loss level (from IV-derived expected move, not just S/R) / R/R ratio. Then produce the Technical Setup Score (/50). Is this an A+ entry, watchlist-and-wait, or no-trade?",
+                "Given my stated risk budget of [£/$ maximum loss], what is the appropriate position size and instrument for this trade on [Company]? Compare: outright long/short equity vs long call/put vs vertical spread (bear put / bull call). If my risk profile is conservative and [Company] has beta > 1.5, recommend the right defined-risk structure.",
+                "🔍 Build the catalyst timeline for [Company] for the next [3/6/12] months: 5 key events with expected date, market consensus, beat scenario + estimated reaction, miss scenario + estimated reaction, and whether to reduce/hold/add heading into each event.",
             ]),
-            ("⚡ Stage 4 — Catalysts, Risk & Macro", [
-                "When is [Company]'s next earnings date? What does the market expect on EPS, revenue, and guidance? What would a genuine positive surprise look like vs a genuine negative surprise — not just a beat/miss, but what the market would re-rate on?",
-                "What is [Company]'s track record on guidance — do they consistently beat, miss, or hit? Is there a pattern (e.g. EPS beats but revenue guides down)? How much credibility should we give management's forward guidance?",
-                "What specific catalysts could close the gap between [Company]'s current price and DCF intrinsic value over the next 6-12 months? Rank them by probability and magnitude of impact.",
-                "What are the biggest macro risks to [Company]? Cover: interest rate sensitivity (discount rate and demand), FX exposure (revenue by geography vs reporting currency), regulatory risk (any active investigations or pending legislation), and commodity/input cost exposure.",
-                "Has management been buying or selling [Company] shares in the open market in the last 6 months? State the Form 4 details: who bought/sold, at what price, how much, and as what % of their holding. What does the net insider activity signal?",
-                "What is the bear case for [Company] — the scenario a short seller would construct? What multiple, growth rate, and margin assumptions would justify a 30-40% lower price? How probable is that scenario?",
+            ("⚡ Stage 4 — Catalysts, Risk & Macro (~10–15 credits)", [
+                "⭐ 🔍 When is [Company]'s next earnings date? What does the market expect on EPS, revenue, and guidance? What would a genuine positive surprise look like vs a genuine negative surprise — not just a beat/miss, but what the market would re-rate on?",
+                "🔍 What is [Company]'s track record on guidance — do they consistently beat, miss, or hit? Is there a pattern (e.g. EPS beats but revenue guides down)? How much credibility should we give management's forward guidance?",
+                "⭐ 🔍 What specific catalysts could close the gap between [Company]'s current price and DCF intrinsic value over the next 6–12 months? Rank them by probability and magnitude of impact. Which catalyst, if it materialises, would most change the probability-weighted expected value?",
+                "What are the biggest macro risks to [Company]? Cover: interest rate sensitivity, FX exposure by geography, regulatory risk (active investigations or pending legislation), and commodity/input cost exposure.",
+                "🔍 Has management been buying or selling [Company] shares in the last 6 months? Who bought/sold, at what price, how much, and as what % of their holding. What does net insider activity signal?",
+                "What is the bear case for [Company] — the scenario a short seller would construct? What multiple, growth rate, and margin assumptions justify a 30–40% lower price? How probable is that scenario, and what is the expected carry cost if implemented as a short?",
             ]),
-            ("✅ Stage 5 — Decision & Portfolio Construction", [
-                "Summarise the full investment case for [Company] in four sentences: one on quality (moat + ROIC), one on value (DCF discount + multiples vs peers), one on timing (technical setup + catalyst), and one on the key risk that could break the thesis.",
-                "Given everything we've covered on [Company], what is the probability-weighted expected return over my investment horizon? Break it down by scenario (bull/base/bear) with explicit probabilities that don't sum to 100% by accident.",
-                "What position size in [Company] would be appropriate given my moderate risk appetite and a concentrated watchlist of up to 5 stocks? Apply the Kelly criterion directionally — what fraction of capital does the edge justify?",
-                "What would cause me to sell [Company]? Define three exit triggers before entry: (1) price stop (technical invalidation level), (2) thesis break (the specific fundamental or news event that changes the investment case), (3) time stop (if the thesis hasn't played out by X date, reassess rather than hold indefinitely).",
-                "Add [Company] to my watchlist with specific entry zone, stop loss, and target for both a long and a short trade. Include the R/R ratio and the single most important thing to monitor each week to know whether the thesis is on track.",
+            ("✅ Stage 5 — Decision & Portfolio Construction (~10 credits)", [
+                "⭐ Summarise the full investment case for [Company] in four sentences: one on quality (moat + ROIC), one on value (DCF discount + multiples vs peers), one on timing (technical setup + catalyst), and one on the key risk that could break the thesis. Then give the epistemic honesty statement: what is the single most sensitive assumption, and what data gap would most improve this analysis?",
+                "Given everything we've covered on [Company], what is the probability-weighted expected return? Break it down by scenario (bull/base/bear) with explicit probabilities. Where does my implied probability differ from the market's implied probability — what is the variant perception?",
+                "What position size in [Company] would be appropriate given my stated maximum loss of [£/$ amount]? Work backwards from my risk budget: (entry − stop) × position size = max loss. Apply a 30–50% gap-risk haircut for high-beta or catalyst-binary names.",
+                "⭐ What would cause me to sell [Company]? Define three exit triggers before entry: (1) price stop (technical invalidation level from IV-derived expected move), (2) thesis break (the specific fundamental event that changes the investment case), (3) time stop (if thesis hasn't played out by [date], reassess).",
+                "⭐ Add [Company] to my watchlist with entry zone, stop loss, and target for both long and short. Include R/R ratio and the single most important weekly metric to monitor — the one number that tells me whether the thesis is on track or broken.",
             ]),
         ]
 
@@ -8718,20 +8729,26 @@ Enter your company name below — it will replace <strong>[Company]</strong> in 
                 unsafe_allow_html=True)
             _pb_html = ['<div style="font-size:0.71rem;line-height:1.8;color:#94A3B8">']
             for _q in _pb_qs:
-                _q_filled = _q.replace('[Company]', f'<strong style="color:#e2e8f0">{_pb_label}</strong>')
+                # Style ⭐ priority questions differently
+                _is_priority = _q.startswith('⭐')
+                _q_display = _q.replace('[Company]', f'<strong style="color:#e2e8f0">{_pb_label}</strong>')
+                _row_style = ('background:rgba(245,158,11,0.05);border-left:2px solid #F59E0B;padding-left:6px;'
+                              if _is_priority else '')
                 _pb_html.append(
-                    f'<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" '
+                    f'<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);'
+                    f'cursor:pointer;{_row_style}" '
                     f'title="Copy this question and paste into the chat above">'
-                    f'<span style="color:#475569;margin-right:6px">›</span>{_q_filled}</div>')
+                    f'<span style="color:#475569;margin-right:6px">›</span>{_q_display}</div>')
             _pb_html.append('</div>')
             st.markdown(''.join(_pb_html), unsafe_allow_html=True)
 
         st.markdown(
             '<div style="font-size:0.65rem;color:#334155;margin-top:10px;padding-top:8px;border-top:1px solid #1e293b">'
-            '💡 Work through the stages in order — each builds on the last. '
+            '💡 <strong style="color:#475569">Order matters:</strong> Stage 0 sets the risk framework. '
             'Stage 1 establishes what you own. Stage 2 tells you what it\'s worth. '
-            'Stage 3 tells you when to buy it. Stage 4 tells you what could go wrong. '
-            'Stage 5 forces the discipline: position size, exit criteria, and a single weekly check — before you enter.'
+            'Stage 3 tells you when and how to trade it. Stage 4 tells you what could go wrong. '
+            'Stage 5 forces the discipline: size, structure, and exit criteria before you enter. '
+            '· ⭐ = essential questions · 🔍 = triggers live web search · 📊 = fetches live peer financials'
             '</div>', unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════════
