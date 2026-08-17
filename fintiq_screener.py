@@ -4528,26 +4528,19 @@ def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
 
     _stages = {
         'discovery': f"""STAGE: Discovery
-Goal: Establish the investment mandate and risk framework BEFORE any analysis. This is the intake protocol — it determines which analytical tools apply and which risks are most material to this specific decision.
+Goal: Understand what the user wants to analyse and get enough context to begin. Keep this lightweight — deep risk profiling happens at the END (in the finalise stage, when the user has full understanding of the stock and is about to commit).
 
-INTAKE PROTOCOL — ask these five questions across your opening turns. Do NOT proceed to stock selection or analysis until you have answers to all five. Ask one per turn — do not fire all five at once.
+Ask at most TWO questions before moving to stock selection:
 
-Q1 — MANDATE: "Are you investing through a long/short fund, a long-only mandate, or a personal account? And is this position going into a tax-advantaged account (ISA/SIPP/401k) or a standard brokerage?"
-  → This determines which instruments are available (can you short? can you use options?) and which tax considerations apply.
+Q1 — MANDATE: "Are you investing through a personal account, ISA/SIPP, or a fund mandate? And is this a long-only account or can you short?"
+  → Just enough to know which instruments apply and whether shorting is on the table.
 
-Q2 — THESIS TYPE & CATALYST: "Is your thesis anchored to a specific catalyst (earnings date, product launch, regulatory decision) with a defined time window — or is this a 12–18 month fundamental call? Name the single most important thing that must happen for your thesis to be correct."
-  → Catalyst-bound theses need technical timing. Fundamental theses need valuation work. Different analytical toolkits.
+Q2 — HORIZON & STYLE: "Is this a catalyst-driven trade (weeks to months) or a 12–18 month fundamental call?"
+  → Determines whether technical timing or valuation is the primary lens.
 
-Q3 — RISK BUDGET: "What is the maximum loss you are willing to absorb on this position — in absolute £/$ terms, not as a percentage? And roughly what % of your investable portfolio would this represent?"
-  → This is the most important question before any trade is structured. Position sizing and instrument selection flow directly from this.
+Do NOT ask about risk budget, correlation, or conviction-flip here — those questions are most powerful AFTER the user understands the stock, not before. They belong in Stage 5 (finalise), when the user is about to make a decision.
 
-Q4 — EXISTING EXPOSURE: "Do you already have any exposure to this name or closely correlated assets — directly, via sector ETFs, or through related equities? For example, if you're looking at Tesla, do you hold positions in semiconductor stocks, AI names, or EV suppliers?"
-  → Correlation risk is portfolio-level. Two positions that look unrelated can be 0.85 correlated in a drawdown.
-
-Q5 — CONVICTION FLIP: "Before we build the analysis — name the single thing that, if it turned out to be true, would immediately make you take the opposite side of this trade. This isn't a trick question; it's the most important risk management discipline in investing."
-  → Establishes what the user is actually betting on. If they can't answer this, the thesis isn't specific enough to be investable.
-
-Once all five are answered, proceed to stock selection:
+Once you have mandate + horizon, proceed to stock selection:
 Rules:
 • Ask ONE question per response — never multiple (but work through the intake questions above first)
 • Probe their reasoning gently — thesis-driven or performance-chasing?
@@ -4956,6 +4949,28 @@ Current watchlist: {_wl} ({len(_wl)}/{_max} stocks maximum)
 • Summarise each stock: one-line quality verdict + valuation view + entry logic + key risk
 • Ask if user wants changes — any additions, removals, or replacements
 • Enforce the discipline: if user wants more than {_max}, explain "A concentrated watchlist forces conviction — let's keep the strongest {_max}"
+
+⚠️ GUARDIAN PROTOCOL — MANDATORY BEFORE ANY POSITION IS CONFIRMED:
+You are now acting as a senior portfolio manager and risk guardian — not just an analyst. The user has done the work. Now you must push back before they commit capital. This is the most important role you play in the entire session.
+
+Run the following five-point challenge for EACH stock the user wants to act on. Be direct and demanding — a good mentor is not comfortable, they are protective:
+
+CHALLENGE 1 — RISK BUDGET: "Before we finalise [Ticker] — what is the maximum absolute loss you are willing to absorb on this position in £/$ terms? Not a percentage — a number. And what percentage of your investable portfolio does this represent?"
+  → If they haven't stated this, do not let them proceed. Position size, instrument choice, and stop-loss level all flow from this.
+
+CHALLENGE 2 — CORRELATED EXPOSURE: "Do you hold anything that would move against you in the same scenario that breaks this thesis? Think sector ETFs, macro overlaps (USD, rates, China exposure), or companies in the same value chain."
+  → Two positions that look unrelated can be 0.85 correlated in a drawdown. Identify it now.
+
+CHALLENGE 3 — CONVICTION FLIP: "What is the single thing — one data point, one event, one fact — that, if you learned it was true right now, would make you immediately take the opposite side of this trade?"
+  → If they cannot answer this, the thesis is not specific enough to be investable. Do not let them size up until they can articulate it.
+
+CHALLENGE 4 — ADVERSARIAL STEELMAN: "Before you commit — here are the three strongest arguments AGAINST this position: [list the 3 best bear arguments from the fundamental and technical analysis above]. Can you counter each one with specific evidence from the data? If you cannot counter at least two of the three, the conviction level does not justify a full position."
+  → This is the adversarial steelman. A genuine edge requires being able to rebut the opposing case with facts, not hope.
+
+CHALLENGE 5 — INSTRUMENT & TIMING DISCIPLINE: "Given your risk budget of [stated amount] and the IV-derived expected move of ±[X]% for [Ticker], are you using the right instrument? An outright position here exposes you to [gap risk / earnings binary / macro event]. Have you considered a defined-risk structure [call spread / put spread] that caps your max loss at your stated budget without requiring a precise stop?"
+  → Never let the user take undefined risk when a defined-risk alternative exists and the IV makes it cost-effective.
+
+Only after all five challenges are addressed (or the user has consciously acknowledged each risk) proceed to the matrix, kill-switch, and report.
 
 • FUNDAMENTAL vs TECHNICAL MATRIX (MANDATORY — produce this for every stock before the kill-switch):
   Map each stock onto a 3×3 grid using the Investment Scorecard (fundamental strength) and Technical Setup Score (/50) from earlier stages.
@@ -8686,12 +8701,6 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
         _pb_label = _pb_company.strip() if _pb_company.strip() else '[Company]'
 
         _pb_stages = [
-            ("🎯 Stage 0 — Mandate & Intake (answer these first — shapes everything)", [
-                "⭐ I'm investing in [Company] through [personal account / ISA / SIPP / long-short fund]. My maximum acceptable loss on this position is [£/$ amount]. Is my thesis anchored to a specific catalyst or is this a 12–18 month fundamental call?",
-                "⭐ Before we build the analysis — present the 3 strongest arguments FOR the OPPOSITE of my current view on [Company]. Don't soften them. Then ask if I can counter each one.",
-                "⭐ Do I have any existing exposure to [Company] or closely correlated assets — directly, via sector ETFs, or through related equities? Help me think through portfolio-level correlation risk before sizing this position.",
-                "What is the single thing that, if it turned out to be true, would make me immediately reverse my thesis on [Company]? Help me articulate this before confirmation bias takes hold.",
-            ]),
             ("🔎 Stage 1 — Business Quality & Moat (~15–20 credits)", [
                 "⭐ What does [Company] actually do, and how does it make money? Break down the revenue model — subscription vs transactional vs services — and what percentage each contributes. Which segment is the profit engine and which is the drag?",
                 "⭐ What is [Company]'s competitive moat — cost advantage, network effects, switching costs, or brand? How durable is each source, and which is most at risk from AI or structural disruption?",
@@ -8735,12 +8744,16 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                 "🔍 Has management been buying or selling [Company] shares in the last 6 months? Who bought/sold, at what price, how much, and as what % of their holding. What does net insider activity signal?",
                 "What is the bear case for [Company] — the scenario a short seller would construct? What multiple, growth rate, and margin assumptions justify a 30–40% lower price? How probable is that scenario, and what is the expected carry cost if implemented as a short?",
             ]),
-            ("✅ Stage 5 — Decision & Portfolio Construction (~10 credits)", [
+            ("✅ Stage 5 — Decision & Pre-Trade Guardian (~10 credits)", [
                 "⭐ Summarise the full investment case for [Company] in four sentences: one on quality (moat + ROIC), one on value (DCF discount + multiples vs peers), one on timing (technical setup + catalyst), and one on the key risk that could break the thesis. Then give the epistemic honesty statement: what is the single most sensitive assumption, and what data gap would most improve this analysis?",
                 "Given everything we've covered on [Company], what is the probability-weighted expected return? Break it down by scenario (bull/base/bear) with explicit probabilities. Where does my implied probability differ from the market's implied probability — what is the variant perception?",
-                "What position size in [Company] would be appropriate given my stated maximum loss of [£/$ amount]? Work backwards from my risk budget: (entry − stop) × position size = max loss. Apply a 30–50% gap-risk haircut for high-beta or catalyst-binary names.",
-                "⭐ What would cause me to sell [Company]? Define three exit triggers before entry: (1) price stop (technical invalidation level from IV-derived expected move), (2) thesis break (the specific fundamental event that changes the investment case), (3) time stop (if thesis hasn't played out by [date], reassess).",
-                "⭐ Add [Company] to my watchlist with entry zone, stop loss, and target for both long and short. Include R/R ratio and the single most important weekly metric to monitor — the one number that tells me whether the thesis is on track or broken.",
+                "⭐ GUARDIAN — Risk Budget: My maximum acceptable loss on [Company] is [£/$ amount]. Work backwards: (entry price − stop) × position size = that loss. Apply a 30–50% gap-risk haircut for high-beta or earnings-binary names. What is the correct position size?",
+                "⭐ GUARDIAN — Correlated Exposure: Do I hold anything that would move against me in the same scenario that breaks my [Company] thesis? Check: sector ETFs, macro overlaps (rates, USD, China), companies in the same value chain. Help me identify hidden portfolio correlation before I add this position.",
+                "⭐ GUARDIAN — Conviction Flip: What is the single thing — one data point, one event — that, if true right now, would make me immediately take the OPPOSITE side of this trade on [Company]? Push back hard if I can't answer this precisely.",
+                "⭐ GUARDIAN — Adversarial Steelman: Give me the 3 strongest arguments AGAINST my current position in [Company]. Don't soften them. Then ask me to counter each one with specific evidence from the data — if I can't counter at least two of the three, the conviction doesn't justify a full position.",
+                "⭐ GUARDIAN — Instrument Discipline: Given my risk budget and the IV-derived expected move on [Company], am I using the right instrument? Compare outright equity vs a defined-risk structure (call/put spread). If [Company] has beta > 1.5 or a binary catalyst approaching, recommend the structure that caps my max loss at my stated budget.",
+                "⭐ What would cause me to sell [Company]? Define three exit triggers before entry: (1) price stop (from IV-derived expected move, not arbitrary %), (2) thesis break (the specific fundamental event that changes the case), (3) time stop (if thesis hasn't played out by [date], exit regardless of price).",
+                "⭐ Add [Company] to my watchlist with entry zone, stop loss, and target. Include R/R ratio and the single most important weekly metric to monitor — the one number that tells me whether the thesis is on track or broken.",
             ]),
         ]
 
@@ -8765,11 +8778,12 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
 
         st.markdown(
             '<div style="font-size:0.65rem;color:#334155;margin-top:10px;padding-top:8px;border-top:1px solid #1e293b">'
-            '💡 <strong style="color:#475569">Order matters:</strong> Stage 0 sets the risk framework. '
+            '💡 <strong style="color:#475569">Order matters:</strong> '
             'Stage 1 establishes what you own. Stage 2 tells you what it\'s worth. '
             'Stage 3 tells you when and how to trade it. Stage 4 tells you what could go wrong. '
-            'Stage 5 forces the discipline: size, structure, and exit criteria before you enter. '
-            '· ⭐ = essential questions · 🔍 = triggers live web search · 📊 = fetches live peer financials'
+            'Stage 5 is the pre-trade guardian — risk budget, correlation, conviction flip, adversarial steelman, and instrument discipline. '
+            'These questions are most powerful <em>after</em> you understand the stock, not before. '
+            '· ⭐ = essential · 🔍 = triggers live web search · 📊 = fetches live peer financials'
             '</div>', unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════════
