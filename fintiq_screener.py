@@ -4728,9 +4728,10 @@ If no meaningful buyback programme: note it and comment on whether the FCF is be
 Then ask for DCF assumptions:
 "To run the DCF I need your view on seven inputs across three periods. I've pre-filled from historical data and the WACC build above — push back on any you disagree with:
 
-Phase 1 (Yrs 1-3 — near term): Revenue growth __% | Operating margin __%
-Phase 2 (Yrs 4-7 — mid term): Revenue growth __% | Operating margin __%
-Phase 3 (Yrs 8-10 — long term): Revenue growth __% | Operating margin __%
+Phase 1 (Yrs 1–3 — near term, 3 years): Revenue growth __% | Operating margin __%
+Phase 2 (Yrs 4–7 — mid term, 4 years): Revenue growth __% | Operating margin __%
+Phase 3 (Yrs 8–10 — long term, 3 years): Revenue growth __% | Operating margin __%
+[TOTAL: 10 explicit years. Terminal value = Yr11 onwards. Do not shorten this to fewer years.]
 Investment rate: __% (how much of NOPAT reinvested — from historical avg above)
 WACC: __% (from build above — push back if you disagree with any component)
 Terminal growth rate: __% (long-run GDP-like, typically 2-3%)
@@ -4776,6 +4777,13 @@ THEN ASK: "Does this segment split look right to you? Are there any segments you
 IF THE COMPANY IS SINGLE-SEGMENT (or segments are not materially different): state this explicitly — "This business operates as a single economic unit — [reason]. A consolidated DCF is the right tool; SOTP would add complexity without analytical value." Then proceed directly to Step 3.
 
 STEP 3 — WHEN USER CONFIRMS (SPLIT INTO TWO TURNS — MANDATORY):
+
+⚠️ DCF EXECUTION RULES — THESE OVERRIDE ALL OTHER INSTRUCTIONS:
+1. EXPLICIT PERIOD: MUST be exactly 10 years (Yr1–Yr10). NEVER use 3, 5, or 7 years. The explicit period is Yr1 through Yr10. Terminal value starts at Yr11. This is non-negotiable.
+2. DO NOT STOP MID-DCF: Once the user has confirmed assumptions, complete the ENTIRE DCF — all 10 years of the FCF bridge, terminal value, PV of TV, equity value, and intrinsic value per share — in one continuous response. Do NOT pause to ask clarifying questions, check in, or wait for approval in the middle of the calculation.
+3. SELF-CHECK BEFORE PRESENTING: After computing intrinsic value per share, ALWAYS run this sanity check: (intrinsic value per share) × (diluted shares outstanding) = implied equity value. Compare implied equity value to the current market cap (share price × shares). If your computed intrinsic value is less than 10% or more than 1000% of the current price, you have made an arithmetic error. STOP, identify the mistake (likely: wrong share count scale — billions vs millions; or wrong revenue scale; or terminal value not discounted back), correct it, and only then present the output. NEVER present an intrinsic value that is 50x or more different from the market price without flagging it as a likely calculation error.
+4. SHARE COUNT DISCIPLINE: Diluted shares outstanding are typically in the HUNDREDS OF MILLIONS or low BILLIONS. If the data shows "1,620" — this means 1,620 million = 1.62 billion shares. Divide equity value in $ millions by shares in millions to get per-share value. Double-check: $833,000M equity value ÷ 1,620M shares = $514/share. ✓
+5. REVENUE UNITS: Ensure revenue, NOPAT, and FCF are all in the SAME unit (either all in $M or all in $B). Mixing units is the #1 source of 100× errors.
 
 TURN 3A — FCF BRIDGE + BASE CASE (produce this first, then stop and say "Continuing with scenarios and WACC sensitivity in my next reply →"):
 - State assumptions clearly: "Running with: Phase 1 X%/Y% margin, Phase 2 X%/Y%, Phase 3 X%/Y%, Investment rate Z%, WACC W%, TGR V%, RONIC R%"
@@ -5095,6 +5103,19 @@ def _comp_detect_ticker(text: str, existing: list, name_map: dict = None) -> lis
         'ATH','YTD','TTM','LTM','QOQ','YOY','NAV','AUM','USD','GBP','EUR',
         'JPY','BTC','ETH','NFT','ESG','PEG','WACC','EBIT','GAAP','OPEX','CAPEX',
         'CEO','CFO','CTO','COO','PM','AM','MACD',
+        # Financial statement / valuation abbreviations (commonly appear in AI analysis)
+        'SBC','PV','TV','NWC','NOPAT','IRR','NPV','TAM','CAGR','MOAT','IV',
+        'MOS','MoS','RONIC','TSR','VIX','ATM','OTM','ITM','BPS','ICR',
+        'CFI','CFF','EBITDA','EBITA','EBIT','ROCE','ROIC','ROTCE','RNOA',
+        'DPS','TGR','SOTP','EV','LBO','M&A','DCF','ARR','MRR','ACV','TCV',
+        'NTM','LTM','FWD','TTM','COE','KE','KD','BETA','WC','PP','DP',
+        'SG&A','RD','R&D','GP','GM','COGS','EBIT','NWCAP','CAPINT',
+        'WACC','WACCE','HACCP','LAIR','ICR','DSCR','LTV','LGD','PD',
+        'HY','IG','CLO','CDO','CDS','MBS','ABS','RMBS','CMBS',
+        'YTM','YTC','YTW','OAS','DV01','CR01','PVBP',
+        'NOI','FFO','AFFO','CAP','NAV','GAV','RICS',
+        'PAT','PBT','PLP','NLEV','LEV','DEL','UNDEV',
+        'FY','H1','H2','Q1','Q2','Q3','Q4','LY','CY','NY',
     }
     for _t in _raw:
         if _t in _skip or _t in existing or len(_t) < 2:
@@ -9687,7 +9708,8 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                         _SS[_fw_cache_key] = _raw_fw if not _raw_fw.empty else _fwtd.get('hist')
                     except Exception:
                         _SS[_fw_cache_key] = _fwtd.get('hist')
-                _fw_h = _SS.get(_fw_cache_key) or _fwtd.get('hist')
+                _fw_h_cached = _SS.get(_fw_cache_key)
+                _fw_h = _fw_h_cached if _fw_h_cached is not None else _fwtd.get('hist')
                 if _fw_h is not None and not _fw_h.empty:
                     _fw_df = _fw_h[['Close']].copy()
                     _fw_df.index = _pd_fw.to_datetime(_fw_df.index).tz_localize(None)
