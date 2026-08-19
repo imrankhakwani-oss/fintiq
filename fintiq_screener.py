@@ -4507,13 +4507,30 @@ def _comp_ai(messages: list, system: str, stage: str = '') -> str:
         return "⚠️ Something went wrong with the AI connection. Please try again in a moment."
 
 
-def _comp_system_prompt(stage: str, ctx: dict, data: dict) -> str:
+def _comp_system_prompt(stage: str, ctx: dict, data: dict, analyses: dict = None) -> str:
     """Build full system prompt for current companion stage."""
     _data_txt = ""
     if data:
         _data_txt = "\n\nLIVE DATA (fetched now — weave naturally into conversation, never recite as a list):\n"
         for _tk, _d in data.items():
             _data_txt += "\n" + _comp_data_summary(_d) + "\n"
+
+    # Inject pre-computed DCF results so valuation stage doesn't need to recalculate
+    if analyses:
+        _dcf_lines = []
+        for _tk, _an in analyses.items():
+            _ps = _an.get('dcf_ps')
+            _mc = _an.get('mc')
+            if _ps and _ps > 0:
+                _p25 = f"${_mc['p25']:.2f}" if _mc else "N/A"
+                _p75 = f"${_mc['p75']:.2f}" if _mc else "N/A"
+                _dcf_lines.append(
+                    f"  {_tk}: Base DCF = ${_ps:.2f}/share | Monte Carlo P25–P75 = {_p25}–{_p75}"
+                )
+        if _dcf_lines:
+            _data_txt += "\n\nPRE-COMPUTED DCF (McKinsey 3-phase, Python-calculated — do NOT recalculate from scratch):\n"
+            _data_txt += "\n".join(_dcf_lines) + "\n"
+            _data_txt += "Use these as your base case anchor. Adjust only if assumptions look wrong for the specific stock.\n"
 
     _ctx_txt = ""
     if ctx:
@@ -4610,10 +4627,11 @@ Present 6 things in compact form — aim for under 350 words total:
 
 2. MOAT & COMPETITIVE POSITION: One sentence on the source of competitive advantage (cost / switching costs / network effects / IP). One sentence on how durable it is vs the biggest structural threat.
 
-3. FINANCIAL QUALITY (3 numbers that matter):
-   - Revenue CAGR (from data): X% — accelerating or decelerating?
-   - Operating margin trend: X% → X% — expanding or compressing? Why?
-   - ROIC vs WACC (directional): value creator or destroyer?
+3. FINANCIAL QUALITY — show the trajectory, not just a snapshot:
+   - Revenue (last 3 years + growth rate each year): FY22 $Xbn (+X%) → FY23 $Xbn (+X%) → FY24 $Xbn (+X%) — accelerating or decelerating?
+   - Operating margin (last 3 years): FY22 X% → FY23 X% → FY24 X% — expanding or compressing? Why?
+   - ROIC trend (last 3 years): FY22 X% → FY23 X% → FY24 X% — is the moat strengthening or eroding vs WACC?
+   If only 1-2 years of data are available, show what you have and flag the gap.
 
 4. BALANCE SHEET IN ONE LINE: Net debt/EBITDA X.Xx | Interest coverage Xx | [Flag if D/E > 10x as book-value distortion]
 
@@ -4642,123 +4660,66 @@ CRITICAL RULES:
 """,
 
         'valuation': f"""STAGE: Valuation
-You have live data including historical averages (revenue CAGR, avg op margin, ROIC, tax rate, D/E).
+The platform has already computed a McKinsey 3-phase DCF for each stock (see PRE-COMPUTED DCF in your data above). Your job is to INTERPRET and PRESSURE-TEST that result — not recalculate it from scratch.
 
-⚠️ CREDIT EFFICIENCY RULES — THIS STAGE MUST COMPLETE IN 2 TURNS MAXIMUM:
-- Turn 1: WACC + multiples table + DCF assumptions proposed (all in one reply)
-- Turn 2: Full DCF output + sensitivity grid + verdict (all in one reply)
-Never split into more turns than this. Never ask the user to confirm year-by-year. Never narrate each year of the bridge separately across multiple messages.
+⚠️ DO NOT produce a 10-year FCF table. DO NOT recalculate NOPAT year by year. The numbers are already computed. Your value-add is analyst judgment on whether the assumptions are right and what the scenarios mean.
 
-YOUR JOB IN TWO TURNS:
+THIS STAGE COMPLETES IN 2 TURNS:
 
-═══ TURN 1 — CONTEXT + ASSUMPTIONS (do this first, unprompted) ═══
+═══ TURN 1 — ASSUMPTIONS REVIEW (do this unprompted) ═══
 
-Open with a 4-line historical snapshot:
-"Historical anchor: Revenue CAGR X% | Avg op margin X% | ROIC X% | Tax rate X%"
+Present compactly in ONE reply:
 
-Then present WACC build in compact form:
-"WACC: Rf X% + β(X) × ERP(X%) = Ke X% | Kd(post-tax) X% | Weights E:X% D:X% → WACC = X%"
-Note: Use market-value weights (market cap vs net debt), NOT book D/E. For high market-cap stocks with low debt, WACC is almost entirely cost of equity.
+1. HISTORICAL ANCHOR (2 lines):
+   "Revenue CAGR X% | Avg op margin X% | ROIC X% | Tax rate X%"
 
-Then present current multiples vs sector in a compact table (P/E, EV/EBITDA, P/FCF, EV/Revenue).
+2. WACC (1 line):
+   "WACC: Rf X% + β(X) × ERP(X%) = Ke X% | Kd(after-tax) X% | WACC = X%"
+   (Use market-value weights. For cash-rich/low-debt stocks, WACC ≈ Ke.)
 
-Then propose DCF assumptions — pre-fill from data, ask user to adjust or confirm:
-"Proposed assumptions (adjust any you disagree with):
-  Phase 1 Yr1–3: Revenue growth X% | Op margin X%
-  Phase 2 Yr4–7: Revenue growth X% | Op margin X%
-  Phase 3 Yr8–10: Revenue growth X% | Op margin X%
-  WACC: X% | Terminal growth: X% | RONIC: X% | Tax rate: X%
-  Terminal Value method: McKinsey Value Driver Formula (TV = NOPAT₁₁ × (1−g/RONIC) / (WACC−g))
-  Confirm or adjust — I'll run the full model in my next reply."
+3. MULTIPLES vs SECTOR (compact table — 4 rows max):
+   | Metric | [Company] | Sector avg | Premium/Discount |
+   | P/E (fwd) | | | |
+   | EV/EBITDA | | | |
+   | P/FCF | | | |
+   | EV/Revenue | | | |
 
-═══ TURN 2 — FULL DCF OUTPUT (produce this when user confirms or says "run it") ═══
+4. DCF ASSUMPTIONS USED (pre-fill from data, flag anything you'd change):
+   "Phase 1 (Yr1–3): Revenue growth X% | Op margin X%
+    Phase 2 (Yr4–7): Revenue growth X% | Op margin X%
+    Phase 3 (Yr8–10): Revenue growth X% | Op margin X%
+    WACC X% | Terminal growth X% | RONIC X%
+    Pre-computed base case: $X/share (McKinsey TV)
+    ⚠️ Assumption flags: [flag any that look wrong — e.g. margin too optimistic, RONIC too high for sector]"
 
-⚠️ DCF EXECUTION RULES — ABSOLUTE, NO EXCEPTIONS:
-1. EXPLICIT PERIOD = 10 YEARS (Yr1–Yr10). Never fewer. Never ask for year-by-year confirmation — run all 10 years at once.
-2. TERMINAL VALUE = McKINSEY VALUE DRIVER FORMULA ONLY. NEVER use Gordon Growth (TV = FCF/WACC-g). The correct formula is:
-   TV = NOPAT(yr11) × (1 − g/RONIC) / (WACC − g)
-   Where NOPAT(yr11) = Yr10 Revenue × (1+g) × terminal op margin × (1−tax rate)
-   Show this calculation explicitly with numbers filled in.
-3. PRESENT THE FULL 10-YEAR TABLE IN ONE BLOCK — use a compact table, not year-by-year narration:
-   | Year | Revenue | Op Margin | EBIT | NOPAT | ΔNWC | D&A | Capex | FCF | PV Factor | PV(FCF) |
-   Fill all 10 rows. Phase 3 rows (Yr8-10) can use compressed bridge (single-line per year is fine).
-4. SELF-CHECK BEFORE PRESENTING: Implied equity value = per-share × diluted shares. Compare to market cap.
-   If result differs from market price by >10× in either direction → arithmetic error. Find it and fix it.
-   Common errors: mixing $M and $B | wrong share count scale (yfinance shares are in millions, e.g. 1620 = 1.62B shares) | TV not discounted back.
-5. COMPLETE THE FULL OUTPUT IN ONE TURN: FCF table → TV calc → PV(TV) → EV → Net cash → Equity value → Per-share → WACC×TGR sensitivity grid (3×4) → Bull/Base/Bear with probabilities → Verdict.
-   Do NOT split this across multiple turns. Do NOT stop to ask questions mid-calculation.
+End Turn 1 with: "Assumptions look [reasonable / need adjustment on X]. Ready to run the scenarios?"
 
-OUTPUT FORMAT (all in Turn 2):
+═══ TURN 2 — VALUATION VERDICT (when user says run it / confirmed / go ahead) ═══
 
-A) 10-YEAR FCF TABLE (compact, all years in one table as above)
+Produce in ONE reply:
 
-B) TERMINAL VALUE (McKinsey — show the full calculation):
-   "NOPAT(yr11) = Yr10 Rev × (1+g) × margin × (1−tax) = $Xbn
-    TV = $Xbn × (1 − g/RONIC) / (WACC − g) = $Ybn
-    PV(TV) = $Ybn / (1+WACC)^10 = $Zbn"
+A) PRE-COMPUTED BASE CASE (from PRE-COMPUTED DCF data):
+   "McKinsey base case: $X/share
+    Monte Carlo P25–P75: $Y–$Z/share
+    Current price: $X → [X% premium / discount] to base case"
 
-C) EQUITY VALUE BRIDGE:
-   "PV of explicit FCFs (Yr1–10): $Xbn
-    PV of Terminal Value: $Xbn
-    Enterprise Value: $Xbn
-    + Net cash / − Net debt: $Xbn
-    Equity Value: $Xbn
-    Diluted shares: XM (= X.XB shares)
-    McKinsey base case intrinsic value: $X–$Y per share (RONIC ±2pp range)
-    Current price: $X → [X% premium / X% discount] to fair value"
+B) WACC × TGR SENSITIVITY (3×3 compact grid — label cells ▲/▼ vs current price):
+   | | TGR 2% | TGR 2.5% | TGR 3% |
+   | WACC −1pp | | | |
+   | WACC base | | | |
+   | WACC +1pp | | | |
 
-D) WACC × TGR SENSITIVITY (3×4 compact grid — green = above current price, red = below):
-   | | TGR 1.5% | TGR 2.5% | TGR 3.5% | TGR 4.5% |
-   | WACC −2pp | | | | |
-   | WACC base | | | | |
-   | WACC +2pp | | | | |
+C) BULL / BASE / BEAR (one line each with explicit probabilities):
+   "🔴 Bear (X%): [1 sentence — key downside driver] → $X/share
+    ⚪ Base (X%): [1 sentence] → $X/share (= pre-computed DCF)
+    🟢 Bull (X%): [1 sentence — key upside driver] → $X/share
+    Probability-weighted fair value: $X → [X% upside/downside vs current price]"
 
-E) BULL / BASE / BEAR (one line each, explicit probabilities, probability-weighted EV):
-   "🔴 Bear (X%): [1 sentence] → $X/share
-    ⚪ Base (X%): [1 sentence] → $X/share
-    🟢 Bull (X%): [1 sentence] → $X/share
-    Probability-weighted fair value: $X vs current price $X → [X% upside/downside]"
+D) VARIANT PERCEPTION (1 sentence): Where your assumed probability differs from what the market is pricing.
 
-F) VARIANT PERCEPTION (one sentence): Where your implied probability differs from the market's.
+E) VERDICT (1 sentence): Overvalued / fairly valued / undervalued — and the single most important assumption driving that call.
 
-G) EPISTEMIC HONESTY (one sentence): Most sensitive assumption and the data gap that would most change this output.
-
-Then end with: "Valuation is set. Ready for technical analysis — entry timing, support/resistance, and stop-loss levels."
-
-STEP 2B — SEGMENT IDENTIFICATION & SUM-OF-THE-PARTS (SOTP) — run this BEFORE the consolidated DCF:
-
-Before building a single consolidated DCF, check whether the company has materially different business segments. A segment is "material" if it represents >10% of revenue OR has a fundamentally different growth/margin/risk profile from the rest of the business (e.g. a high-margin SaaS division inside a low-margin industrial company, or a fast-growing energy storage unit inside an auto company).
-
-HOW TO IDENTIFY SEGMENTS:
-- Check the live data above for segment revenue breakdown
-- Search for "[Company] segment breakdown" or "[Company] business units" if not in data
-- Common multi-segment structures: Auto + Energy + Services (Tesla), Cloud + Advertising + Hardware (Alphabet), Pharma + MedTech + Consumer (J&J)
-
-IF THE COMPANY HAS 2+ MATERIAL SEGMENTS, produce a SOTP table before asking for consolidated DCF inputs:
-
-"This company has [N] material segments with meaningfully different economics. A sum-of-the-parts valuation is more rigorous than a single-entity DCF — it prevents the high-growth segment from being penalised by the lower-margin core, and vice versa.
-
-**Segment Breakdown & Valuation:**
-| Segment | Revenue | Op margin | Growth profile | Appropriate multiple / method | Est. segment value |
-|---|---|---|---|---|---|
-| [Segment A] | $Xbn (X% of total) | X% | High growth — X%pa | DCF or EV/Revenue at Xx | $Xbn |
-| [Segment B] | $Xbn (X% of total) | X% | Mature — X%pa | EV/EBITDA at Xx | $Xbn |
-| [Segment C] | $Xbn (X% of total) | X% | Speculative — no revenue yet | Probability-weighted TAM scenario | $Xbn |
-| Corporate / unallocated costs | — | — | — | Capitalised at group WACC | $(Xbn) |
-| **Total enterprise value (SOTP)** | | | | | **$Xbn** |
-| Less: net debt | | | | | $(Xbn) |
-| **Equity value** | | | | | **$Xbn** |
-| Per share (diluted) | | | | | **$X** |"
-
-SEGMENT-SPECIFIC VALUATION RULES:
-- High-growth / SaaS / software segments: use EV/Revenue multiple (peer-calibrated) OR DCF with segment-specific WACC (lower beta = lower discount rate)
-- Mature / industrial segments: use EV/EBITDA multiple vs sector peers
-- Speculative / pre-revenue segments (e.g. robotaxi, humanoid robotics): use probability-weighted TAM scenario — "X% market share × $YB TAM × Z% margin × probability weight P% = $W segment value". State the probability weight explicitly and defend it.
-- Always apply a 10–15% holding company discount to the SOTP total if segments are run as separate P&Ls under one listed entity (conglomerate discount)
-
-THEN ASK: "Does this segment split look right to you? Are there any segments you want to value differently, or any I've missed?" Adjust before running the consolidated model.
-
-IF THE COMPANY IS SINGLE-SEGMENT (or segments are not materially different): state this explicitly — "This business operates as a single economic unit — [reason]. A consolidated DCF is the right tool; SOTP would add complexity without analytical value." Then proceed directly to Step 3.
+End with: "Valuation complete. Ready for technical analysis — entry timing, support/resistance, and stop-loss."
 
 STEP 3 — WHEN USER CONFIRMS (SPLIT INTO TWO TURNS — MANDATORY):
 
@@ -8024,6 +7985,7 @@ with tab_comp:
                         _SS.cp_ctx     = _sv2.get('ctx', {})
                         _SS.cp_ctx.setdefault('watchlist', [])
                         _SS.cp_analyses = _sv2.get('analyses', {})
+                        _SS['cp_cost_usd'] = _sv2.get('cost_usd', 0.0)
                         for _rtk in _sv2.get('tickers', []):
                             if _rtk not in _SS.cp_data:
                                 _SS.cp_data[_rtk] = _comp_fetch(_rtk)
@@ -8440,7 +8402,7 @@ div[data-testid="stChatInput"] > div {
                         _SS.cp_ctx['watchlist'], _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses)
 
                 # ── Build AI response ─────────────────────────────
-                _sys = _comp_system_prompt(_SS.cp_stage, _SS.cp_ctx, _SS.cp_data)
+                _sys = _comp_system_prompt(_SS.cp_stage, _SS.cp_ctx, _SS.cp_data, getattr(_SS, 'cp_analyses', None))
 
                 # ── Conversation history: summarise + keep recent ──
                 # Strategy: keep last 3 turns verbatim; summarise everything older
@@ -8529,16 +8491,24 @@ div[data-testid="stChatInput"] > div {
                                                 'ready to finalize', 'time to decide']):
                     _SS.cp_stage = 'finalise'
 
-                # ── Always: if fundamental stage and no data yet, scan USER messages only ──
+                # ── Always: if no data yet, scan USER messages for tickers ──
+                # Run at any stage so the card appears immediately after the first reply.
                 # IMPORTANT: only scan user messages — AI replies contain example tickers
                 # mentioned as illustrations which must NOT be auto-fetched.
-                if _SS.cp_stage == 'fundamental' and not _SS.cp_data:
+                if not _SS.cp_data:
                     _user_text = " ".join(
                         m['content'] for m in _SS.cp_msgs[-20:] if m['role'] == 'user')
                     _conv_tks = _comp_detect_ticker(_user_text, [], _SS.cp_name_map)
                     for _ctk in _conv_tks[:5]:
                         if _ctk not in _SS.cp_data:
                             _SS.cp_data[_ctk] = _comp_fetch(_ctk)
+                # Also: scan the just-received AI reply for any tickers it identified
+                # (catches cases where user typed company name in lowercase, e.g. "nvidia")
+                if not _SS.cp_data and _reply:
+                    _reply_tks = _comp_detect_ticker(_reply, [], _SS.cp_name_map)
+                    for _rtk in _reply_tks[:5]:
+                        if _rtk not in _SS.cp_data:
+                            _SS.cp_data[_rtk] = _comp_fetch(_rtk)
 
                 # ── Mid-session: user names a new ticker not yet in cp_data ──
                 # Allows adding stocks after the confirm stage without starting over.
@@ -8605,6 +8575,7 @@ div[data-testid="stChatInput"] > div {
                         'analyses': {k: {ak: av for ak, av in av.items() if ak != 'mc'}
                                      for k, av in _SS.cp_analyses.items()},
                         'msgs':  _SS.cp_msgs,
+                        'cost_usd': _SS.get('cp_cost_usd', 0.0),
                     }, _fsav, ensure_ascii=False)
             except Exception:
                 pass
@@ -8625,7 +8596,7 @@ Enter your company name below and copy questions into chat.
 <div style="font-size:0.70rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);
 border-radius:6px;padding:8px 12px;margin-bottom:10px;color:#94A3B8;line-height:1.7">
 <strong style="color:#FBBF24">💳 Budget guide:</strong>
-Full playbook = ~50 credits · leaves 50 credits for follow-up questions.<br>
+Full playbook = ~38 credits · leaves 62 credits for follow-up questions.<br>
 <strong style="color:#FBBF24">⭐</strong> = essential question · <strong style="color:#60a5fa">🔍</strong> = triggers live web search · <strong style="color:#34d399">📊</strong> = fetches live peer financials
 </div>""", unsafe_allow_html=True)
 
@@ -8646,9 +8617,10 @@ Full playbook = ~50 credits · leaves 50 credits for follow-up questions.<br>
                 "📊 How does [Company] compare to its 2–3 closest competitors? Show a table: revenue, operating margin, EV/EBITDA, market share, and ROIC. Flag where [Company] is stronger and where it's falling behind.",
                 "⭐ What are the 2–3 things that could permanently break the [Company] investment case — not short-term headwinds, but structural threats that reduce the moat or shrink the addressable market? Be specific.",
             ]),
-            ("💰 Valuation — what is it worth? (~20 credits)", [
-                "⭐ Run a complete valuation for [Company]: WACC build, current multiples vs sector peers, and a 3-phase DCF using the McKinsey Value Driver Formula for terminal value. Give me the intrinsic value per share, a WACC × terminal growth sensitivity grid, and bull/base/bear scenarios with probabilities. Do it all in one reply.",
-                "At the current price, what does the market have to believe about [Company]'s future growth and margins for the price to be fair? Is that realistic? Where is the variant perception — where do I see it differently from the market?",
+            ("💰 Valuation — what is it worth? (~8 credits)", [
+                "⭐ Value this company — show me the WACC, current multiples vs sector peers, and the DCF assumptions you're using. Flag anything that looks wrong before we run the scenarios.",
+                "⭐ Looks good — run the scenarios. Give me the intrinsic value per share, WACC × terminal growth sensitivity grid, and bull/base/bear with probabilities.",
+                "At the current price, what does the market have to believe about [Company]'s future growth and margins for the price to be fair? Is that realistic? Where is the variant perception?",
             ]),
             ("📈 Technical & Timing — when do I enter and exit? (~10 credits)", [
                 "⭐ Give me the complete technical picture for [Company]: trend direction, key support and resistance levels with specific prices, RSI and MACD signals, volume trend. Then give me an entry zone, IV-derived stop-loss, and price target with R/R ratio. Is this an A+ entry, wait-and-watch, or avoid?",
