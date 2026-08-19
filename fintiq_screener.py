@@ -4638,7 +4638,8 @@ CRITICAL RULES:
 - DATA GAPS: If you don't have a data point, say so and give the best directional proxy. Never fabricate.
 - SO WHAT: Every data point must end with one sharp investment implication.
 - EARNINGS DATE: Always flag next earnings date if available — it's the most important near-term catalyst.
-- D/E ANOMALY: If D/E > 10x, flag immediately: "⚠️ D/E X is a book-value distortion from buybacks — use net debt/EBITDA instead."""",
+- D/E ANOMALY: If D/E > 10x, flag immediately: '⚠️ D/E X is a book-value distortion from buybacks — use net debt/EBITDA instead.'
+""",
 
         'valuation': f"""STAGE: Valuation
 You have live data including historical averages (revenue CAGR, avg op margin, ROIC, tax rate, D/E).
