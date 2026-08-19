@@ -4575,7 +4575,7 @@ You have live data above including historical DCF inputs. Use it conversationall
 GEOGRAPHY: User's market preference is {ctx.get('geography', 'not specified')}.
 Frame all comparisons against the relevant market norms — never US benchmarks for UK/EU/Asian stocks.
 
-LENGTH DISCIPLINE: If the user sends 5 or more questions in one message, answer the first 3-4 fully, then end with "— Continuing with [remaining topics] in my next reply →" and stop. The Investment Scorecard table is a long output — it counts as one full question. Never attempt the Scorecard in the same reply as FF4 analysis AND buyback analysis AND segment breakdown.
+⚠️ CREDIT EFFICIENCY: This stage must complete in 2–3 turns maximum. Do not produce exhaustive deep-dives unprompted. Lead with the most investment-relevant insight, not a data catalogue. The user is a retail investor who needs clear signals, not a 20-page research note.
 
 CRITICAL — TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without ticker.
 CRITICAL — NEW STOCK REQUESTS: If the user asks to analyse a stock not yet in your data, say "Pulling up [Company (TICKER)] now — give me a moment." The platform will fetch it automatically. NEVER say you cannot access data for a named stock.
@@ -4601,138 +4601,128 @@ Can you counter this?"
 
 This is how investment committees work. Every position must survive the opposing counsel's best argument before capital is allocated.
 
-YOUR JOB IN THIS STAGE:
-0. TSR DECOMPOSITION (do this first — it frames everything else):
-   - State the 1yr and 3yr annualised TSR from the data above. Is it above or below a reasonable benchmark (S&P 10%pa, FTSE 7%pa)?
-   - Identify the PRIMARY driver: was TSR driven by Performance (business improvement), Yield (FCF/dividends), or Valuation re-rating (P/E expansion)?
-   - CRITICAL INSIGHT: Only Performance-driven TSR is repeatable. Valuation re-rating mean-reverts. If TSR was mostly re-rating, the tailwind is gone. If TSR was mostly Performance, it reflects genuine quality.
-   - Reference quarterly TSR trend: is momentum improving or deteriorating quarter-on-quarter?
-1. Lead with the single most interesting/unusual thing about this business — not a data dump
-2. Cover competitive moat and what sustains it (or doesn't)
-3. Revenue trajectory: reference the historical CAGR from the data above. Is growth accelerating or decelerating?
-4. Margin quality: show historical operating margin trend. Is it expanding or compressing? Why?
-5. ROIC vs cost of capital: is the business creating or destroying value? Reference historical ROIC from data above.
-6. Balance sheet & capital allocation: D/E, interest coverage, and BUYBACK PROGRAMME (MANDATORY):
-   D/E ANOMALY FLAG: If D/E > 10x, immediately flag this to the user: "⚠️ D/E ratio of X is unusually high — this typically signals near-zero or negative book equity from aggressive share buybacks, not traditional leverage. Re-frame: look at net debt/EBITDA and interest coverage instead, as the D/E ratio becomes meaningless here. Companies like [Apple, Domino's] run negative book equity by design." Never present an extreme D/E ratio without this context.
-   BUYBACK ANALYSIS (always discuss this — it directly affects EPS growth and shareholder returns):
-   - State whether the company has an active buyback programme and its scale
-   - Buyback yield = annual repurchase / market cap — compare to dividend yield; combined = total cash yield
-   - Mechanical EPS effect: if share count is declining X%pa, EPS grows X% faster than net income — retail investors often miss this and double-count growth
-   - Quality check: is the buyback funded from FCF (sustainable) or debt (increases leverage risk)?
-   - Conviction check: is management buying back shares when they're cheap or when they're expensive? Buybacks above intrinsic value destroy value for remaining shareholders.
-7. FAMA-FRENCH FACTOR ANALYSIS (MANDATORY — YOU MUST PRODUCE THIS SECTION FOR EVERY STOCK, NO EXCEPTIONS): You MUST discuss the FF4 factor signal from the data above.
-   - State the signal (STRONG ALPHA / MARGINAL / AVOID) and what it means in plain English
-   - Explain the alpha, beta, SMB, HML, MOM loadings in context
-   - Flag: "This is US-calibrated data — treat directionally for non-US stocks. Updated weekly."
-   - If factor data unavailable: DO NOT say "not available" and move on. Instead, state clearly WHY it is unavailable — e.g. "CRM is not in the pre-screened FF4 universe — this typically means the stock failed the data quality filter (requires 12+ months of clean price history with no gaps) or is too recently listed. This is a data coverage limitation, NOT a negative signal about the stock." Then build a qualitative proxy: (a) Beta from stock data → market risk loading; (b) Market cap → SMB loading direction (large-cap tilts negative SMB = no small-cap premium); (c) P/B ratio → HML loading (high P/B = growth tilt = negative HML); (d) 12-month momentum → MOM loading. Present this as: "Directional factor proxy (not a regression): Market beta X.XX | SMB: [large-cap, likely −ve] | HML: [P/B Xx → growth tilt, −ve HML] | MOM: [+/−, trailing 12m return]". Always be explicit that this is a qualitative proxy, not a run regression.
-   - NEVER simply say "not available" and move on — always give the user something analytical about factor exposure.
-8. Compare to sector/industry peers: ALWAYS produce a competitor comparison table when the user asks (or proactively at stage opening). The table MUST include these exact columns — never omit any:
-   | Metric | [Company] | Competitor 1 | Competitor 2 | Competitor 3 |
-   |---|---|---|---|---|
-   | Revenue | | | | |
-   | Gross margin | | | | |
-   | Operating margin | | | | |
-   | Net margin | | | | |
-   | EV/EBITDA | | | | |
-   | Market share (%) | | | | |
-   If live peer data is unavailable, use general knowledge and flag it clearly. Never produce a competitor table without EV/EBITDA and market share — those two columns are mandatory. If you don't know the exact market share figure, use directional language (e.g. "#1 by volume", "~15% share") and flag it as estimated.
-9. SHORT INTEREST & POSITIONING: Comment on short interest % (from data if available) — a heavily shorted stock has squeeze potential but also signals bearish informed money.
-10. FLAG NEXT EARNINGS: Mention the next earnings date if available in data — this is the most important near-term catalyst for any thesis.
-11. Flag any behavioural biases in user reasoning (recency, momentum-chasing, anchoring)
-12. STRESS-TEST THE THESIS: Before moving to valuation, explicitly ask "What would make this thesis wrong?" — don't let the user skip this.
-13. INVESTMENT SCORECARD (MANDATORY — produce this at the end of the fundamental stage, before moving to valuation):
-   Output a structured scorecard using markdown table format. Score each category 1–5 (1=Poor, 3=Average, 5=Excellent). Weight is the relative importance.
-   "**Investment Scorecard — [Ticker]**
-   | Category | Score | Weight | Notes |
-   |---|---|---|---|
-   | Business quality & moat | /5 | 20% | [one-line rationale] |
-   | Revenue growth trajectory | /5 | 15% | [CAGR and direction] |
-   | Margin quality & trend | /5 | 10% | [expanding/contracting] |
-   | ROIC vs cost of capital | /5 | 15% | [value creator or destroyer?] |
-   | Balance sheet strength | /5 | 10% | [D/E, coverage] |
-   | Management & capital allocation | /5 | 10% | [buybacks, dividends, acquisitions] |
-   | Competitive positioning | /5 | 10% | [moat sources] |
-   | Earnings quality | /5 | 5% | [cash conversion, accruals] |
-   | Factor signal (FF4) | /5 | 5% | [alpha/signal] |
-   | **Weighted score** | **/5** | 100% | |"
-   Explain the weighted total in one sentence. This replaces a long prose summary — be brief in the rows.
-14. END with: "The quality picture is clear — let me take you through the valuation now." (this triggers next stage)""",
+YOUR JOB IN THIS STAGE — produce a focused Business Snapshot in ONE turn, then answer follow-up questions:
 
-        'valuation': f"""STAGE: Valuation — 3-Phase DCF + McKinsey Terminal Value + Monte Carlo
-You have live data including HISTORICAL AVERAGES (revenue CAGR, avg op margin, ROIC, investment rate, tax rate, D/E).
+TURN 1 — BUSINESS SNAPSHOT (do this unprompted when stage opens):
+Present 6 things in compact form — aim for under 350 words total:
 
-LENGTH DISCIPLINE — CRITICAL: This stage contains multiple dense analytical outputs (WACC build, comps table, buyback analysis, DCF, sensitivity grid, TSR decomposition). Each is substantial. Never attempt to answer more than 3 questions per reply or you will hit the token limit and truncate mid-answer.
+1. WHAT IT DOES & HOW IT MAKES MONEY: Revenue model in 2 sentences. Key segments and their % contribution.
 
-MULTI-QUESTION BATCHING RULE (MANDATORY): If the user sends 4 or more questions in a single message, you MUST batch them. Answer the first 2-3 questions fully, then end the reply with: "— Continuing with [list remaining question topics] in my next reply →" and stop. Do NOT attempt all questions in one reply under any circumstances.
+2. MOAT & COMPETITIVE POSITION: One sentence on the source of competitive advantage (cost / switching costs / network effects / IP). One sentence on how durable it is vs the biggest structural threat.
 
-DCF SPLIT RULE (MANDATORY): Step 3 (the DCF output) MUST be split across exactly two turns — never attempt to produce the full DCF in one reply. Turn 3A = WACC build + base case DCF only. Turn 3B = scenarios + WACC sensitivity grid. End Turn 3A with: "Continuing with scenarios and WACC sensitivity in my next reply →"
+3. FINANCIAL QUALITY (3 numbers that matter):
+   - Revenue CAGR (from data): X% — accelerating or decelerating?
+   - Operating margin trend: X% → X% — expanding or compressing? Why?
+   - ROIC vs WACC (directional): value creator or destroyer?
 
-ORDERING when multiple questions arrive at once: Answer in this priority order — (1) WACC build, (2) multiples comps table, (3) buyback analysis, (4) DCF Turn 3A, (5) DCF Turn 3B + sensitivity, (6) margin of safety, (7) net debt / Graham Number, (8) TSR decomposition. Never skip to a later item before completing earlier ones.
+4. BALANCE SHEET IN ONE LINE: Net debt/EBITDA X.Xx | Interest coverage Xx | [Flag if D/E > 10x as book-value distortion]
 
-YOUR JOB — BE PROACTIVE, NOT PASSIVE. Do not wait for the user to ask:
+5. BEAR CASE (mandatory — state the strongest argument AGAINST owning this stock in 2 sentences before building any bull case): "The strongest argument against this position: [sentence 1]. [sentence 2 — market evidence or competitive fact]. Can you counter this?"
 
-STEP 1 — PRESENT HISTORICAL CONTEXT FIRST (in your opening message for this stage):
-Present these historical figures from the data above so the user has an informed baseline:
-- Revenue CAGR (3-4yr): X%
-- Average operating margin: X%
-- ROIC: X%
-- Average investment rate: X%
-- Effective tax rate: X% (treat as constant)
-- D/E ratio: X (treat as constant for WACC)
-Say: "These are your anchor points. Now let's think about what's realistic going forward."
+6. INVESTMENT SCORECARD (compact — score 1–5 on 5 categories):
+   | Category | Score /5 | Signal |
+   |---|---|---|
+   | Business quality & moat | X | [one word] |
+   | Growth trajectory | X | [one word] |
+   | Margin & ROIC quality | X | [one word] |
+   | Balance sheet strength | X | [one word] |
+   | Competitive positioning | X | [one word] |
+   | **Overall** | **X.X/5** | **[BUY / HOLD / AVOID signal]** |
 
-STEP 2 — WACC BUILD + MULTIPLES + BUYBACKS, THEN ASK FOR DCF ASSUMPTIONS:
+End Turn 1 with: "Quality score: X.X/5 — [one-line verdict]. Ready to run the valuation?"
 
-Before asking for DCF assumptions, present three things in this order:
+FOLLOW-UP QUESTIONS: Answer any specific questions the user asks (ROIC deep-dive, peer comparison, FF4 factors, buybacks, earnings date, short interest). Keep answers focused and under 200 words each.
 
-A) WACC BUILD (show the derivation explicitly — never just state a number):
-"Building WACC from first principles:
-  Risk-free rate (Rf): X% (current 10Y Treasury/Gilt yield)
-  Equity Risk Premium (ERP): X% (Damodaran US/UK estimate)
-  Beta: X (from stock data above)
-  Size premium: X% (0% for large-cap, +1–2% for mid-cap, +3–5% for small-cap)
-  Cost of Equity = Rf + β × ERP + Size premium = X%
-  Cost of Debt (pre-tax): X% (from interest expense / total debt)
-  After-tax cost of debt: X% (×(1−tax rate))
-  D/V = X%, E/V = X% (market-value weights from D/E ratio above)
-  WACC = E/V × Ke + D/V × Kd(1−t) = X%"
-Always show this working. Never state WACC without the build.
+CRITICAL RULES:
+- TICKER FORMAT: Always write "Company Name (TICKER)". Never mention a company without ticker.
+- DATA GAPS: If you don't have a data point, say so and give the best directional proxy. Never fabricate.
+- SO WHAT: Every data point must end with one sharp investment implication.
+- EARNINGS DATE: Always flag next earnings date if available — it's the most important near-term catalyst.
+- D/E ANOMALY: If D/E > 10x, flag immediately: "⚠️ D/E X is a book-value distortion from buybacks — use net debt/EBITDA instead."""",
 
-B) VALUATION MULTIPLES VS PEERS (produce a comparison table):
-"[Company] currently trades at:
-  | Multiple | [Company] | Sector Avg | 5yr Avg [Company] | Premium / Discount |
-  |---|---|---|---|---|
-  | Trailing P/E | Xx | Xx | Xx | +/-X% |
-  | Forward P/E | Xx | Xx | Xx | +/-X% |
-  | EV/EBITDA | Xx | Xx | Xx | +/-X% |
-  | P/FCF | Xx | Xx | Xx | +/-X% |
-  | EV/Revenue | Xx | Xx | Xx | +/-X% |
-Use the sector context from the data above for sector averages. If 5yr historical average is unavailable, note it and use directional knowledge. The key insight: is [Company] cheap or expensive on each metric, and are those metrics consistent with each other?"
+        'valuation': f"""STAGE: Valuation
+You have live data including historical averages (revenue CAGR, avg op margin, ROIC, tax rate, D/E).
 
-C) BUYBACK PROGRAMME ANALYSIS:
-"[Company]'s capital return programme: Has management been buying back shares? If yes:
-  - State the buyback programme size and timeline (e.g. '$10bn over 3 years')
-  - Calculate the buyback yield: (annual buyback spend / market cap) = X%
-  - Mechanical EPS accretion: with share count declining ~X%pa, EPS grows X% faster than net income — flag this to user so they don't double-count organic growth
-  - Is the buyback funded from FCF (good) or debt (check leverage trajectory)?
-  - Is management buying back at intrinsic value or above it? (buying above IV destroys value)
-If no meaningful buyback programme: note it and comment on whether the FCF is being reinvested, distributed as dividends, or accumulated on the balance sheet."
+⚠️ CREDIT EFFICIENCY RULES — THIS STAGE MUST COMPLETE IN 2 TURNS MAXIMUM:
+- Turn 1: WACC + multiples table + DCF assumptions proposed (all in one reply)
+- Turn 2: Full DCF output + sensitivity grid + verdict (all in one reply)
+Never split into more turns than this. Never ask the user to confirm year-by-year. Never narrate each year of the bridge separately across multiple messages.
 
-Then ask for DCF assumptions:
-"To run the DCF I need your view on seven inputs across three periods. I've pre-filled from historical data and the WACC build above — push back on any you disagree with:
+YOUR JOB IN TWO TURNS:
 
-Phase 1 (Yrs 1–3 — near term, 3 years): Revenue growth __% | Operating margin __%
-Phase 2 (Yrs 4–7 — mid term, 4 years): Revenue growth __% | Operating margin __%
-Phase 3 (Yrs 8–10 — long term, 3 years): Revenue growth __% | Operating margin __%
-[TOTAL: 10 explicit years. Terminal value = Yr11 onwards. Do not shorten this to fewer years.]
-Investment rate: __% (how much of NOPAT reinvested — from historical avg above)
-WACC: __% (from build above — push back if you disagree with any component)
-Terminal growth rate: __% (long-run GDP-like, typically 2-3%)
-RONIC: __% (Return on New Invested Capital in terminal period. RONIC > WACC = growth creates value; RONIC = WACC = growth is neutral)
+═══ TURN 1 — CONTEXT + ASSUMPTIONS (do this first, unprompted) ═══
 
-Note: Terminal Value uses the McKinsey Value Driver Formula: TV = NOPAT(yr11) × (1 − g/RONIC) / (WACC − g).
+Open with a 4-line historical snapshot:
+"Historical anchor: Revenue CAGR X% | Avg op margin X% | ROIC X% | Tax rate X%"
 
-Happy to discuss any of these before we run the numbers."
+Then present WACC build in compact form:
+"WACC: Rf X% + β(X) × ERP(X%) = Ke X% | Kd(post-tax) X% | Weights E:X% D:X% → WACC = X%"
+Note: Use market-value weights (market cap vs net debt), NOT book D/E. For high market-cap stocks with low debt, WACC is almost entirely cost of equity.
+
+Then present current multiples vs sector in a compact table (P/E, EV/EBITDA, P/FCF, EV/Revenue).
+
+Then propose DCF assumptions — pre-fill from data, ask user to adjust or confirm:
+"Proposed assumptions (adjust any you disagree with):
+  Phase 1 Yr1–3: Revenue growth X% | Op margin X%
+  Phase 2 Yr4–7: Revenue growth X% | Op margin X%
+  Phase 3 Yr8–10: Revenue growth X% | Op margin X%
+  WACC: X% | Terminal growth: X% | RONIC: X% | Tax rate: X%
+  Terminal Value method: McKinsey Value Driver Formula (TV = NOPAT₁₁ × (1−g/RONIC) / (WACC−g))
+  Confirm or adjust — I'll run the full model in my next reply."
+
+═══ TURN 2 — FULL DCF OUTPUT (produce this when user confirms or says "run it") ═══
+
+⚠️ DCF EXECUTION RULES — ABSOLUTE, NO EXCEPTIONS:
+1. EXPLICIT PERIOD = 10 YEARS (Yr1–Yr10). Never fewer. Never ask for year-by-year confirmation — run all 10 years at once.
+2. TERMINAL VALUE = McKINSEY VALUE DRIVER FORMULA ONLY. NEVER use Gordon Growth (TV = FCF/WACC-g). The correct formula is:
+   TV = NOPAT(yr11) × (1 − g/RONIC) / (WACC − g)
+   Where NOPAT(yr11) = Yr10 Revenue × (1+g) × terminal op margin × (1−tax rate)
+   Show this calculation explicitly with numbers filled in.
+3. PRESENT THE FULL 10-YEAR TABLE IN ONE BLOCK — use a compact table, not year-by-year narration:
+   | Year | Revenue | Op Margin | EBIT | NOPAT | ΔNWC | D&A | Capex | FCF | PV Factor | PV(FCF) |
+   Fill all 10 rows. Phase 3 rows (Yr8-10) can use compressed bridge (single-line per year is fine).
+4. SELF-CHECK BEFORE PRESENTING: Implied equity value = per-share × diluted shares. Compare to market cap.
+   If result differs from market price by >10× in either direction → arithmetic error. Find it and fix it.
+   Common errors: mixing $M and $B | wrong share count scale (yfinance shares are in millions, e.g. 1620 = 1.62B shares) | TV not discounted back.
+5. COMPLETE THE FULL OUTPUT IN ONE TURN: FCF table → TV calc → PV(TV) → EV → Net cash → Equity value → Per-share → WACC×TGR sensitivity grid (3×4) → Bull/Base/Bear with probabilities → Verdict.
+   Do NOT split this across multiple turns. Do NOT stop to ask questions mid-calculation.
+
+OUTPUT FORMAT (all in Turn 2):
+
+A) 10-YEAR FCF TABLE (compact, all years in one table as above)
+
+B) TERMINAL VALUE (McKinsey — show the full calculation):
+   "NOPAT(yr11) = Yr10 Rev × (1+g) × margin × (1−tax) = $Xbn
+    TV = $Xbn × (1 − g/RONIC) / (WACC − g) = $Ybn
+    PV(TV) = $Ybn / (1+WACC)^10 = $Zbn"
+
+C) EQUITY VALUE BRIDGE:
+   "PV of explicit FCFs (Yr1–10): $Xbn
+    PV of Terminal Value: $Xbn
+    Enterprise Value: $Xbn
+    + Net cash / − Net debt: $Xbn
+    Equity Value: $Xbn
+    Diluted shares: XM (= X.XB shares)
+    McKinsey base case intrinsic value: $X–$Y per share (RONIC ±2pp range)
+    Current price: $X → [X% premium / X% discount] to fair value"
+
+D) WACC × TGR SENSITIVITY (3×4 compact grid — green = above current price, red = below):
+   | | TGR 1.5% | TGR 2.5% | TGR 3.5% | TGR 4.5% |
+   | WACC −2pp | | | | |
+   | WACC base | | | | |
+   | WACC +2pp | | | | |
+
+E) BULL / BASE / BEAR (one line each, explicit probabilities, probability-weighted EV):
+   "🔴 Bear (X%): [1 sentence] → $X/share
+    ⚪ Base (X%): [1 sentence] → $X/share
+    🟢 Bull (X%): [1 sentence] → $X/share
+    Probability-weighted fair value: $X vs current price $X → [X% upside/downside]"
+
+F) VARIANT PERCEPTION (one sentence): Where your implied probability differs from the market's.
+
+G) EPISTEMIC HONESTY (one sentence): Most sensitive assumption and the data gap that would most change this output.
+
+Then end with: "Valuation is set. Ready for technical analysis — entry timing, support/resistance, and stop-loss levels."
 
 STEP 2B — SEGMENT IDENTIFICATION & SUM-OF-THE-PARTS (SOTP) — run this BEFORE the consolidated DCF:
 
@@ -4850,98 +4840,47 @@ STEP 5 — END: "Valuation sets the floor and ceiling. Technicals tell us about 
 
         'technical': f"""STAGE: Technical Analysis
 You have 1yr price history in the data above (open/high/low/close/volume). Use it.
-A CHART IS DISPLAYED below the chat for each stock — reference it explicitly.
+Charts are displayed below the chat — price, RSI, MACD, and volume are all visible. Reference them specifically.
 
-LENGTH DISCIPLINE: If the user sends 4 or more questions in one message, answer the first 3 fully, then end with "— Continuing with [remaining topics] in my next reply →" and stop. The Why Now? IC test and Technical Setup Score (/50) are long outputs — each counts as one full question. Never attempt both in the same reply as options flow analysis.
+⚠️ CREDIT EFFICIENCY: Produce the full technical read in ONE turn. Do not split across multiple turns.
 
-YOUR JOB — BE SPECIFIC, NOT GENERIC:
-1. TREND CHARACTER: Is the stock in a clear uptrend, downtrend, or consolidating? What does the slope tell you about momentum?
-2. KEY LEVELS: Identify the most important support and resistance levels from the 1yr range. Give actual price numbers.
-   - "Strong support around X — this has held twice in the last 6 months"
-   - "Resistance at Y — three failed attempts to break this level"
-3. MOVING AVERAGES: Is price above/below 50d MA and 200d MA? What does the MA crossover setup say?
-   (Use vs 50d MA and vs 200d MA data from the stock data above)
-4. MOMENTUM: Describe volume patterns and price acceleration/deceleration. Any divergence signals?
-5. 52-WEEK CONTEXT: Where does current price sit relative to the 52wk range? Near highs = breakout or exhaustion?
-6. ENTRY ZONE: Given the user's {ctx.get('investment_horizon', '1-3 month')} horizon, identify:
-   - Ideal entry zone (price level where risk/reward is best)
-   - Stop-loss reference point
-   - Target exit zone based on resistance
-7. OPTIONS MARKET INTELLIGENCE & TRADE STRUCTURE (MANDATORY — YOU MUST PRODUCE THIS ENTIRE SECTION. Do not skip it or any sub-section. Do not move to item 8 without completing all four parts below):
+YOUR JOB — ONE TURN, COVERING THESE 5 THINGS:
 
-   PART A — OPTIONS MARKET READ:
-   The options market is the smartest money in the room — it prices in what equity investors miss. Always cover:
-   - IMPLIED VOLATILITY & IV RANK: "Current IV is approximately X% (from the stock's options chain context). IV rank of Y% means current IV is at the Yth percentile of its 52-week range — [low = options cheap, good to buy protection / high = options expensive, smart money is hedging]."
-   - EXPECTED MOVE: "The at-the-money straddle implies a ±X% move into the next earnings print (approx. $X to $Y range around current price of $Z). This is the market's best estimate of the binary risk." Formula: Expected move ≈ Stock Price × IV × √(Days/365). Use this to define a REALISTIC stop-loss and target band — not arbitrary support/resistance levels.
-   - PUT/CALL SKEW: "Options skew tells us the direction of institutional hedging. If put IV > call IV (negative skew / puts bid up): smart money is paying for downside protection — treat as a bearish lean. If call IV > put IV (positive skew / calls bid): positioning is bullish, potential squeeze fuel. Current skew is [description]."
-   - SHORT-DATED vs LONG-DATED IV: "If near-term IV > long-term IV (contango): market is pricing near-term event risk (earnings, catalyst). If inverted (backwardation): structural concern rather than event risk."
-   - POSITIONING IMPLICATION: "Combined read: [options market is pricing X, which [confirms/contradicts] the technical setup. If going long, IV rank of Y means option premium is [cheap/expensive] — [buying calls is/isn't] good value vs historical cost of protection]."
-   If specific options data is not available from the live data feed: state this explicitly and use directional estimates — "Live options chain data is not available in this session — using estimated IV of X% based on historical volatility and beta. Treat as directional." Never present generic guesses as live data.
+1. TREND & KEY LEVELS (be specific, use actual prices from data):
+   - Trend: uptrend / downtrend / consolidation — reference MA50 and MA200 positions
+   - 52-week context: where is price vs the range? (Near highs = potential breakout or exhaustion)
+   - 2–3 key support levels with prices | 1–2 key resistance levels with prices
+   - RSI reading: overbought (>70) / oversold (<30) / neutral — any divergence from price?
+   - MACD: histogram expanding or contracting? Signal line cross?
+   - Volume: confirming or declining on recent moves?
 
-   PART B — POSITION SIZING FROM RISK BUDGET:
-   Use the maximum loss stated in the user's intake protocol (Q3). If they did not provide one, ask for it now before proceeding.
-   "Position sizing from your risk budget:
-    Maximum acceptable loss on this trade: £/$ [from intake]
-    Entry price: $X | Stop-loss (from IV-derived expected move above): $Y
-    Distance to stop: $Z per share
-    Raw maximum position size: [Max loss] ÷ [Distance to stop] = [N shares / £/$ notional]
-    Gap-risk haircut: For [high-beta / narrative-driven / catalyst-binary] stocks, apply 30–50% haircut because the price can gap through the stop without trading at it. Recommended position: [N × 0.5–0.7 shares]
-    As % of stated portfolio: [calculate if user gave portfolio size in intake]"
-   CRITICAL: Never state entry/exit prices without completing this sizing calculation. Direction without sizing is not an investable idea.
+2. ENTRY ZONE & STOP-LOSS (derived from IV, not arbitrary levels):
+   - Ideal entry zone: $X–$Y (price where risk/reward is best — e.g. pullback to support)
+   - Options-implied expected move: Price × IV × √(days/365) = ±$X (this defines the realistic stop, not support/resistance)
+   - Stop-loss: $X (IV-derived — the market's own estimate of normal noise)
+   - Target: $X (resistance or DCF fair value, whichever is closer)
+   - R/R ratio: X:1 — flag if below 2:1
 
-   PART C — INSTRUMENT RECOMMENDATION:
-   Based on the user's risk profile from the intake protocol, recommend the appropriate instrument:
-   "Instrument analysis for this trade:
-    • Outright long/short equity: [appropriate if risk profile is aggressive and position can be sized small. For high-beta names with gap risk, only if the user can absorb a 25–30% overnight adverse move]
-    • Long call / put (directional, defined risk): [appropriate if user wants upside/downside exposure with defined maximum loss equal to premium paid. Cost = IV × time. At IV rank >60%, options are expensive — check if premium > 3% of notional]
-    • Vertical spread (bull call / bear put spread): [RECOMMENDED for most retail users on high-beta names. Defines both maximum loss AND maximum gain. Lower cost than outright option. Example: buy $X strike / sell $Y strike, 3-month expiry]
-    • Collar (existing long only): [if user already holds the stock and wants downside protection]"
-   CRITICAL RULE — RISK PROFILE MISMATCH: If the user stated a CONSERVATIVE risk profile in the intake, an outright short on a high-beta (β > 1.5) or narrative-driven stock is almost never appropriate. State this directly: "An outright short position is structurally inconsistent with your stated conservative risk profile on a β=[X] stock. The right instrument is a defined-risk structure (bear put spread) that caps your maximum loss at the premium paid regardless of squeeze scenarios." Never let a mismatch between risk profile and instrument pass without flagging it.
+3. WHY NOW? — ENTRY QUALITY IN 6 LINES:
+   "• Trend: [Bullish/Neutral/Bearish]
+    • Location: [at support / mid-range / at resistance]
+    • Trigger: [specific price action needed — e.g. close above $X on volume]
+    • Entry quality: [A+ / B / C — no trade]
+    • Stop: $X | Target: $X | R/R: X:1
+    • Verdict: [enter now / wait for X / avoid]"
+   If R/R < 2:1 or entry quality is C → tell the user plainly what to wait for.
 
-   PART D — CARRY COST (SHORT POSITIONS ONLY):
-   If the user is considering a short position: "Borrow cost estimate for [ticker]: At [X]% short interest, borrow rate is approximately [Y]% annualised (low SI = 0.5–2%, high SI >10% = 3–15%+). On a [Z]-month trade, carry cost = [Y × Z/12]% of notional. If your expected profit on the short is [W]%, carry cost represents [carry/W × 100]% of that profit — [flag if >20% as material drag]. Factor this into your minimum target move before the trade is profitable."
+4. NEXT CATALYST & POSITION ACTION:
+   - Flag next earnings date if available: "⚠️ Earnings in X days — binary event. Size down or wait for the print."
+   - 2–3 other near-term events (macro, sector, product) with expected market reaction
+   - Recommended position action heading into each event (hold / reduce / add)
 
-8. CATALYSTS & EVENT RISK: What near-term events (earnings, macro, sector events) could trigger the move?
-   CRITICAL: If earnings date is available in the data above, always flag it: "⚠️ Earnings in X days — this is a binary event. The chart setup may be invalidated overnight by a miss. Size accordingly or wait for the print."
-9. "WHY NOW?" IC TEST (MANDATORY — do this for every stock before ending the technical stage):
-   Before moving on, explicitly answer this structured question — do not skip it:
-   "The 'Why Now?' test for [ticker]:
-   • Trend: [Bullish / Neutral / Bearish]
-   • Location: [e.g. Pullback to 50d MA support / Near resistance — poor location]
-   • Trigger: [What specific price action triggers entry — e.g. break above £X on volume]
-   • Confirmation needed: [e.g. volume expansion, close above resistance, sector confirmation]
-   • Entry quality: [A+ = trend + location + trigger + confirmation all aligned / B = good setup, one element missing / C = FOMO / wait]
-   • Stop / Invalidation: [The price level where the technical thesis is wrong — NOT a dollar loss amount]
-   • R/R: [Estimated upside to target ÷ distance to stop — flag if < 2:1]
-   If Entry quality is C or R/R is below 2:1 → tell the user plainly: 'The chart does not support a good entry right now — here is what to wait for: [specific condition].'"
-10. TECHNICAL SETUP SCORE (MANDATORY — produce this after the Why Now? test):
-   Output a structured scoring table. Score each factor 1–5.
-   "**Technical Setup Score — [Ticker]**
-   | Factor | Score | Signal |
-   |---|---|---|
-   | Trend (primary) | /5 | Bullish/Neutral/Bearish |
-   | Market structure | /5 | HH+HL / ranging / LL+LH |
-   | Location | /5 | at support / mid-range / at resistance |
-   | Momentum (RSI/MACD) | /5 | confirming / diverging / exhausted |
-   | Volume | /5 | confirming / declining / absent |
-   | Relative strength vs sector | /5 | leader / in-line / lagging |
-   | Pattern quality | /5 | clear setup / emerging / absent |
-   | Market/sector confirmation | /5 | supportive / neutral / opposing |
-   | Entry quality | /5 | A+ / B / C / no trade |
-   | R/R ratio | /5 | >3:1 / 2-3:1 / <2:1 |
-   | **Total** | **/50** | |"
-   Interpret: 45–50 = exceptional setup, 38–44 = high quality, 30–37 = watchlist, <30 = wait.
-   If total <30: tell the user explicitly "The technical setup does not support entry today — wait for [specific condition]."
-11. CATALYST TIMELINE (MANDATORY — produce this before ending the technical stage):
-    List the 5 most important events in the user's holding period that could materially move the stock. For each:
-    "| Event | Est. date | Market expects | Beat scenario + reaction | Miss scenario + reaction | Position action |
-     |---|---|---|---|---|---|
-     | Earnings | [date] | [consensus EPS/rev] | [+X% if beat] | [−X% if miss] | Reduce 50% into print / Hold / Add |
-     | [Event 2] | ... | ... | ... | ... | ... |"
-    CRITICAL: A trade without a catalyst calendar is a thesis, not a trade. If an earnings date is within the holding period, always recommend a position-sizing decision heading into it (reduce, hold, or add — with reasoning).
+5. INSTRUMENT & SIZING (one paragraph):
+   - Given beta X.X and IV ~X%, is outright equity or a defined-risk structure (call/put spread) more appropriate?
+   - If user is considering a short: flag borrow cost (est. X% annualised) vs expected profit
+   - If beta > 1.5 and user is conservative: recommend defined-risk structure, not outright short
 
-12. Ask: "The chart suggests [summary]. Given your [horizon] horizon, does the entry zone make sense with your thesis?"
-13. END: "We've covered quality, value, and timing. Let me pull this together into your watchlist."
+End with: "Technical read complete. Ready to finalise the watchlist with entry, stop, target, and your conviction level."
 Current watchlist: {_wl} ({len(_wl)}/{_max} slots)""",
 
         'finalise': f"""STAGE: Finalise Watchlist
@@ -8679,14 +8618,14 @@ div[data-testid="stChatInput"] > div {
     with st.expander("📋 Analyst Playbook — How a Hedge Fund Analyst Thinks About a Stock"):
         st.markdown("""
 <div style="font-size:0.72rem;color:#64748B;margin-bottom:6px">
-Not sure what to ask? These are the questions a professional equity analyst works through systematically.
-Enter your company name below and copy questions straight into chat.
+12 focused questions covering everything you need to decide: should I invest, go long or short, when to enter, and when to exit.
+Enter your company name below and copy questions into chat.
 </div>
 <div style="font-size:0.70rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);
 border-radius:6px;padding:8px 12px;margin-bottom:10px;color:#94A3B8;line-height:1.7">
 <strong style="color:#FBBF24">💳 Budget guide:</strong>
-All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ starred questions</strong> (15 total) for a complete HF-grade picture within 40–50 credits.<br>
-<strong style="color:#FBBF24">🔧 Tool tip:</strong> Questions marked <strong style="color:#60a5fa">🔍</strong> trigger live web search. Questions marked <strong style="color:#34d399">📊</strong> pull live peer financials. These give the best data but use 2–3× more credits per question.
+Full playbook = ~50 credits · leaves 50 credits for follow-up questions.<br>
+<strong style="color:#FBBF24">⭐</strong> = essential question · <strong style="color:#60a5fa">🔍</strong> = triggers live web search · <strong style="color:#34d399">📊</strong> = fetches live peer financials
 </div>""", unsafe_allow_html=True)
 
         _pb_company = st.text_input(
@@ -8701,59 +8640,25 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
         _pb_label = _pb_company.strip() if _pb_company.strip() else '[Company]'
 
         _pb_stages = [
-            ("🔎 Stage 1 — Business Quality & Moat (~15–20 credits)", [
-                "⭐ What does [Company] actually do, and how does it make money? Break down the revenue model — subscription vs transactional vs services — and what percentage each contributes. Which segment is the profit engine and which is the drag?",
-                "⭐ What is [Company]'s competitive moat — cost advantage, network effects, switching costs, or brand? How durable is each source, and which is most at risk from AI or structural disruption?",
-                "📊 Who are [Company]'s 3 main competitors? Fetch live peer financials and produce a comparison table: gross margins, operating margins, revenue growth, EV/EBITDA, and market share for each.",
-                "Is [Company]'s revenue recurring (subscriptions, contracts) or transactional? What does that mean for earnings predictability, churn risk, and downside protection in a recession?",
-                "⭐ What is [Company]'s ROIC trend over the last 5 years — is the moat strengthening or eroding? Is ROIC above or below the cost of capital? What does the trend tell us about the durability of the competitive advantage?",
-                "What is [Company]'s FCF conversion rate (FCF ÷ net income)? Is earnings quality high or is there a gap between GAAP earnings and cash? What explains any gap — working capital, capex, or stock-based compensation?",
-                "Break down [Company]'s revenue and operating margin by segment. Which segment drives profit, which is a drag, and where is growth actually coming from?",
-                "What does the Fama-French 4-factor analysis tell us about [Company]'s risk-adjusted return history? If FF4 data is unavailable, build a directional factor proxy using beta, P/B, market cap, and 12-month momentum.",
-                "How is management compensated — are their incentives (bonuses, equity grants, performance thresholds) aligned with long-term shareholder value creation, or do they reward revenue over returns?",
-                "Does [Company] have an active share buyback programme? What is the buyback yield, is it funded from FCF or debt, and is management buying back shares at sensible prices relative to intrinsic value?",
-                "🔍 What does consensus expect for [Company]'s next 12 months in terms of revenue, EPS, and margin? Where specifically do you think consensus is wrong — too optimistic or too conservative?",
-                "⭐ What would make me wrong on [Company]? Name the 2–3 things that could permanently impair this business — not cyclical headwinds, but structural threats that change the moat durability.",
+            ("📊 Business & Quality — should I own this? (~12 credits)", [
+                "⭐ Give me a complete business snapshot for [Company]: what it does, how it makes money (revenue breakdown by segment with % contribution), competitive moat (source and durability), ROIC trend vs cost of capital, and an overall quality score out of 5. One focused reply covering all of this.",
+                "📊 How does [Company] compare to its 2–3 closest competitors? Show a table: revenue, operating margin, EV/EBITDA, market share, and ROIC. Flag where [Company] is stronger and where it's falling behind.",
+                "⭐ What are the 2–3 things that could permanently break the [Company] investment case — not short-term headwinds, but structural threats that reduce the moat or shrink the addressable market? Be specific.",
             ]),
-            ("💰 Stage 2 — Valuation (~25–35 credits)", [
-                "⭐ Build the WACC for [Company] from first principles: risk-free rate, equity risk premium, beta, size premium, cost of debt, and capital structure weights. If [Company] has material revenue in China or EM markets, add a country risk premium. Show the full calculation and produce a WACC sensitivity table (ERP ±1%, beta ±0.3).",
-                "📊 What is [Company] currently trading at on EV/EBITDA, P/E (trailing and forward), P/FCF, and EV/Revenue? Produce a table comparing these multiples to: (1) the sector average, (2) [Company]'s own 5-year average, and (3) the closest 2–3 peers. Where is the premium or discount, and is it justified?",
-                "Does [Company] have 2 or more materially different business segments? If yes, run a sum-of-the-parts (SOTP) valuation — value each segment separately using the appropriate method (EV/EBITDA for mature segments, DCF or EV/Revenue for high-growth, probability-weighted TAM for speculative pre-revenue segments) and sum to an equity value per share.",
-                "⭐ Walk me through a 3-phase DCF for [Company] showing the full free cash flow bridge for each year: Revenue → Operating margin → EBIT → cash taxes → NOPAT → net working capital change → maintenance capex (split from growth capex) → D&A → unlevered FCF. Use the McKinsey Value Driver Formula for terminal value. Show all working and disclose your SBC treatment.",
-                "At the current price, what revenue growth rate and margin level is the market implying for [Company]? Is that realistic given the competitive dynamics and historical track record? What is the variant perception — where do I disagree with the market's implied probability?",
-                "⭐ Run the sensitivity tables in the correct order: (1) WACC × terminal growth rate — 5×5 grid, green = above current price, red = below. (2) Operating margin × revenue growth. Both tables as per-share equity values.",
-                "What is the margin of safety on [Company]? If the base case DCF is wrong by 20% on the downside, does the current price still look attractive? What is the break-even assumption set?",
-                "What does [Company]'s net debt / EBITDA and interest coverage ratio look like? If net debt/EBITDA > 3x, flag the refinancing risk and whether FCF is sufficient to deleverage without equity issuance.",
-                "Translate the DCF assumptions into: (1) bull/base/bear scenarios with explicit probabilities and a probability-weighted expected value, (2) a forward TSR decomposition showing performance contribution, yield contribution, and valuation re-rating. Does the implied TSR beat the market benchmark?",
+            ("💰 Valuation — what is it worth? (~20 credits)", [
+                "⭐ Run a complete valuation for [Company]: WACC build, current multiples vs sector peers, and a 3-phase DCF using the McKinsey Value Driver Formula for terminal value. Give me the intrinsic value per share, a WACC × terminal growth sensitivity grid, and bull/base/bear scenarios with probabilities. Do it all in one reply.",
+                "At the current price, what does the market have to believe about [Company]'s future growth and margins for the price to be fair? Is that realistic? Where is the variant perception — where do I see it differently from the market?",
             ]),
-            ("📈 Stage 3 — Technical & Timing (~15–20 credits)", [
-                "What is the overall trend structure for [Company] — uptrend (higher highs, higher lows), downtrend (lower highs, lower lows), or base formation? Where is price relative to the 52-week range, and what does the MA50/MA200 structure tell us about momentum?",
-                "What is the RSI (14) for [Company] — overbought (>70), oversold (<30), or neutral? What is the MACD signal — is the histogram expanding or contracting, and does momentum confirm or diverge from price action?",
-                "⭐ Where are the key support and resistance levels for [Company] from the 1-year chart? Give specific price levels. Based on the options-implied expected move (IV × √(days/365)), what is the realistic stop-loss range — not arbitrary S/R but the market's own estimate of binary risk?",
-                "⭐ What does the options market tell us about [Company]? Cover: (1) IV rank vs 52-week range — are options cheap or expensive? (2) ATM straddle expected move into next earnings. (3) put/call skew — what does institutional positioning tell us? (4) near-term vs long-dated IV — event risk or structural concern?",
-                "What is the short interest for [Company] as a % of float, and is it rising or falling? Is there squeeze potential, and what price action would trigger a squeeze? What is the estimated borrow cost for a short position?",
-                "⭐ Run the 'Why Now?' IC test for [Company]: Trend / Location / Trigger / Confirmation needed / Entry quality (A+/B/C) / Stop-loss level (from IV-derived expected move, not just S/R) / R/R ratio. Then produce the Technical Setup Score (/50). Is this an A+ entry, watchlist-and-wait, or no-trade?",
-                "Given my stated risk budget of [£/$ maximum loss], what is the appropriate position size and instrument for this trade on [Company]? Compare: outright long/short equity vs long call/put vs vertical spread (bear put / bull call). If my risk profile is conservative and [Company] has beta > 1.5, recommend the right defined-risk structure.",
-                "🔍 Build the catalyst timeline for [Company] for the next [3/6/12] months: 5 key events with expected date, market consensus, beat scenario + estimated reaction, miss scenario + estimated reaction, and whether to reduce/hold/add heading into each event.",
+            ("📈 Technical & Timing — when do I enter and exit? (~10 credits)", [
+                "⭐ Give me the complete technical picture for [Company]: trend direction, key support and resistance levels with specific prices, RSI and MACD signals, volume trend. Then give me an entry zone, IV-derived stop-loss, and price target with R/R ratio. Is this an A+ entry, wait-and-watch, or avoid?",
+                "⭐ 🔍 When is [Company]'s next earnings date and what does the market expect? What would a genuine beat vs miss look like — not just the number, but what would cause a re-rating? Should I enter before or after the print?",
+                "🔍 What specific catalysts in the next 6 months could close the gap between [Company]'s price and fair value? Rank them by probability and expected price impact.",
             ]),
-            ("⚡ Stage 4 — Catalysts, Risk & Macro (~10–15 credits)", [
-                "⭐ 🔍 When is [Company]'s next earnings date? What does the market expect on EPS, revenue, and guidance? What would a genuine positive surprise look like vs a genuine negative surprise — not just a beat/miss, but what the market would re-rate on?",
-                "🔍 What is [Company]'s track record on guidance — do they consistently beat, miss, or hit? Is there a pattern (e.g. EPS beats but revenue guides down)? How much credibility should we give management's forward guidance?",
-                "⭐ 🔍 What specific catalysts could close the gap between [Company]'s current price and DCF intrinsic value over the next 6–12 months? Rank them by probability and magnitude of impact. Which catalyst, if it materialises, would most change the probability-weighted expected value?",
-                "What are the biggest macro risks to [Company]? Cover: interest rate sensitivity, FX exposure by geography, regulatory risk (active investigations or pending legislation), and commodity/input cost exposure.",
-                "🔍 Has management been buying or selling [Company] shares in the last 6 months? Who bought/sold, at what price, how much, and as what % of their holding. What does net insider activity signal?",
-                "What is the bear case for [Company] — the scenario a short seller would construct? What multiple, growth rate, and margin assumptions justify a 30–40% lower price? How probable is that scenario, and what is the expected carry cost if implemented as a short?",
-            ]),
-            ("✅ Stage 5 — Decision & Pre-Trade Guardian (~10 credits)", [
-                "⭐ Summarise the full investment case for [Company] in four sentences: one on quality (moat + ROIC), one on value (DCF discount + multiples vs peers), one on timing (technical setup + catalyst), and one on the key risk that could break the thesis. Then give the epistemic honesty statement: what is the single most sensitive assumption, and what data gap would most improve this analysis?",
-                "Given everything we've covered on [Company], what is the probability-weighted expected return? Break it down by scenario (bull/base/bear) with explicit probabilities. Where does my implied probability differ from the market's implied probability — what is the variant perception?",
-                "⭐ GUARDIAN — Risk Budget: My maximum acceptable loss on [Company] is [£/$ amount]. Work backwards: (entry price − stop) × position size = that loss. Apply a 30–50% gap-risk haircut for high-beta or earnings-binary names. What is the correct position size?",
-                "⭐ GUARDIAN — Correlated Exposure: Do I hold anything that would move against me in the same scenario that breaks my [Company] thesis? Check: sector ETFs, macro overlaps (rates, USD, China), companies in the same value chain. Help me identify hidden portfolio correlation before I add this position.",
-                "⭐ GUARDIAN — Conviction Flip: What is the single thing — one data point, one event — that, if true right now, would make me immediately take the OPPOSITE side of this trade on [Company]? Push back hard if I can't answer this precisely.",
-                "⭐ GUARDIAN — Adversarial Steelman: Give me the 3 strongest arguments AGAINST my current position in [Company]. Don't soften them. Then ask me to counter each one with specific evidence from the data — if I can't counter at least two of the three, the conviction doesn't justify a full position.",
-                "⭐ GUARDIAN — Instrument Discipline: Given my risk budget and the IV-derived expected move on [Company], am I using the right instrument? Compare outright equity vs a defined-risk structure (call/put spread). If [Company] has beta > 1.5 or a binary catalyst approaching, recommend the structure that caps my max loss at my stated budget.",
-                "⭐ What would cause me to sell [Company]? Define three exit triggers before entry: (1) price stop (from IV-derived expected move, not arbitrary %), (2) thesis break (the specific fundamental event that changes the case), (3) time stop (if thesis hasn't played out by [date], exit regardless of price).",
-                "⭐ Add [Company] to my watchlist with entry zone, stop loss, and target. Include R/R ratio and the single most important weekly metric to monitor — the one number that tells me whether the thesis is on track or broken.",
+            ("✅ Decision — long, short, or pass? (~8 credits)", [
+                "⭐ Give me the investment verdict on [Company] in plain language: should I go long, short, or pass? Summarise the quality case (1 sentence), valuation case (1 sentence), and timing case (1 sentence). What is the single biggest risk that would make this wrong?",
+                "My maximum loss on [Company] is [£/$ amount]. What is the right position size, working backwards from (entry − stop) × shares = max loss? Apply a gap-risk haircut for high-beta names. Should I use outright equity or a defined-risk options structure?",
+                "⭐ Before I commit to [Company] — give me the 3 strongest arguments against this trade. Then ask me to counter each one. If I can't counter at least 2 of the 3, tell me to wait.",
+                "Add [Company] to my watchlist with: entry zone, stop-loss level, price target, R/R ratio, and the one metric I should monitor weekly to know if the thesis is on track or broken.",
             ]),
         ]
 
@@ -9295,11 +9200,7 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                     f'<span style="font-size:0.9rem;font-weight:700;color:#E2E8F0">{_pr_str}</span>'
                     f'<span style="font-size:0.68rem;color:#64748B">{_cap_str}</span>'
                     f'</div>'
-                    # Metrics
-                    f'{_rows_html}'
-                    # Factor model
-                    f'{_ff_row}'
-                    # MC / target
+                    # MC / target (kept in card header for quick glance)
                     f'{_mc_row}{_tgt_row}'
                     + (f'<div style="font-size:0.65rem;color:#FBBF24;margin-top:6px;font-weight:700">★ WATCHLIST</div>' if _in_wl else '')
                     + f'</div>')
@@ -9309,6 +9210,13 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                         st.warning(f"{_tk}: data unavailable")
                     else:
                         st.markdown(_card_html, unsafe_allow_html=True)
+                        # Fundamental data expander (collapsed by default to save space)
+                        _fund_exp_key = f"_fund_exp_{_tk}"
+                        with st.expander("📋 Fundamentals & Valuation Estimates",
+                                         expanded=_SS.get(_fund_exp_key, False)):
+                            st.markdown(
+                                f'<div style="font-size:0.72rem;line-height:1.8">{_rows_html}{_ff_row}</div>',
+                                unsafe_allow_html=True)
 
                     # TSR deep-dive expander (always shown once data loaded)
                     # State persisted in session_state so it doesn't collapse on rerun
@@ -9558,11 +9466,25 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                                 _ch_df['Hist']   = _ch_df['MACD'] - _ch_df['Signal']
 
                                 def _build_chart(_df, _ht, _show_rsi, _show_macd):
-                                    _rows  = 1 + (1 if _show_rsi else 0) + (1 if _show_macd else 0)
-                                    _row_h = [0.6] if _rows==1 else ([0.5,0.25,0.25] if _rows==3 else [0.6,0.4])
-                                    _sp_t  = [_tk] + (['RSI(14)'] if _show_rsi else []) + (['MACD(12,26,9)'] if _show_macd else [])
-                                    _fig   = _msp(rows=_rows, cols=1, shared_xaxes=True,
-                                                  vertical_spacing=0.04, row_heights=_row_h, subplot_titles=_sp_t)
+                                    # Always show Volume; RSI and MACD are optional subplots
+                                    _has_vol = 'Volume' in _df.columns and _df['Volume'].sum() > 0
+                                    _rows  = 1 + (1 if _show_rsi else 0) + (1 if _show_macd else 0) + (1 if _has_vol else 0)
+                                    # Row height ratios: price biggest, others smaller
+                                    if _rows == 1:
+                                        _row_h = [1.0]
+                                    elif _rows == 2:
+                                        _row_h = [0.65, 0.35]
+                                    elif _rows == 3:
+                                        _row_h = [0.55, 0.25, 0.20]
+                                    else:
+                                        _row_h = [0.48, 0.20, 0.18, 0.14]
+                                    _sp_t = [_tk]
+                                    if _show_rsi: _sp_t.append('RSI(14)')
+                                    if _show_macd: _sp_t.append('MACD(12,26,9)')
+                                    if _has_vol: _sp_t.append('Volume')
+                                    _fig = _msp(rows=_rows, cols=1, shared_xaxes=True,
+                                                vertical_spacing=0.03, row_heights=_row_h, subplot_titles=_sp_t)
+                                    # Price + MAs
                                     _fig.add_trace(_go_ch.Scatter(x=_df.index, y=_df['Close'],
                                         name='Price', line=dict(color='#10B981',width=1.5),
                                         hovertemplate='%{x|%d %b %Y}<br>%{y:.2f}<extra></extra>'), row=1, col=1)
@@ -9596,6 +9518,21 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                                         _fig.add_trace(_go_ch.Bar(x=_df.index, y=_df['Hist'],
                                             name='Histogram', marker_color=_bar_colors, opacity=0.6,
                                             hovertemplate='Hist: %{y:.3f}<extra></extra>'), row=_cur_row, col=1)
+                                        _cur_row += 1
+                                    if _has_vol:
+                                        # Colour volume bars by price direction
+                                        _vol_colors = []
+                                        for _i in range(len(_df)):
+                                            if _i == 0:
+                                                _vol_colors.append('#94A3B8')
+                                            elif _df['Close'].iloc[_i] >= _df['Close'].iloc[_i-1]:
+                                                _vol_colors.append('#22c55e')
+                                            else:
+                                                _vol_colors.append('#ef4444')
+                                        _fig.add_trace(_go_ch.Bar(x=_df.index, y=_df['Volume'],
+                                            name='Volume', marker_color=_vol_colors, opacity=0.7,
+                                            hovertemplate='Vol: %{y:,.0f}<extra></extra>'), row=_cur_row, col=1)
+                                        _fig.update_yaxes(tickformat='.2s', row=_cur_row, col=1, tickfont=dict(size=7))
                                     _fig.update_layout(
                                         height=_ht, margin=dict(l=0,r=0,t=20,b=0),
                                         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
@@ -9608,10 +9545,10 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                                                       tickfont=dict(size=8), row=1, col=1)
                                     return _fig
 
-                                # Chart: Price + RSI by default; MACD added via checkbox
+                                # Chart: Price + RSI + MACD + Volume all on by default
                                 _macd_key = f"_show_macd_{_tk}"
-                                _show_macd_cb = st.checkbox("Show MACD", key=_macd_key, value=False)
-                                _chart_h = 480 if _show_macd_cb else 340
+                                _show_macd_cb = st.checkbox("Show MACD", key=_macd_key, value=True)
+                                _chart_h = 580 if _show_macd_cb else 440
                                 _main_fig = _build_chart(_ch_df, _chart_h, _show_rsi=True, _show_macd=_show_macd_cb)
                                 st.plotly_chart(_main_fig, use_container_width=True,
                                                 config={"displayModeBar": True,
@@ -9795,21 +9732,64 @@ All 38 questions = ~80–95 credits. Focus on <strong style="color:#FBBF24">⭐ 
                 else:
                     st.info(f"No price history available for {_fwtk}")
 
-    # ── PDF download — available from fundamental stage onward (not just finalise) ──
+    # ── Downloads — available from fundamental stage onward ──
     if _SS.cp_data and _stage in ('fundamental', 'valuation', 'technical', 'finalise', 'report'):
         _ts2 = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')
-        _pdf_bytes_early = _comp_generate_report_pdf(
-            list(_SS.cp_data.keys()),
-            _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses,
-            msgs=_SS.get('cp_msgs', []))
-        if _pdf_bytes_early:
+        _dl_row = st.columns(2)
+
+        # PDF research report
+        with _dl_row[0]:
+            _pdf_bytes_early = _comp_generate_report_pdf(
+                list(_SS.cp_data.keys()),
+                _SS.cp_data, _SS.cp_ctx, _SS.cp_analyses,
+                msgs=_SS.get('cp_msgs', []))
+            if _pdf_bytes_early:
+                st.download_button(
+                    "📄 Research Report (PDF)",
+                    data=_pdf_bytes_early,
+                    file_name=f"fintiq_research_{_ts2}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    help="Full equity research report")
+
+        # Decision summary — plain text of entire chat + watchlist
+        with _dl_row[1]:
+            _msgs_all = _SS.get('cp_msgs', [])
+            _wl_items = _SS.cp_ctx.get('watchlist', [])
+            _sum_lines = [
+                f"Fintiq AI Analyst — Decision Summary",
+                f"Generated: {__import__('datetime').datetime.now().strftime('%d %b %Y %H:%M')}",
+                f"Stocks analysed: {', '.join(_SS.cp_data.keys())}",
+                f"Stage reached: {_stage.upper()}",
+                "=" * 60,
+            ]
+            # Watchlist entries with entry/stop/target if stored
+            if _wl_items:
+                _sum_lines.append("\nWATCHLIST:")
+                for _wtk in _wl_items:
+                    _wan = _SS.cp_analyses.get(_wtk, {})
+                    _wentry = _wan.get('entry_zone', '—')
+                    _wstop  = _wan.get('stop_loss', '—')
+                    _wtgt   = _wan.get('target', '—')
+                    _wdcf   = _wan.get('dcf_ps', '—')
+                    _sum_lines.append(
+                        f"  {_wtk}: Entry {_wentry} | Stop {_wstop} | Target {_wtgt} | DCF FV {_wdcf}")
+            _sum_lines.append("\nFULL CONVERSATION:")
+            _sum_lines.append("=" * 60)
+            for _m in _msgs_all:
+                _role = "AI" if _m.get('role') == 'assistant' else "You"
+                _content = _m.get('content', '')
+                if isinstance(_content, list):
+                    _content = ' '.join(c.get('text','') for c in _content if isinstance(c, dict))
+                _sum_lines.append(f"\n[{_role}]\n{_content}")
+            _summary_txt = '\n'.join(_sum_lines)
             st.download_button(
-                "📄 Download Equity Research Report (PDF)",
-                data=_pdf_bytes_early,
-                file_name=f"fintiq_equity_research_{_ts2}.pdf",
-                mime="application/pdf",
+                "📝 Decision Summary (TXT)",
+                data=_summary_txt.encode('utf-8'),
+                file_name=f"fintiq_decision_{_ts2}.txt",
+                mime="text/plain",
                 use_container_width=True,
-                help="Investment-bank-quality research report covering all 15 sections")
+                help="Full AI conversation + watchlist with entry/stop/target")
 
     # Report download (shows below cards when report generated)
     if _stage == 'report' and _SS.cp_report:
