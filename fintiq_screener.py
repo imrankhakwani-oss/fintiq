@@ -4441,6 +4441,9 @@ def _comp_ai(messages: list, system: str, stage: str = '') -> str:
                     _tool_blocks.append(_b)
 
             _stop = getattr(_r, 'stop_reason', '') or ''
+            # Log stop_reason to session state for debugging
+            try: st.session_state['_last_stop_reason'] = _stop
+            except Exception: pass
 
             # If no tool calls or we've hit end_turn, return the text
             if not _tool_blocks or _stop == 'end_turn':
@@ -4448,7 +4451,9 @@ def _comp_ai(messages: list, system: str, stage: str = '') -> str:
                 if _final:
                     return _final
                 if _stop == 'max_tokens':
-                    return "Response was too long — please ask me to continue or be more specific."
+                    # Return a sentinel that callers can detect — do NOT store this in
+                    # cp_msgs as a normal assistant turn (it would corrupt history).
+                    return "__MAX_TOKENS__"
                 return f"No response generated (stop={_stop}) — please try again."
 
             # Execute all tool calls and build the next message turn
@@ -4515,22 +4520,30 @@ def _comp_system_prompt(stage: str, ctx: dict, data: dict, analyses: dict = None
         for _tk, _d in data.items():
             _data_txt += "\n" + _comp_data_summary(_d) + "\n"
 
-    # Inject pre-computed DCF results so valuation stage doesn't need to recalculate
+    # Inject pre-computed DCF summary — Claude receives ONLY the 6 key numbers, not the table.
+    # The FCF table is rendered by Python in the UI. Claude must NEVER recalculate.
     if analyses:
         _dcf_lines = []
         for _tk, _an in analyses.items():
-            _ps = _an.get('dcf_ps')
+            _df = _an.get('dcf_full') or {}
+            _ps = _df.get('iv_ps') or _an.get('dcf_ps')
             _mc = _an.get('mc')
             if _ps and _ps > 0:
                 _p25 = f"${_mc['p25']:.2f}" if _mc else "N/A"
                 _p75 = f"${_mc['p75']:.2f}" if _mc else "N/A"
+                _up  = f"{_df.get('upside',0):.1f}%" if _df.get('upside') is not None else "N/A"
+                _tv_pct = f"{_df.get('tv_pct',0):.0f}%" if _df.get('tv_pct') is not None else "N/A"
+                _wacc = _df.get('wacc','N/A'); _tg = _df.get('tg','N/A')
                 _dcf_lines.append(
-                    f"  {_tk}: Base DCF = ${_ps:.2f}/share | Monte Carlo P25–P75 = {_p25}–{_p75}"
+                    f"  {_tk}: Intrinsic value = ${_ps:.2f}/share | Monte Carlo P25–P75 = {_p25}–{_p75} | "
+                    f"Upside = {_up} | TV as % of EV = {_tv_pct} | WACC = {_wacc}% | TGR = {_tg}%"
                 )
         if _dcf_lines:
-            _data_txt += "\n\nPRE-COMPUTED DCF (McKinsey 3-phase, Python-calculated — do NOT recalculate from scratch):\n"
+            _data_txt += "\n\n=== VALUATION ENGINE OUTPUT (Python-computed McKinsey DCF) ===\n"
+            _data_txt += "The FCF table, terminal value, and equity bridge are computed by Python and displayed in the UI.\n"
+            _data_txt += "You receive only the summary. NEVER recalculate any numbers. NEVER reproduce the FCF table.\n"
             _data_txt += "\n".join(_dcf_lines) + "\n"
-            _data_txt += "Use these as your base case anchor. Adjust only if assumptions look wrong for the specific stock.\n"
+            _data_txt += "=== END VALUATION ENGINE OUTPUT ===\n"
 
     _ctx_txt = ""
     if ctx:
@@ -4660,66 +4673,54 @@ CRITICAL RULES:
 """,
 
         'valuation': f"""STAGE: Valuation
-The platform has already computed a McKinsey 3-phase DCF for each stock (see PRE-COMPUTED DCF in your data above). Your job is to INTERPRET and PRESSURE-TEST that result — not recalculate it from scratch.
 
-⚠️ DO NOT produce a 10-year FCF table. DO NOT recalculate NOPAT year by year. The numbers are already computed. Your value-add is analyst judgment on whether the assumptions are right and what the scenarios mean.
+⚠️ CRITICAL — READ BEFORE RESPONDING:
+The financial engine has already computed the full DCF (10-year McKinsey model). The FCF table is displayed to the user in the UI. You ONLY receive the summary output (intrinsic value, Monte Carlo range, upside, TV%, WACC, TGR) — see VALUATION ENGINE OUTPUT in your data above.
 
-THIS STAGE COMPLETES IN 2 TURNS:
+YOUR ROLE: Interpret the result. Write investment narrative. NEVER recalculate anything.
 
-═══ TURN 1 — ASSUMPTIONS REVIEW (do this unprompted) ═══
+ABSOLUTE PROHIBITIONS:
+- Do NOT produce or reproduce a year-by-year FCF table
+- Do NOT calculate NOPAT, FCF, PV factors, or terminal value yourself
+- Do NOT suggest extending the forecast (Python will recompute automatically if requested)
+- Do NOT perform arithmetic — all numbers come from the engine output above
+- If asked to "extend" or "change assumptions", acknowledge that the model will update, then interpret the CURRENT result while it recalculates
 
-Present compactly in ONE reply:
+WHAT TO PRODUCE (target 500–700 words, 2 turns max):
 
-1. HISTORICAL ANCHOR (2 lines):
-   "Revenue CAGR X% | Avg op margin X% | ROIC X% | Tax rate X%"
+TURN 1 — unprompted when entering this stage:
 
-2. WACC (1 line):
-   "WACC: Rf X% + β(X) × ERP(X%) = Ke X% | Kd(after-tax) X% | WACC = X%"
-   (Use market-value weights. For cash-rich/low-debt stocks, WACC ≈ Ke.)
-
-3. MULTIPLES vs SECTOR (compact table — 4 rows max):
-   | Metric | [Company] | Sector avg | Premium/Discount |
-   | P/E (fwd) | | | |
+1. MULTIPLES CHECK (compact table):
+   | Metric | [Company] | Sector avg | Signal |
+   | P/E fwd | | | |
    | EV/EBITDA | | | |
-   | P/FCF | | | |
    | EV/Revenue | | | |
+   Flag whether current price is expensive or cheap vs peers.
 
-4. DCF ASSUMPTIONS USED (pre-fill from data, flag anything you'd change):
-   "Phase 1 (Yr1–3): Revenue growth X% | Op margin X%
-    Phase 2 (Yr4–7): Revenue growth X% | Op margin X%
-    Phase 3 (Yr8–10): Revenue growth X% | Op margin X%
-    WACC X% | Terminal growth X% | RONIC X%
-    Pre-computed base case: $X/share (McKinsey TV)
-    ⚠️ Assumption flags: [flag any that look wrong — e.g. margin too optimistic, RONIC too high for sector]"
+2. DCF RESULT INTERPRETATION (3 sentences):
+   State the intrinsic value from the engine. State the upside/downside. State whether the gap is driven by WACC, growth assumptions, or terminal value (use TV% of EV as the signal — if TV >70% of EV, the valuation is heavily back-ended and sensitive to terminal assumptions).
 
-End Turn 1 with: "Assumptions look [reasonable / need adjustment on X]. Ready to run the scenarios?"
+3. ASSUMPTION FLAGS (2–3 bullet points max):
+   Flag any sector-default assumptions that look wrong for this specific company — e.g. growth rate too aggressive vs historical, RONIC unrealistic for the sector, margin assumptions inconsistent with competitive position. Be specific.
 
-═══ TURN 2 — VALUATION VERDICT (when user says run it / confirmed / go ahead) ═══
+4. SENSITIVITY READING (one sentence):
+   Based on the engine's WACC and TGR, describe the direction of sensitivity — "higher WACC / lower TGR scenarios compress value significantly because TV is X% of EV."
 
-Produce in ONE reply:
+End Turn 1 with: "The engine's base case is $X/share vs current price of $Y — [X% premium/discount]. Want me to build bull/base/bear scenarios around this?"
 
-A) PRE-COMPUTED BASE CASE (from PRE-COMPUTED DCF data):
-   "McKinsey base case: $X/share
-    Monte Carlo P25–P75: $Y–$Z/share
-    Current price: $X → [X% premium / discount] to base case"
+TURN 2 — when user asks for scenarios / says go ahead:
 
-B) WACC × TGR SENSITIVITY (3×3 compact grid — label cells ▲/▼ vs current price):
-   | | TGR 2% | TGR 2.5% | TGR 3% |
-   | WACC −1pp | | | |
-   | WACC base | | | |
-   | WACC +1pp | | | |
+BULL / BASE / BEAR (3 lines, explicit probabilities, probability-weighted expected value):
+   "🔴 Bear (X%): [key downside assumption — 1 sentence] → $X/share
+    ⚪ Base (X%): Engine output — $X/share
+    🟢 Bull (X%): [key upside assumption — 1 sentence] → $X/share
+    Probability-weighted fair value: $X → [X% upside/downside]"
 
-C) BULL / BASE / BEAR (one line each with explicit probabilities):
-   "🔴 Bear (X%): [1 sentence — key downside driver] → $X/share
-    ⚪ Base (X%): [1 sentence] → $X/share (= pre-computed DCF)
-    🟢 Bull (X%): [1 sentence — key upside driver] → $X/share
-    Probability-weighted fair value: $X → [X% upside/downside vs current price]"
+VARIANT PERCEPTION (1 sentence): Where your probability differs from what the market is pricing in.
 
-D) VARIANT PERCEPTION (1 sentence): Where your assumed probability differs from what the market is pricing.
+VERDICT (1 sentence): Overvalued / fairly valued / undervalued — and the single assumption that drives the call.
 
-E) VERDICT (1 sentence): Overvalued / fairly valued / undervalued — and the single most important assumption driving that call.
-
-End with: "Valuation complete. Ready for technical analysis — entry timing, support/resistance, and stop-loss."
+End with: "Valuation complete. Ready for technical — entry zone, stop-loss, and timing."
 
 STEP 3 — WHEN USER CONFIRMS (SPLIT INTO TWO TURNS — MANDATORY):
 
@@ -8327,60 +8328,129 @@ div[data-testid="stChatInput"] > div {
                 # in the post-reply block below (checking _reply, not _last_ast)
 
                 # ── Run DCF + Monte Carlo when entering valuation ─
+                # Full Python computation — Claude NEVER recalculates; it only interprets.
+                def _run_dcf_full(rev_m, shares, net_cash_m, price,
+                                  rg_s, om_s, rg_m, om_m, rg_l, om_l,
+                                  wacc=9.0, tg=2.5, ronic=15.0, tax=21.0, inv=12.0):
+                    """Full 10-year McKinsey DCF. Returns dict with rows, TV, bridge, grid, per-share."""
+                    try:
+                        _w=wacc/100; _tg=tg/100; _ronic=ronic/100; _tx=tax/100; _inv=inv/100
+                        if _w<=_tg: return None
+                        rows=[]; pv_fcfs=0.0; revenue=abs(rev_m)
+                        for t in range(1,11):
+                            rg,om = ((rg_s/100,om_s/100) if t<=3 else
+                                     ((rg_m/100,om_m/100) if t<=7 else (rg_l/100,om_l/100)))
+                            revenue*=(1+rg)
+                            nopat=revenue*om*(1-_tx)
+                            fcf=nopat*(1-_inv)
+                            pv_f=fcf/((1+_w)**t)
+                            pv_fcfs+=pv_f
+                            rows.append({'yr':t,'rev':revenue,'om':om*100,'nopat':nopat,
+                                         'fcf':fcf,'pv':pv_f})
+                        # McKinsey TV: TV = NOPAT_11 × (1 − g/RONIC) / (WACC − g)
+                        nopat11=revenue*(1+_tg)*(om_l/100)*(1-_tx)
+                        rr=min(_tg/_ronic,0.95) if _ronic>0 else 0.05
+                        tv=nopat11*(1-rr)/(_w-_tg)
+                        pv_tv=tv/((1+_w)**10)
+                        ev=pv_fcfs+pv_tv
+                        eq_val=ev+net_cash_m
+                        iv_ps=(eq_val*1e6/shares) if shares>0 else None
+                        # 3×3 sensitivity grid (WACC±1pp, TGR±0.5pp)
+                        grid={}
+                        for dw in (-1,0,1):
+                            for dt in (-0.5,0,0.5):
+                                _w2=(wacc+dw)/100; _tg2=(tg+dt)/100
+                                if _w2<=_tg2: continue
+                                _pv2=0.0; _rev2=abs(rev_m)
+                                for t in range(1,11):
+                                    rg,om=((rg_s/100,om_s/100) if t<=3 else
+                                           ((rg_m/100,om_m/100) if t<=7 else (rg_l/100,om_l/100)))
+                                    _rev2*=(1+rg); _n=_rev2*om*(1-_tx); _pv2+=_n*(1-_inv)/((1+_w2)**t)
+                                _n11=_rev2*(1+_tg2)*(om_l/100)*(1-_tx)
+                                _rr=min(_tg2/_ronic,0.95) if _ronic>0 else 0.05
+                                _tv2=_n11*(1-_rr)/(_w2-_tg2)
+                                _ev2=_pv2+_tv2/((1+_w2)**10)+net_cash_m
+                                grid[(dw,dt)]=(_ev2*1e6/shares) if shares>0 else None
+                        mc=_comp_monte_carlo(iv_ps) if iv_ps and iv_ps>0 else None
+                        upside=((iv_ps-price)/price*100) if iv_ps and price else None
+                        tv_pct=(pv_tv/ev*100) if ev>0 else None
+                        return {'rows':rows,'pv_fcfs':pv_fcfs,'tv':tv,'pv_tv':pv_tv,
+                                'ev':ev,'eq_val':eq_val,'iv_ps':iv_ps,'grid':grid,'mc':mc,
+                                'upside':upside,'tv_pct':tv_pct,'wacc':wacc,'tg':tg,
+                                'ronic':ronic,'tax':tax,'inv':inv,
+                                'phases':{'rg_s':rg_s,'om_s':om_s,'rg_m':rg_m,'om_m':om_m,
+                                          'rg_l':rg_l,'om_l':om_l}}
+                    except Exception: return None
+
                 if _SS.cp_stage == 'valuation':
+                    # ── Intent routing: "extend"/"change wacc"/"what if" → recompute Python ──
+                    _DCF_RECOMPUTE_INTENTS = [
+                        'extend','change wacc','update wacc','change growth','update growth',
+                        'what if','rerun','re-run','recalculate','new assumption',
+                        'higher growth','lower growth','higher margin','lower margin',
+                        'change terminal','change tgr','10 year','10-year','longer runway',
+                    ]
+                    _wants_recompute = any(kw in _user_input.lower() for kw in _DCF_RECOMPUTE_INTENTS)
+
                     for _vtk, _vd in _SS.cp_data.items():
-                        if _vtk not in _SS.cp_analyses and not _vd.get('error'):
+                        _existing = _SS.cp_analyses.get(_vtk, {})
+                        _needs_compute = not _existing.get('dcf_full') or _wants_recompute
+                        if _needs_compute and not _vd.get('error'):
                             _vi = _vd.get('info', {})
                             _vrev = _vi.get('totalRevenue')
                             _vshares = _vi.get('sharesOutstanding') or _vi.get('impliedSharesOutstanding')
+                            _vprice = _vd.get('price') or _vi.get('currentPrice') or 0
                             if _vrev and _vshares:
                                 try:
-                                    # Import existing DCF from outer scope
                                     _vrev_m = float(_vrev) / 1e6
-                                    _vsect  = _vi.get('sector', 'Other')
+                                    _vnet_cash = (_vi.get('totalCash',0) or 0) / 1e6 - \
+                                                 (_vi.get('totalDebt',0) or 0) / 1e6
+                                    _vsect = _vi.get('sector','Other')
+                                    # Sector defaults
                                     _sg = {'Technology':15,'Healthcare':10,'Financials':8,
                                            'Consumer Discretionary':8,'Consumer Staples':6,
                                            'Energy':5,'Materials':6,'Industrials':8,
-                                           'Communication Services':8,'Other':6}.get(_vsect, 6)
+                                           'Communication Services':8,'Other':6}.get(_vsect,6)
                                     _sm = {'Technology':20,'Healthcare':15,'Financials':25,
                                            'Consumer Discretionary':8,'Consumer Staples':10,
                                            'Energy':12,'Materials':14,'Industrials':12,
-                                           'Communication Services':20,'Other':12}.get(_vsect, 12)
-                                    # Use simple 3-phase DCF inline (mirrors calc_revenue_dcf_3phase)
-                                    def _simple_dcf(rev, rg_s, om_s, rg_m, om_m, rg_l, om_l,
-                                                    tax=25, inv=20, disc=9, tg=2.5, ronic=15):
-                                        try:
-                                            om_s/=100;om_m/=100;om_l/=100
-                                            rg_s/=100;rg_m/=100;rg_l/=100
-                                            tax/=100;inv/=100;disc/=100;tg/=100;ronic/=100
-                                            if disc<=tg: return None
-                                            pv=0.0; revenue=abs(rev)
-                                            for t in range(1,11):
-                                                rg,om = (rg_s,om_s) if t<=3 else ((rg_m,om_m) if t<=7 else (rg_l,om_l))
-                                                revenue*=(1+rg)
-                                                nopat=revenue*om*(1-tax)
-                                                fcf=nopat*(1-inv)
-                                                pv+=fcf/((1+disc)**t)
-                                            term_nopat=revenue*(1+tg)*om_l*(1-tax)
-                                            rr=tg/ronic if ronic>0 and tg>0 else 0.05
-                                            term_fcf=term_nopat*(1-rr)
-                                            tv=term_fcf/(disc-tg)
-                                            pv_tv=tv/((1+disc)**10)
-                                            return pv+pv_tv
-                                        except: return None
-                                    _dcf_total = _simple_dcf(_vrev_m, _sg*1.2, _sm, _sg, _sm*0.95, _sg*0.6, _sm*1.05)
-                                    _dcf_ps = (_dcf_total*1e6/float(_vshares)) if _dcf_total and _vshares else None
-                                    _mc = _comp_monte_carlo(_dcf_ps) if _dcf_ps and _dcf_ps > 0 else None
-                                    _SS.cp_analyses[_vtk] = {
-                                        'dcf_ps': _dcf_ps,
-                                        'dcf_str': f"{_dcf_ps:.2f}" if _dcf_ps else "—",
-                                        'mc': _mc,
-                                        'mc_p25': _mc['p25'] if _mc else None,
-                                        'mc_p75': _mc['p75'] if _mc else None,
-                                        'thesis': '', 'entry': '', 'key_risk': ''
-                                    }
+                                           'Communication Services':20,'Other':12}.get(_vsect,12)
+                                    # Parse updated assumptions from user message if recomputing
+                                    _wacc_use = _existing.get('dcf_full',{}).get('wacc', 9.0)
+                                    _tg_use   = _existing.get('dcf_full',{}).get('tg', 2.5)
+                                    _ronic_use= _existing.get('dcf_full',{}).get('ronic',15.0)
+                                    # Simple regex for "wacc X%" or "use X% wacc"
+                                    import re as _re_dcf
+                                    _wm = _re_dcf.search(r'wacc\s*(?:of\s*|=\s*)?(\d+(?:\.\d+)?)\s*%',
+                                                          _user_input, _re_dcf.I)
+                                    if _wm: _wacc_use = float(_wm.group(1))
+                                    _tm = _re_dcf.search(r'(?:tgr|terminal growth|growth rate)\s*(?:of\s*|=\s*)?(\d+(?:\.\d+)?)\s*%',
+                                                          _user_input, _re_dcf.I)
+                                    if _tm: _tg_use = float(_tm.group(1))
+
+                                    _dcf_res = _run_dcf_full(
+                                        _vrev_m, float(_vshares), _vnet_cash, _vprice,
+                                        _sg*1.2, _sm, _sg, _sm*0.95, _sg*0.6, _sm*1.05,
+                                        wacc=_wacc_use, tg=_tg_use, ronic=_ronic_use)
+
+                                    if _dcf_res:
+                                        _mc = _dcf_res.get('mc')
+                                        _SS.cp_analyses[_vtk] = {
+                                            **(_existing or {}),
+                                            'dcf_full': _dcf_res,
+                                            'dcf_ps':   _dcf_res['iv_ps'],
+                                            'dcf_str':  f"{_dcf_res['iv_ps']:.2f}" if _dcf_res['iv_ps'] else '—',
+                                            'mc':       _mc,
+                                            'mc_p25':   _mc['p25'] if _mc else None,
+                                            'mc_p75':   _mc['p75'] if _mc else None,
+                                            'thesis':'','entry':'','key_risk':''
+                                        }
+                                    else:
+                                        if not _existing:
+                                            _SS.cp_analyses[_vtk] = {}
                                 except Exception:
-                                    _SS.cp_analyses[_vtk] = {}
+                                    if not _existing:
+                                        _SS.cp_analyses[_vtk] = {}
 
                 # ── Watchlist add/remove from user message ────────
                 if _SS.cp_stage in ('finalise', 'technical'):
@@ -8560,27 +8630,39 @@ div[data-testid="stChatInput"] > div {
                 txt = _r.sub(r'(×)([A-Za-z])', r'\1 \2', txt)
                 return txt
 
-            _display_reply = _fix_reply_fmt(_display_reply or _reply)
-            _SS.cp_msgs.append({"role": "assistant", "content": _display_reply or _reply})
+            # ── Handle max_tokens sentinel — do NOT add to history (corrupts next call) ──
+            if _reply == "__MAX_TOKENS__" or (_display_reply or '').strip() == "__MAX_TOKENS__":
+                _user_friendly = ("⚠️ The response was cut short — this usually means the context "
+                                  "history is getting long. Type **'continue'** to carry on, or "
+                                  "start a specific follow-up question.")
+                _SS.cp_msgs.append({"role": "assistant", "content": _user_friendly})
+                # Remove the last user message from history to avoid replaying broken context
+                if _SS.cp_msgs and _SS.cp_msgs[-2]['role'] == 'user':
+                    _SS.cp_msgs.pop(-2)
+                st.rerun()
+            else:
+                _display_reply = _fix_reply_fmt(_display_reply or _reply)
+                _SS.cp_msgs.append({"role": "assistant", "content": _display_reply or _reply})
 
-            # ── Auto-save session to /tmp for reconnect restore ────
-            try:
-                import json as _jsav, os as _osav
-                with open(_TMP_SESSION_PATH, 'w', encoding='utf-8') as _fsav:
-                    _jsav.dump({
-                        'v': 1,
-                        'stage': _SS.cp_stage,
-                        'ctx':   _SS.cp_ctx,
-                        'tickers': list(_SS.cp_data.keys()),
-                        'analyses': {k: {ak: av for ak, av in av.items() if ak != 'mc'}
-                                     for k, av in _SS.cp_analyses.items()},
-                        'msgs':  _SS.cp_msgs,
-                        'cost_usd': _SS.get('cp_cost_usd', 0.0),
-                    }, _fsav, ensure_ascii=False)
-            except Exception:
-                pass
+                # ── Auto-save session to /tmp for reconnect restore ────
+                try:
+                    import json as _jsav, os as _osav
+                    with open(_TMP_SESSION_PATH, 'w', encoding='utf-8') as _fsav:
+                        _jsav.dump({
+                            'v': 1,
+                            'stage': _SS.cp_stage,
+                            'ctx':   _SS.cp_ctx,
+                            'tickers': list(_SS.cp_data.keys()),
+                            'analyses': {k: {ak: av for ak, av in av.items()
+                                             if ak not in ('mc', 'dcf_full')}
+                                         for k, av in _SS.cp_analyses.items()},
+                            'msgs':  _SS.cp_msgs,
+                            'cost_usd': _SS.get('cp_cost_usd', 0.0),
+                        }, _fsav, ensure_ascii=False)
+                except Exception:
+                    pass
 
-            st.rerun()
+                st.rerun()
 
     st.caption("Guided analysis · Educational only · Not financial advice")
 
