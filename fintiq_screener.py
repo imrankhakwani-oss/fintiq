@@ -4640,11 +4640,15 @@ Present 6 things in compact form — aim for under 350 words total:
 
 2. MOAT & COMPETITIVE POSITION: One sentence on the source of competitive advantage (cost / switching costs / network effects / IP). One sentence on how durable it is vs the biggest structural threat.
 
-3. FINANCIAL QUALITY — show the trajectory, not just a snapshot:
-   - Revenue (last 3 years + growth rate each year): FY22 $Xbn (+X%) → FY23 $Xbn (+X%) → FY24 $Xbn (+X%) — accelerating or decelerating?
-   - Operating margin (last 3 years): FY22 X% → FY23 X% → FY24 X% — expanding or compressing? Why?
-   - ROIC trend (last 3 years): FY22 X% → FY23 X% → FY24 X% — is the moat strengthening or eroding vs WACC?
-   If only 1-2 years of data are available, show what you have and flag the gap.
+3. FINANCIAL QUALITY — show the trajectory, not just a snapshot. Present as a compact table:
+   | Year | Revenue | Rev Growth | Op Margin | EPS | EPS Growth | ROIC |
+   |---|---|---|---|---|---|---|
+   | FY22 | | | | | | |
+   | FY23 | | | | | | |
+   | FY24 | | | | | | |
+   Fill what you have. If data is missing, write "N/A" — never fabricate.
+   Then 1-line summary: "Revenue [accelerating/decelerating], margins [expanding/compressing], ROIC [above/below] WACC of ~X%."
+   Also state the reinvestment rate (capex + ΔNWC as % of NOPAT) — this tells us how much growth costs.
 
 4. BALANCE SHEET IN ONE LINE: Net debt/EBITDA X.Xx | Interest coverage Xx | [Flag if D/E > 10x as book-value distortion]
 
@@ -4682,9 +4686,10 @@ YOUR ROLE: Interpret the result. Write investment narrative. NEVER recalculate a
 ABSOLUTE PROHIBITIONS:
 - Do NOT produce or reproduce a year-by-year FCF table
 - Do NOT calculate NOPAT, FCF, PV factors, or terminal value yourself
-- Do NOT suggest extending the forecast (Python will recompute automatically if requested)
-- Do NOT perform arithmetic — all numbers come from the engine output above
-- If asked to "extend" or "change assumptions", acknowledge that the model will update, then interpret the CURRENT result while it recalculates
+- Do NOT use Gordon Growth Model (TV = FCF / (WACC - g)) — this is FORBIDDEN. Terminal value is computed by Python using McKinsey Value Driver Formula only
+- Do NOT perform any arithmetic — all numbers come from the engine output above
+- Do NOT suggest extending the forecast (Python recomputes automatically if user requests it)
+- If asked to "extend" or "change assumptions", say the model will update, then interpret the CURRENT engine result
 
 WHAT TO PRODUCE (target 500–700 words, 2 turns max):
 
@@ -8475,11 +8480,25 @@ div[data-testid="stChatInput"] > div {
                 _sys = _comp_system_prompt(_SS.cp_stage, _SS.cp_ctx, _SS.cp_data, getattr(_SS, 'cp_analyses', None))
 
                 # ── Conversation history: summarise + keep recent ──
-                # Strategy: keep last 3 turns verbatim; summarise everything older
-                # into a compact paragraph via Haiku. Summary is cached in session_state
-                # so it's only recomputed when the window shifts (not every turn).
-                _RECENT_TURNS = 3
-                _all_msgs = _SS.cp_msgs  # full message list
+                # Strategy: keep last 2 turns verbatim; summarise everything older.
+                # Also strip any truncation-notice messages so they don't confuse the model.
+                _TRUNCATION_MARKER = "⚠️ The response was cut short"
+                _all_msgs_raw = _SS.cp_msgs
+                # Remove truncation notices and their paired "continue" user messages
+                _all_msgs = []
+                _i = 0
+                while _i < len(_all_msgs_raw):
+                    _m = _all_msgs_raw[_i]
+                    if _m['role'] == 'assistant' and _TRUNCATION_MARKER in str(_m.get('content','')):
+                        # Skip this assistant message AND the next user "continue" if present
+                        _i += 1
+                        if _i < len(_all_msgs_raw) and _all_msgs_raw[_i]['role'] == 'user' and \
+                                _all_msgs_raw[_i].get('content','').strip().lower() in ('continue','go on','keep going'):
+                            _i += 1
+                        continue
+                    _all_msgs.append(_m)
+                    _i += 1
+                _RECENT_TURNS = 2
                 if len(_all_msgs) > _RECENT_TURNS * 2:
                     # Turns to summarise = everything except the most recent _RECENT_TURNS
                     _older_msgs  = _all_msgs[:-(  _RECENT_TURNS)]
@@ -8605,23 +8624,18 @@ div[data-testid="stChatInput"] > div {
                 # Fix missing space before opening paren preceded by letter/digit: foo(bar) → foo (bar)
                 # but don't touch markdown links like [text](url)
                 txt = _r.sub(r'([a-zA-Z0-9])(\()(?!\[)', r'\1 \2', txt)
-                # Fix stray lone asterisk at start of line (bullet-point asterisks are fine)
-                # Remove asterisk that has no matching partner on the same line
-                def _fix_asterisks(line: str) -> str:
-                    # Count single asterisks (not **bold**)
-                    # Replace *word* with _word_ for cleaner italics rendering in markdown
-                    # First protect **bold** by temporarily replacing
-                    line = _r.sub(r'\*\*(.+?)\*\*', r'@@BOLD@@\1@@BOLD@@', line)
-                    # Now count remaining single *
-                    stars = [m.start() for m in _r.finditer(r'\*', line)]
-                    if len(stars) % 2 != 0:
-                        # Odd number of asterisks — remove the lone trailing one
-                        line = line[:stars[-1]] + line[stars[-1]+1:]
-                    # Restore bold
-                    line = line.replace('@@BOLD@@', '**')
-                    return line
-                lines = txt.split('\n')
-                txt = '\n'.join(_fix_asterisks(l) for l in lines)
+                # Strip single-asterisk italics (*word*) — renders with broken spacing in Streamlit.
+                # Bold (**word**) is fine and kept. Italics are removed entirely (plain text).
+                # Step 1: protect ** bold ** by replacing temporarily
+                txt = _r.sub(r'\*\*(.+?)\*\*', r'@@BOLD@@\1@@BOLD@@', txt)
+                # Step 2: remove all remaining *single-asterisk* italic markers
+                # Case A: * word* or *word * (space inside) — e.g. "* *text* *" → "text"
+                txt = _r.sub(r'\*\s*([^*\n]+?)\s*\*', r'\1', txt)
+                # Case B: lone stray asterisks not part of bold/italic pair
+                # Remove any remaining single * not surrounded by another *
+                txt = _r.sub(r'(?<!\*)\*(?!\*)', '', txt)
+                # Step 3: restore bold
+                txt = txt.replace('@@BOLD@@', '**')
                 # Fix missing space after closing bracket in citations: [1]word → [1] word
                 txt = _r.sub(r'(\])([A-Za-z])', r'\1 \2', txt)
                 # Normalise --- separators to have blank lines around them
