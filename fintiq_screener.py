@@ -4640,15 +4640,27 @@ Present 6 things in compact form — aim for under 350 words total:
 
 2. MOAT & COMPETITIVE POSITION: One sentence on the source of competitive advantage (cost / switching costs / network effects / IP). One sentence on how durable it is vs the biggest structural threat.
 
-3. FINANCIAL QUALITY — show the trajectory, not just a snapshot. Present as a compact table:
-   | Year | Revenue | Rev Growth | Op Margin | EPS | EPS Growth | ROIC |
+3. FINANCIAL QUALITY — show the trajectory across the 4 most recent completed fiscal years. Present as TWO compact tables:
+
+   TABLE A — Growth & Profitability (use the 4 most recent completed fiscal years; label rows FY[year] based on the company's actual fiscal year end):
+   | Year | Revenue ($M) | Rev Growth % | Op Margin % | EPS ($) | EPS Growth % | ROIC % |
    |---|---|---|---|---|---|---|
-   | FY22 | | | | | | |
-   | FY23 | | | | | | |
-   | FY24 | | | | | | |
-   Fill what you have. If data is missing, write "N/A" — never fabricate.
-   Then 1-line summary: "Revenue [accelerating/decelerating], margins [expanding/compressing], ROIC [above/below] WACC of ~X%."
-   Also state the reinvestment rate (capex + ΔNWC as % of NOPAT) — this tells us how much growth costs.
+   | FY[n-3] | | | | | | |
+   | FY[n-2] | | | | | | |
+   | FY[n-1] | | | | | | |
+   | FY[n]   | | | | | | |
+
+   TABLE B — Cash Flow Quality (same 4 years):
+   | Year | NOPAT ($M) | FCF ($M) | Inv Rate % |
+   |---|---|---|---|
+   | FY[n-3] | | | |
+   | FY[n-2] | | | |
+   | FY[n-1] | | | |
+   | FY[n]   | | | |
+
+   Definitions: NOPAT = Operating Income × (1 − tax rate). FCF = NOPAT − capex − ΔNWC. Inv Rate = (capex + ΔNWC) as % of NOPAT — this is the reinvestment rate, telling us how much growth costs.
+   Fill what you have from the live data. If a cell is missing, write "N/A" — never fabricate a number.
+   Then 1-line summary: "Revenue [accelerating/decelerating], margins [expanding/compressing], ROIC [above/below] cost of capital of ~X%, FCF conversion [strong/weak]."
 
 4. BALANCE SHEET IN ONE LINE: Net debt/EBITDA X.Xx | Interest coverage Xx | [Flag if D/E > 10x as book-value distortion]
 
@@ -8387,6 +8399,25 @@ div[data-testid="stChatInput"] > div {
                                           'rg_l':rg_l,'om_l':om_l}}
                     except Exception: return None
 
+                # ── Early stage advancement: advance BEFORE AI call so correct system prompt + DCF run ──
+                _ui_lower = _user_input.lower()
+                _VAL_TRIGGERS = ['value this', 'value the', 'run valuation', 'run the valuation',
+                                 'what is it worth', 'intrinsic value', 'run scenarios', 'run the scenarios',
+                                 'dcf', 'wacc', 'multiples', 'fair value', 'discount cash',
+                                 'what does the market', 'implied assumptions', 'scenarios']
+                _TECH_TRIGGERS = ['technical', 'chart', 'entry point', 'support', 'resistance',
+                                  'moving average', 'rsi', 'timing', 'when do i enter', 'when to buy',
+                                  'momentum', 'breakout', 'catalyst']
+                _FINAL_TRIGGERS = ['final decision', 'long or short', 'buy or pass', 'verdict',
+                                   'position size', 'pull it together', 'summarise', 'summarize',
+                                   'final call', 'watchlist', 'decision']
+                if _SS.cp_stage == 'fundamental' and any(w in _ui_lower for w in _VAL_TRIGGERS):
+                    _SS.cp_stage = 'valuation'
+                elif _SS.cp_stage == 'valuation' and any(w in _ui_lower for w in _TECH_TRIGGERS):
+                    _SS.cp_stage = 'technical'
+                elif _SS.cp_stage == 'technical' and any(w in _ui_lower for w in _FINAL_TRIGGERS):
+                    _SS.cp_stage = 'finalise'
+
                 if _SS.cp_stage == 'valuation':
                     # ── Intent routing: "extend"/"change wacc"/"what if" → recompute Python ──
                     _DCF_RECOMPUTE_INTENTS = [
@@ -8624,18 +8655,24 @@ div[data-testid="stChatInput"] > div {
                 # Fix missing space before opening paren preceded by letter/digit: foo(bar) → foo (bar)
                 # but don't touch markdown links like [text](url)
                 txt = _r.sub(r'([a-zA-Z0-9])(\()(?!\[)', r'\1 \2', txt)
-                # Strip single-asterisk italics (*word*) — renders with broken spacing in Streamlit.
+                # Strip italics — renders with broken spacing in Streamlit.
                 # Bold (**word**) is fine and kept. Italics are removed entirely (plain text).
-                # Step 1: protect ** bold ** by replacing temporarily
+                # Step 1: protect **bold** and __bold__ by replacing temporarily
                 txt = _r.sub(r'\*\*(.+?)\*\*', r'@@BOLD@@\1@@BOLD@@', txt)
-                # Step 2: remove all remaining *single-asterisk* italic markers
+                txt = _r.sub(r'__(.+?)__', r'@@BOLD2@@\1@@BOLD2@@', txt)
+                # Step 2: remove _single-underscore_ italics
+                txt = _r.sub(r'_\s*([^_\n]+?)\s*_', r'\1', txt)
+                # Remove lone stray underscores not part of a pair (excluding word_boundary use)
+                # Only strip _ when it appears to be italic markup (surrounded by spaces or punctuation)
+                txt = _r.sub(r'(?<!\w)_(?!\w)', '', txt)
+                # Step 3: remove all remaining *single-asterisk* italic markers
                 # Case A: * word* or *word * (space inside) — e.g. "* *text* *" → "text"
                 txt = _r.sub(r'\*\s*([^*\n]+?)\s*\*', r'\1', txt)
                 # Case B: lone stray asterisks not part of bold/italic pair
-                # Remove any remaining single * not surrounded by another *
                 txt = _r.sub(r'(?<!\*)\*(?!\*)', '', txt)
-                # Step 3: restore bold
+                # Step 4: restore bold
                 txt = txt.replace('@@BOLD@@', '**')
+                txt = txt.replace('@@BOLD2@@', '**')
                 # Fix missing space after closing bracket in citations: [1]word → [1] word
                 txt = _r.sub(r'(\])([A-Za-z])', r'\1 \2', txt)
                 # Normalise --- separators to have blank lines around them
