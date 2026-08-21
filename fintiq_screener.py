@@ -8746,7 +8746,7 @@ Full playbook = ~38 credits · leaves 62 credits for follow-up questions.<br>
 
         _pb_stages = [
             ("📊 Business & Quality — should I own this? (~12 credits)", [
-                "⭐ Give me a complete business snapshot for [Company]: what it does, how it makes money (revenue breakdown by segment with % contribution), competitive moat (source and durability), ROIC trend vs cost of capital, and an overall quality score out of 5. One focused reply covering all of this.",
+                "⭐ Give me a complete business snapshot for [Company]: what it does, how it makes money (revenue breakdown by segment with % contribution), competitive moat (source and durability). Then show two financial quality tables covering the last 4 fiscal years — Table A: Revenue ($M), Revenue Growth %, Operating Margin %, EPS, EPS Growth %, ROIC %; Table B: NOPAT ($M), FCF ($M), Investment Rate %. End with an overall quality score out of 5. One focused reply covering all of this.",
                 "📊 How does [Company] compare to its 2–3 closest competitors? Show a table: revenue, operating margin, EV/EBITDA, market share, and ROIC. Flag where [Company] is stronger and where it's falling behind.",
                 "⭐ What are the 2–3 things that could permanently break the [Company] investment case — not short-term headwinds, but structural threats that reduce the moat or shrink the addressable market? Be specific.",
             ]),
